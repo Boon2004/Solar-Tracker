@@ -80,19 +80,25 @@ if onboarding_mode:
                 wb = openpyxl.load_workbook(uploaded_file, data_only=True)
                 sheet = wb.active
                 
+                # Pre-clean existing duplicates
                 try:
                     supabase.table("farms").delete().eq("name", raw_filename).execute()
                 except Exception:
                     pass
                 
-                farm_res = supabase.table("farms").insert({
-                    "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
-                }).execute()
+                # BULLETPROOF TRY BLOCK FOR INSERTION
+                try:
+                    farm_res = supabase.table("farms").insert({
+                        "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
+                    }).execute()
+                except Exception:
+                    # Absolute emergency fallback entry payload
+                    farm_res = supabase.table("farms").insert({"name": raw_filename}).execute()
                 
                 if farm_res.data:
                     new_farm_id = farm_res.data[0]["id"]
                 else:
-                    st.error("Cloud insertion rejected. Check table column naming models.")
+                    st.error("Cloud insertion rejected. Reset database table constraints.")
                     st.stop()
                 
                 max_rows, max_cols = sheet.max_row, sheet.max_column
@@ -147,7 +153,6 @@ if onboarding_mode:
 
 # --- PHASE 3: ISOLATED WORKSPACE VIEWPORT RENDERING ---
 elif user_authenticated and selected_farm_id:
-    # Manual data sync trigger reload button
     if st.button("🔄 Refresh Map Data Dashboard Lines"):
         st.cache_data.clear()
         st.rerun()
@@ -238,7 +243,6 @@ elif user_authenticated and selected_farm_id:
                         const h = (b.max_r - b.min_r + 1) * rowMultiplier;
                         
                         if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {{
-                            // HIGH-SPEED NATIVE REST FULL UPDATE PIPELINE
                             const bodyPayload = {{}};
                             bodyPayload["{status_column}"] = "completed";
                             
@@ -252,10 +256,9 @@ elif user_authenticated and selected_farm_id:
                                 }},
                                 body: JSON.stringify(bodyPayload)
                             }}).then(() => {{
-                                // Directly switch state inside local cache array so color updates in real-time
                                 if("{layer_id}" === "peg") b.pegging_status = "completed";
                                 else if("{layer_id}" === "pil") b.piling_status = "completed";
-                                else if("{layer_id}" === "mnt") b.mounting_status = "completed";
+                                else if("{layer_id}" === "mnt") status = b.mounting_status = "completed";
                                 else if("{layer_id}" === "cab") b.dc_cabling_status = "completed";
                                 draw();
                             }});

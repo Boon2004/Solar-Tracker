@@ -441,11 +441,11 @@ else:
             # Load active structural lists
             components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=550)
             
-            # Handle Ledger Scheduler calculations for zones
-            loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            if loaded_zones:
-                for zone in loaded_zones:
-                    render_production_scheduler_ledger(tab_object.label, zone, len(active_table_data))
+            # Safe zone pull to prevent missing database table crashes
+            try:
+                loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            except Exception:
+                loaded_zones = []
             else:
                 st.warning("No construction scheduling zones have been initialized by the administrator for this site platform yet.")
 

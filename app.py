@@ -72,14 +72,7 @@ if st.session_state.active_site_id is None:
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
                         
-                        # Wipe duplicate layout assets safely
-                        try:
-                            supabase.table("farms").delete().eq("name", new_site_name).execute()
-                        except Exception:
-                            pass
-                        
-                        farm_node = supabase.table("farms").insert({
-                            # 1. Clean out any old matching farm records first
+                        # 1. Clean out any old matching farm records first
                         try:
                             supabase.table("farms").delete().eq("name", new_site_name).execute()
                         except Exception:
@@ -95,7 +88,7 @@ if st.session_state.active_site_id is None:
                             }).execute()
                         except Exception:
                             try:
-                                # Fallback 1: Try lowercase compressed text properties
+                                # Fallback 1: Try lowercase alternate column properties
                                 farm_node = supabase.table("farms").insert({
                                     "name": new_site_name,
                                     "site_password": init_inst_pwd,

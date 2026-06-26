@@ -160,7 +160,7 @@ elif user_authenticated and selected_farm_id:
         json_str = json.dumps(data_points)
         return f"""
         <div style="background:#090d16; padding:12px; border-radius:12px; color:#fff; font-family:sans-serif; touch-action:none;">
-            <canvas id="canvas_{layer_id}" width="1500" height="480" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
+            <canvas id="canvas_{layer_id}" width="1500" height="520" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
         </div>
         <script>
             (function() {{
@@ -176,11 +176,14 @@ elif user_authenticated and selected_farm_id:
                 
                 const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
                 
-                let scale = Math.min((canvas.width - 100) / gw, (canvas.height - 100) / (gh * 4));
-                if(scale < 0.005 || scale === Infinity) scale = 0.4;
+                const colMultiplier = 1.8;
+                const rowMultiplier = 45.0; 
                 
-                let offsetX = (canvas.width / 2) - ((gw * scale) / 2) - (minX * scale);
-                let offsetY = (canvas.height / 2) - ((gh * 4 * scale) / 2) - (minY * 4 * scale);
+                let scale = Math.min((canvas.width - 80) / (gw * colMultiplier), (canvas.height - 80) / (gh * rowMultiplier));
+                if(scale < 0.001 || scale === Infinity) scale = 0.3;
+                
+                let offsetX = (canvas.width / 2) - ((gw * colMultiplier * scale) / 2) - (minX * colMultiplier * scale);
+                let offsetY = (canvas.height / 2) - ((gh * rowMultiplier * scale) / 2) - (minY * rowMultiplier * scale);
                 
                 let isDragging = false, startX, startY, initialDist = null;
 
@@ -199,13 +202,15 @@ elif user_authenticated and selected_farm_id:
                         
                         ctx.fillStyle = status === 'completed' ? '#22c55e' : '#2563eb';
                         
-                        const w = b.max_c - b.min_c + 1;
-                        const h = (b.max_r - b.min_r + 1) * 4;
+                        const x = b.min_c * colMultiplier;
+                        const y = b.min_r * rowMultiplier;
+                        const w = (b.max_c - b.min_c + 1) * colMultiplier - 0.4;
+                        const h = (b.max_r - b.min_r + 1) * rowMultiplier - 2.0;
                         
-                        ctx.fillRect(b.min_c, b.min_r * 4, w, h);
+                        ctx.fillRect(x, y, w, h);
                         ctx.strokeStyle = '#ffffff'; 
-                        ctx.lineWidth = 0.2; 
-                        ctx.strokeRect(b.min_c, b.min_r * 4, w, h);
+                        ctx.lineWidth = 0.15; 
+                        ctx.strokeRect(x, y, w, h);
                     }});
                     ctx.restore();
                 }}
@@ -213,7 +218,7 @@ elif user_authenticated and selected_farm_id:
                 canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
                 canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
                 window.addEventListener('mouseup',()=>isDragging=false);
-                canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.1:0.9); draw(); }},{{passive:false}});
+                canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.15:0.85); draw(); }},{{passive:false}});
                 
                 canvas.addEventListener('touchstart',(e)=>{{
                     if(e.touches.length===1){{ isDragging=true; startX=e.touches[0].clientX-offsetX; startY=e.touches[0].clientY-offsetY; }}
@@ -223,7 +228,7 @@ elif user_authenticated and selected_farm_id:
                     if(isDragging && e.touches.length===1){{ offsetX=e.touches[0].clientX-startX; offsetY=e.touches[0].clientY-startY; draw(); }}
                     else if(e.touches.length===2 && initialDist){{
                         const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-                        scale*=(d>initialDist?1.04:0.96); initialDist=d; draw();
+                        scale*=(d>initialDist?1.05:0.95); initialDist=d; draw();
                     }}
                 }});
                 canvas.addEventListener('touchend',()=>{{ isDragging=false; initialDist=null; }});
@@ -246,30 +251,30 @@ elif user_authenticated and selected_farm_id:
     
     with t_peg:
         st.header("📌 Pegging Tracking Viewport")
-        if active_table_data: components.html(render_map_script("peg", active_table_data), height=510)
+        if active_table_data: components.html(render_map_script("peg", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("pegging_status") == "completed")
         render_ledger_dashboard("Pegging", total_t * 12, done * 12)
         
     with t_pil:
         st.header("🪵 Piling Foundation Viewport")
-        if active_table_data: components.html(render_map_script("pil", active_table_data), height=510)
+        if active_table_data: components.html(render_map_script("pil", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("piling_status") == "completed")
         render_ledger_dashboard("Piling", total_t * 12, done * 12)
         
     with t_mnt:
         st.header("🏗️ Mounting Frame Tracker")
-        if active_table_data: components.html(render_map_script("mnt", active_table_data), height=510)
+        if active_table_data: components.html(render_map_script("mnt", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("mounting_status") == "completed")
         render_ledger_dashboard("Mounting Structures", total_t, done)
         
     with t_mod:
         st.header("☀️ PV Module Scale Mapping")
-        if active_table_data: components.html(render_map_script("mod", active_table_data), height=510)
+        if active_table_data: components.html(render_map_script("mod", active_table_data), height=550)
         render_ledger_dashboard("PV Modules Mounted", total_t * 54, 0)
         
     with t_cab:
         st.header("🔌 DC Cabling Layout Interconnection")
-        if active_table_data: components.html(render_map_script("cab", active_table_data), height=510)
+        if active_table_data: components.html(render_map_script("cab", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("dc_cabling_status") == "completed")
         render_ledger_dashboard("DC Cabling Matrix Blocks", total_t, done)
         

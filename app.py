@@ -72,33 +72,44 @@ if st.session_state.active_site_id is None:
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
                         
-                        # 1. Clean out any old matching farm records first
+                        max_rows, max_cols = sheet.max_row, sheet.max_column
+                        
+                        # Wipe duplicate layout assets safely
                         try:
                             supabase.table("farms").delete().eq("name", new_site_name).execute()
                         except Exception:
                             pass
                         
-                        # 2. BULLETPROOF ULTRA-RESILIENT INSERTION GATE
+                        # BULLETPROOF ULTRA-RESILIENT INSERTION GATE
+                        new_fid = None
                         try:
-                            # Try full payload insert first
                             farm_node = supabase.table("farms").insert({
                                 "name": new_site_name,
                                 "admin_password": init_admin_pwd,
                                 "installer_password": init_inst_pwd
                             }).execute()
+                            if farm_node.data:
+                                new_fid = farm_node.data[0]["id"]
                         except Exception:
                             try:
-                                # Fallback 1: Try lowercase alternate column properties
                                 farm_node = supabase.table("farms").insert({
                                     "name": new_site_name,
                                     "site_password": init_inst_pwd,
                                     "admin_password": init_admin_pwd
                                 }).execute()
+                                if farm_node.data:
+                                    new_fid = farm_node.data[0]["id"]
                             except Exception:
-                                # Fallback 2: Direct name entry to guarantee zero crashes
                                 farm_node = supabase.table("farms").insert({
                                     "name": new_site_name
                                 }).execute()
+                                if farm_node.data:
+                                    new_fid = farm_node.data[0]["id"]
+                        
+                        if new_fid:
+                            visited = set()
+                            table_counter = 1
+                            structures_queue = []
                             
                             # Standard cell block cluster trace
                             for r in range(1, max_rows + 1):
@@ -147,6 +158,8 @@ if st.session_state.active_site_id is None:
                             st.success(f"Successfully deployed {len(structures_queue)} Tables to {new_site_name}!")
                             st.cache_data.clear()
                             st.rerun()
+                        else:
+                            st.error("Could not obtain a unique ID from the farms database registration point.")
 
     # CENTRAL LANDING ROUTER INTERFACE
     st.subheader("🌐 Access Site Workspace Portal")
@@ -157,7 +170,7 @@ if st.session_state.active_site_id is None:
         entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
         
         if st.button("🚀 Open Digital Twin Workspace"):
-            expected_pass = target_site_record.get("installer_password") or "1234"
+            expected_pass = target_site_record.get("installer_password") or target_site_record.get("site_password") or "1234"
             if str(entered_inst_pass) == str(expected_pass):
                 st.session_state.active_site_id = target_site_record["id"]
                 st.session_state.active_site_name = target_site_record["name"]
@@ -269,7 +282,7 @@ else:
                 const canvas = document.getElementById("cv_{layer_key}");
                 const ctx = canvas.getContext('2d');
                 const todayVal = "{today_str}";
-                const historyDate = {history_target};
+                const historyDate = "{history_target}" !== "null" ? "{history_target}" : null;
                 
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 blocks.forEach(b => {{
@@ -297,7 +310,7 @@ else:
                         if("{layer_key}" === "pil") {{ dCol="piling_date"; sCol="piling_status"; }}
                         else if("{layer_key}" === "mnt") {{ dCol="mounting_date"; sCol="mounting_status"; }}
                         else if("{layer_key}" === "mod") {{ dCol="modules_date"; sCol="modules_status"; }}
-                        else if("{layer_id}" === "cab") {{ dCol="cabling_date"; sCol="cabling_status"; }}
+                        else if("{layer_key}" === "cab") {{ dCol="cabling_date"; sCol="cabling_status"; }}
                         
                         let recordDate = b[dCol];
                         let isDone = b[sCol] === 'completed' || b[sCol] === 'yellow' || b[sCol] === 'green';
@@ -307,7 +320,7 @@ else:
                         
                         if (isDone) {{
                             if (historyDate) {{
-                                if (recordDate === historyDate) ctx.fillStyle = '#u22c55e'; // Green historical highlight
+                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; // Yellow historical highlight
                                 else if (recordDate < historyDate) ctx.fillStyle = '#22c55e';
                                 else ctx.fillStyle = '#2563eb';
                             }} else {{
@@ -325,6 +338,7 @@ else:
                 }}
                 
                 function runFieldSubmission(clientX, clientY) {{
+                    if(historyDate) return; // Freeze clicking inside history modes
                     const rect = canvas.getBoundingClientRect();
                     const cx = (clientX - rect.left - offsetX) / scale / colMultiplier;
                     const cy = (clientY - rect.top - offsetY) / scale / rowMultiplier;
@@ -399,14 +413,29 @@ else:
             
         st.table(rows[:5]) # Display clean localized tabular interface summary row
         
+    @st.cache_data(ttl=1)
+    def load_site_isolated_tables(farm_id):
+        try:
+            res = supabase.table("structures").select("*").eq("farm_id", farm_id).execute()
+            return res.data if res.data else []
+        except Exception:
+            return []
+
+    active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
+
     # Generate the shared tab layouts cleanly
     def process_standard_construction_tab(tab_object, unique_key, layer_field):
         with tab_object:
             st.markdown(f"### {tab_object.label} Interactive Visualizer Workspace")
             
+            # Manual data sync trigger reload button
+            if st.button("🔄 Refresh Structural States Link", key=f"sync_btn_{unique_key}"):
+                st.cache_data.clear()
+                st.rerun()
+                
             # Historical Date Travel Widget Override Checkbox
             hist_date = None
-            if st.checkbox(f"🕰️ Activate Historical Date Query Travel View", key=f"hist_cb_{unique_key}"):
+            if st.checkbox(f"¼ Render History Record (Select Date to travel map time layout)", key=f"hist_cb_{unique_key}"):
                 hist_date = st.date_input("Select Historical Tracking Day target:", value=date.today(), key=f"hist_d_{unique_key}")
             
             # Load active structural lists

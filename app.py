@@ -4,6 +4,7 @@ import openpyxl
 from supabase import create_client, Client
 import json
 import time
+import base64
 from datetime import datetime, date, timedelta
 
 # Enterprise Database Credentials Bridge
@@ -213,11 +214,22 @@ else:
             # --- ADMIN CONSOLE SUBSYSTEM PANELS ---
             st.subheader("🛠️ Admin Parameters")
             
-            # 1. Update Project Image Url Link
-            new_img = st.text_input("Set Overview Image URL:")
-            if new_img and st.button("Save Image URL"):
-                supabase.table("farms").update({"overview_image_url": new_img}).eq("id", st.session_state.active_site_id).execute()
-                st.success("Overview picture saved.")
+            # 1. DIRECT IMAGE FILE UPLOADER WITH AUTOMATED BASE64 MATRIX STRING STORAGE
+            uploaded_png = st.file_uploader("Upload Overview Picture (.png / .jpg)", type=["png", "jpg", "jpeg"])
+            if uploaded_png and st.button("💾 Save Uploaded Image to Site"):
+                with st.spinner("Processing image pixels safely..."):
+                    # Convert file to base64 text string
+                    bytes_data = uploaded_png.getvalue()
+                    base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
+                    data_url = f"data:image/png;base64,{base64_encoded}"
+                    
+                    try:
+                        supabase.table("farms").update({"overview_image_url": data_url}).eq("id", st.session_state.active_site_id).execute()
+                        st.success("Farm overview picture updated successfully!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as err:
+                        st.error(f"Failed to update image storage table: {str(err)}")
                 
             # 2. Update Installer Password Entry Guard
             new_inst_p = st.text_input("Change Installer Password:", value="1234")
@@ -233,12 +245,15 @@ else:
                 
                 if st.button("Initialize Zone Frame"):
                     w_days = get_working_days(z_start, z_end)
-                    supabase.table("zones").insert({
-                        "farm_id": st.session_state.active_site_id,
-                        "name": z_name, "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days
-                    }).execute()
-                    st.success(f"{z_name} initialized cleanly.")
-                    st.rerun()
+                    try:
+                        supabase.table("zones").insert({
+                            "farm_id": st.session_state.active_site_id,
+                            "name": z_name, "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days
+                        }).execute()
+                        st.success(f"{z_name} initialized cleanly.")
+                        st.rerun()
+                    except Exception:
+                        st.error("Error setting up zone framework.")
                     
             if st.button("🔒 Revoke Admin Clearances"):
                 st.session_state.is_admin_mode = False
@@ -260,9 +275,9 @@ else:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
         img_src = current_farm_record.get("overview_image_url")
         if img_src:
-            st.image(img_src, caption=f"Active Structural Blueprint View for {st.session_state.active_site_name}", use_column_width=True)
+            st.image(img_src, caption=f"Active Operational Layout View for {st.session_state.active_site_name}", use_column_width=True)
         else:
-            st.warning("No custom site blueprint image has been configured by the administrator yet. Enter Admin mode in the sidebar to paste an image URL path.")
+            st.warning("No custom overview picture has been uploaded by the administrator yet. Log into Admin Mode in the sidebar to upload a PNG or JPG layout file directly!")
 
     # --------------------------------------------------------------------------
     # MAP RENDERING UTILITY INJECTION WITH DYNAMIC TIME-BASED COLORS
@@ -315,7 +330,6 @@ else:
                         let recordDate = b[dCol];
                         let isDone = b[sCol] === 'completed' || b[sCol] === 'yellow' || b[sCol] === 'green';
                         
-                        // Default Base Color State Configuration Node
                         ctx.fillStyle = '#2563eb'; // Blue - Pending
                         
                         if (isDone) {{
@@ -338,7 +352,7 @@ else:
                 }}
                 
                 function runFieldSubmission(clientX, clientY) {{
-                    if(historyDate) return; // Freeze clicking inside history modes
+                    if(historyDate) return; 
                     const rect = canvas.getBoundingClientRect();
                     const cx = (clientX - rect.left - offsetX) / scale / colMultiplier;
                     const cy = (clientY - rect.top - offsetY) / scale / rowMultiplier;
@@ -397,7 +411,6 @@ else:
         
         st.info(f"📐 **Calculation Run-Rate Matrix Parameters:** Start: {sd} | End: {ed} | Available Workdays: {total_w_days} Weekdays | Total Zone Units: {structures_total} | Target: **{target_per_day} / Day**")
         
-        # Build Weekday Dynamic Date Arrays
         rows = []
         curr = sd
         while curr <= ed:
@@ -411,7 +424,7 @@ else:
                 })
             curr += timedelta(days=1)
             
-        st.table(rows[:5]) # Display clean localized tabular interface summary row
+        st.table(rows[:5])
         
     @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
@@ -428,24 +441,24 @@ else:
         with tab_object:
             st.markdown(f"### {tab_object.label} Interactive Visualizer Workspace")
             
-            # Manual data sync trigger reload button
             if st.button("🔄 Refresh Structural States Link", key=f"sync_btn_{unique_key}"):
                 st.cache_data.clear()
                 st.rerun()
                 
-            # Historical Date Travel Widget Override Checkbox
             hist_date = None
-            if st.checkbox(f"¼ Render History Record (Select Date to travel map time layout)", key=f"hist_cb_{unique_key}"):
+            if st.checkbox(f"📅 Render History Record (Select Date to travel map time layout)", key=f"hist_cb_{unique_key}"):
                 hist_date = st.date_input("Select Historical Tracking Day target:", value=date.today(), key=f"hist_d_{unique_key}")
             
-            # Load active structural lists
             components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=550)
             
-            # Safe zone pull to prevent missing database table crashes
             try:
                 loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             except Exception:
                 loaded_zones = []
+                
+            if loaded_zones:
+                for zone in loaded_zones:
+                    render_production_scheduler_ledger(tab_object.label, zone, len(active_table_data))
             else:
                 st.warning("No construction scheduling zones have been initialized by the administrator for this site platform yet.")
 

@@ -4,9 +4,9 @@ import openpyxl
 from supabase import create_client, Client
 import json
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
-# Pre-loaded live project credentials
+# Enterprise Database Credentials Bridge
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
 
@@ -16,187 +16,252 @@ def get_supabase_client():
 
 supabase: Client = get_supabase_client()
 
-st.set_page_config(layout="wide", page_title="Universal Solar Twin Cloud")
-st.title("🚜 Universal Solar Farm EPC Digital Twin Platform")
+# Set Global Wide View Constraints
+st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
-# --- PHASE 1: SYSTEM DYNAMIC MULTI-SITE SELECTOR HUB ---
+# Helper function to compute business days (weekdays only)
+def get_working_days(start_d, end_d):
+    days = 0
+    curr = start_d
+    while curr <= end_d:
+        if curr.weekday() < 5:  # Monday to Friday
+            days += 1
+        curr += timedelta(days=1)
+    return max(days, 1)
+
+# Initialize Session State States
+if "active_site_id" not in st.session_state:
+    st.session_state.active_site_id = None
+if "is_admin_mode" not in st.session_state:
+    st.session_state.is_admin_mode = False
+
+# Fetch all registered site platforms from cloud registry
 @st.cache_data(ttl=1)
-def get_available_farms():
+def fetch_farms_directory():
     try:
-        res = supabase.table("farms").select("*").execute()
+        res = supabase.table("farms").select("*").order("name").execute()
         return res.data if res.data else []
     except Exception:
         return []
 
-all_farms = get_available_farms()
-farm_names = [f["name"] for f in all_farms]
+all_registered_farms = fetch_farms_directory()
+farm_options = [f["name"] for f in all_registered_farms]
 
-# Sidebar authentication controller
-with st.sidebar:
-    st.header("🌐 Project Site Selector Hub")
-    onboarding_mode = st.checkbox("➕ Onboard / Upload New Solar Site Layout")
+# ==============================================================================
+# 🏡 PHASE 1: MAIN SYSTEM HOME SCREEN GATEWAY
+# ==============================================================================
+if st.session_state.active_site_id is None:
+    st.title("🚜 Boon Solar Farm Tracking System")
+    st.write("---")
     
-    selected_farm_id = None
-    user_authenticated = False
-    is_admin = False
-    
-    if not onboarding_mode and farm_names:
-        chosen_site_name = st.selectbox("Select Active Work Location Site:", farm_names)
-        current_site_data = next(f for f in all_farms if f["name"] == chosen_site_name)
-        selected_farm_id = current_site_data["id"]
-        
-        expected_site_pass = current_site_data.get("site_password") or "1234"
-        expected_admin_pass = current_site_data.get("admin_password") or "ok"
-        
-        site_pwd = st.text_input("Enter Field Installer Password:", type="password", key="site_pwd")
-        if str(site_pwd) == str(expected_site_pass):
-            user_authenticated = True
-            st.success("🔓 Site Access Granted")
-            
-            admin_pwd = st.text_input("Elevate to Administrator Mode (Optional):", type="password", key="admin_pwd")
-            if str(admin_pwd) == str(expected_admin_pass):
-                is_admin = True
-                st.info("⚡ Admin Clearances Active")
-        elif site_pwd:
-            st.error("Incorrect Installer password credential.")
-    elif not farm_names and not onboarding_mode:
-        st.warning("No sites stored in cloud directory. Check the checkbox above to onboard your first layout file!")
-
-# --- PHASE 2: AUTOMATED LAYOUT FILENAME UPLOADER ---
-if onboarding_mode:
-    st.header("🚀 Blueprint Template Onboarding Console")
-    st.write("Upload your engineering layout spreadsheet (.xlsx file).")
-    
-    uploaded_file = st.file_uploader("Drop your blueprint file here", type=["xlsx"])
-    if uploaded_file:
-        raw_filename = uploaded_file.name.rsplit('.', 1)[0]
-        st.info(f"Detected Project Asset Label: **{raw_filename}**")
-        
-        col_p1, col_p2 = st.columns(2)
-        with col_p1: new_s_pass = st.text_input("Set Installer Password for this site:", value="1234")
-        with col_p2: new_a_pass = st.text_input("Set Admin Password for this site:", value="ok")
-        
-        if st.button(f"Compile & Deploy {raw_filename} To Enterprise Cloud"):
-            with st.spinner("Parsing grid coordinate boundaries safely..."):
-                wb = openpyxl.load_workbook(uploaded_file, data_only=True)
-                sheet = wb.active
+    # ⚙️ SIDEBAR DEVELOPER GATEWAY
+    with st.sidebar:
+        with st.expander("⚙️ Developer Master Control Panel", expanded=False):
+            dev_pwd = st.text_input("Enter Developer Password:", type="password")
+            if dev_pwd == "devok":
+                st.success("Developer Access Unlocked")
+                st.subheader("🚀 Onboard New Solar Site Node")
+                new_site_name = st.text_input("Assign Site Project Name (e.g., Maya 1 Layout):")
+                init_admin_pwd = st.text_input("Assign Admin Management Password:", value="ok")
+                init_inst_pwd = st.text_input("Assign Installer Access Password:", value="1234")
                 
-                # Clean old matching farm records
-                try:
-                    supabase.table("farms").delete().eq("name", raw_filename).execute()
-                except Exception:
-                    pass
+                uploaded_blueprint = st.file_uploader("Drop Master Engineering Grid Sheet (.xlsx)", type=["xlsx"])
                 
-                # Secure registration payload
-                try:
-                    farm_res = supabase.table("farms").insert({
-                        "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
-                    }).execute()
-                except Exception:
-                    farm_res = supabase.table("farms").insert({"name": raw_filename}).execute()
-                
-                if farm_res.data:
-                    new_farm_id = farm_res.data[0]["id"]
-                else:
-                    st.error("Cloud insertion rejected.")
-                    st.stop()
-                
-                max_rows, max_cols = sheet.max_row, sheet.max_column
-                visited = set()
-                table_counter = 1
-                structures_batch = []
-                
-                for r in range(1, max_rows + 1):
-                    for c in range(1, max_cols + 1):
-                        cell = sheet.cell(row=r, column=c)
-                        has_border = cell.border and ((cell.border.top and cell.border.top.style) or (cell.border.left and cell.border.left.style))
+                if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Layout Grid"):
+                    with st.spinner("Processing master boundary geometries..."):
+                        wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
+                        sheet = wb.active
                         
-                        if has_border and (r, c) not in visited:
-                            block_cells = []
-                            queue = [(r, c)]
-                            visited.add((r, c))
-                            
-                            while queue:
-                                curr_r, curr_c = queue.pop(0)
-                                block_cells.append((curr_r, curr_c))
-                                for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-                                    nr, nc = curr_r + dr, curr_c + dc
-                                    if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
-                                        n_cell = sheet.cell(row=nr, column=nc)
-                                        if n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or (n_cell.border.left and n_cell.border.left.style)):
-                                            visited.add((nr, nc))
-                                            queue.append((nr, nc))
-                            
-                            b_rows = [item[0] for item in block_cells]
-                            b_cols = [item[1] for item in block_cells]
-                            min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
-                            
-                            h, w = max_br - min_br + 1, max_bc - min_bc + 1
-                            stype = "double_6x9" if h >= 6 else "single_3x9"
-                            
-                            structures_batch.append({
-                                "farm_id": new_farm_id, 
-                                "table_label": f"{raw_filename}-T{table_counter}",
-                                "min_r": int(min_br), "max_r": int(max_br), 
-                                "min_c": int(min_bc), "max_c": int(max_bc),
-                                "structure_type": stype
-                            })
-                            table_counter += 1
-                
-                if structures_batch:
-                    # SAFE CHUNKING MECHANISM: Upload in tiny batches of 50 to avoid network payload limits
-                    chunk_size = 50
-                    progress_bar = st.progress(0)
-                    total_chunks = len(structures_batch)
-                    
-                    for i in range(0, total_chunks, chunk_size):
-                        chunk = structures_batch[i:i+chunk_size]
+                        # Wipe duplicate layout assets safely
                         try:
-                            supabase.table("structures").insert(chunk).execute()
-                            time.sleep(0.05) # Brief pause to prevent database network throttling
-                        except Exception as e:
-                            st.error(f"Database write interrupted at position {i}: {str(e)}")
-                            st.stop()
+                            supabase.table("farms").delete().eq("name", new_site_name).execute()
+                        except Exception:
+                            pass
                         
-                        # Update progress tracking
-                        pct = min((i + chunk_size) / total_chunks, 1.0)
-                        progress_bar.progress(pct)
+                        farm_node = supabase.table("farms").insert({
+                            "name": new_site_name,
+                            "admin_password": init_admin_pwd,
+                            "installer_password": init_inst_pwd
+                        }).execute()
                         
-                    st.success(f"Success! {len(structures_batch)} tables cleanly registered to cloud.")
-                    st.cache_data.clear()
-                    st.after_loops_reset = True
-                    st.rerun()
+                        if farm_node.data:
+                            new_fid = farm_node.data[0]["id"]
+                            
+                            max_rows, max_cols = sheet.max_row, sheet.max_column
+                            visited = set()
+                            table_counter = 1
+                            structures_queue = []
+                            
+                            # Standard cell block cluster trace
+                            for r in range(1, max_rows + 1):
+                                for c in range(1, max_cols + 1):
+                                    cell = sheet.cell(row=r, column=c)
+                                    has_border = cell.border and ((cell.border.top and cell.border.top.style) or (cell.border.left and cell.border.left.style))
+                                    
+                                    if has_border and (r, c) not in visited:
+                                        block_cells = []
+                                        queue = [(r, c)]
+                                        visited.add((r, c))
+                                        
+                                        while queue:
+                                            curr_r, curr_c = queue.pop(0)
+                                            block_cells.append((curr_r, curr_c))
+                                            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                                                nr, nc = curr_r + dr, curr_c + dc
+                                                if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
+                                                    n_cell = sheet.cell(row=nr, column=nc)
+                                                    if n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or (n_cell.border.left and n_cell.border.left.style)):
+                                                        visited.add((nr, nc))
+                                                        queue.append((nr, nc))
+                                        
+                                        b_rows = [item[0] for item in block_cells]
+                                        b_cols = [item[1] for item in block_cells]
+                                        min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
+                                        
+                                        h = max_br - min_br + 1
+                                        stype = "double_6x9" if h >= 6 else "single_3x9"
+                                        
+                                        structures_queue.append({
+                                            "farm_id": new_fid,
+                                            "table_label": f"T-{table_counter}",
+                                            "min_r": int(min_br), "max_r": int(max_br),
+                                            "min_c": int(min_bc), "max_c": int(max_bc),
+                                            "structure_type": stype
+                                        })
+                                        table_counter += 1
+                            
+                            # Safe Chunk Streamer Module to beat server limits
+                            chunk_size = 50
+                            for idx in range(0, len(structures_queue), chunk_size):
+                                supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
+                                time.sleep(0.04)
+                                
+                            st.success(f"Successfully deployed {len(structures_queue)} Tables to {new_site_name}!")
+                            st.cache_data.clear()
+                            st.rerun()
 
-# --- PHASE 3: ISOLATED WORKSPACE VIEWPORT RENDERING ---
-elif user_authenticated and selected_farm_id:
-    if st.button("🔄 Refresh Map Data Dashboard Lines"):
-        st.cache_data.clear()
-        st.rerun()
-
-    @st.cache_data(ttl=1)
-    def load_site_isolated_tables(farm_id):
-        res = supabase.table("structures").select("id, min_r, max_r, min_c, max_c, table_label, structure_type, pegging_status, piling_status, mounting_status, dc_cabling_status").eq("farm_id", farm_id).execute()
-        return res.data if res.data else []
-
-    active_table_data = load_site_isolated_tables(selected_farm_id)
-    
-    def render_map_script(layer_id, data_points):
-        json_str = json.dumps(data_points)
+    # CENTRAL LANDING ROUTER INTERFACE
+    st.subheader("🌐 Access Site Workspace Portal")
+    if farm_options:
+        chosen_farm_name = st.selectbox("Select Active Project Location Site:", farm_options)
+        target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
         
-        status_column = "pegging_status"
-        if layer_id == "pil": status_column = "piling_status"
-        elif layer_id == "mnt": status_column = "mounting_status"
-        elif layer_id == "cab": status_column = "dc_cabling_status"
+        entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
+        
+        if st.button("🚀 Open Digital Twin Workspace"):
+            expected_pass = target_site_record.get("installer_password") or "1234"
+            if str(entered_inst_pass) == str(expected_pass):
+                st.session_state.active_site_id = target_site_record["id"]
+                st.session_state.active_site_name = target_site_record["name"]
+                st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
+                st.rerun()
+            else:
+                st.error("Invalid credentials entered for this workspace instance.")
+    else:
+        st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
+
+# ==============================================================================
+# 🗂️ PHASE 2: INTERNAL SOLAR FARM SITE WORKSPACE COMMAND ROOM
+# ==============================================================================
+else:
+    # Top Sticky Navigation Head
+    col_h1, col_h2 = st.columns([8, 2])
+    with col_h1:
+        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
+    with col_h2:
+        if st.button("🚪 Exit Site"):
+            st.session_state.active_site_id = None
+            st.session_state.is_admin_mode = False
+            st.rerun()
+            
+    # ADMIN GATE UPGRADE CONTROLLER SIDEBAR
+    with st.sidebar:
+        st.header("🔐 Workspace Clearances")
+        if not st.session_state.is_admin_mode:
+            adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
+            if st.button("Verify Admin Status"):
+                if str(adm_pass) == str(st.session_state.admin_key_match):
+                    st.session_state.is_admin_mode = True
+                    st.success("Admin Elevation Granted")
+                    st.rerun()
+                else:
+                    st.error("Incorrect Administration Password.")
+        else:
+            st.info("⚡ Admin Permissions Active")
+            
+            # --- ADMIN CONSOLE SUBSYSTEM PANELS ---
+            st.subheader("🛠️ Admin Parameters")
+            
+            # 1. Update Project Image Url Link
+            new_img = st.text_input("Set Overview Image URL:")
+            if new_img and st.button("Save Image URL"):
+                supabase.table("farms").update({"overview_image_url": new_img}).eq("id", st.session_state.active_site_id).execute()
+                st.success("Overview picture saved.")
+                
+            # 2. Update Installer Password Entry Guard
+            new_inst_p = st.text_input("Change Installer Password:", value="1234")
+            if st.button("Save New Field Password"):
+                supabase.table("farms").update({"installer_password": new_inst_p}).eq("id", st.session_state.active_site_id).execute()
+                st.success("Password configured.")
+                
+            # 3. Dynamic Management Zone Builder Configuration Panel
+            with st.expander("➕ Define Site Construction Zone", expanded=False):
+                z_name = st.text_input("Zone Label (e.g., Zone A):")
+                z_start = st.date_input("Planned Start Date:", value=date.today())
+                z_end = st.date_input("Target Finish Date:", value=date.today() + timedelta(days=30))
+                
+                if st.button("Initialize Zone Frame"):
+                    w_days = get_working_days(z_start, z_end)
+                    supabase.table("zones").insert({
+                        "farm_id": st.session_state.active_site_id,
+                        "name": z_name, "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days
+                    }).execute()
+                    st.success(f"{z_name} initialized cleanly.")
+                    st.rerun()
+                    
+            if st.button("🔒 Revoke Admin Clearances"):
+                st.session_state.is_admin_mode = False
+                st.rerun()
+
+    # Fetch fresh runtime attributes for maps and schedulers
+    current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
+    
+    # MASTER HORIZONTAL TAB NAVIGATION SYSTEM LAYOUT
+    t_over, t_peg, t_pil, t_mnt, t_mod, t_inv_str, t_inv_hub, t_trans, t_dc_cab, t_ac_cab = st.tabs([
+        "🖼️ Overview", "📌 Pegging", "🪵 Piling", "🏗️ Mounting Structure", "☀️ PV Modules", 
+        "🏗️ Inverter Structure", "⚡ Inverter Hub", "🏪 Transformer Station", "🔌 DC Cabling", "⚡ AC Cabling"
+    ])
+
+    # --------------------------------------------------------------------------
+    # TAB 1: SITE WORKSPACE OVERVIEW
+    # --------------------------------------------------------------------------
+    with t_over:
+        st.markdown("### 🖼️ Master Site Overview Infrastructure")
+        img_src = current_farm_record.get("overview_image_url")
+        if img_src:
+            st.image(img_src, caption=f"Active Structural Blueprint View for {st.session_state.active_site_name}", use_column_width=True)
+        else:
+            st.warning("No custom site blueprint image has been configured by the administrator yet. Enter Admin mode in the sidebar to paste an image URL path.")
+
+    # --------------------------------------------------------------------------
+    # MAP RENDERING UTILITY INJECTION WITH DYNAMIC TIME-BASED COLORS
+    # --------------------------------------------------------------------------
+    def inject_time_based_map(layer_key, data_array, selected_history_date=None):
+        json_points = json.dumps(data_array)
+        today_str = str(date.today())
+        history_target = str(selected_history_date) if selected_history_date else "null"
         
         return f"""
-        <div style="background:#090d16; padding:12px; border-radius:12px; color:#fff; font-family:sans-serif; touch-action:none;">
-            <canvas id="canvas_{layer_id}" width="1500" height="520" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
+        <div style="background:#090d16; padding:12px; border-radius:12px; touch-action:none;">
+            <canvas id="cv_{layer_key}" width="1500" height="420" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
         </div>
         <script>
             (function() {{
-                const blocks = {json_str};
-                const canvas = document.getElementById("canvas_{layer_id}");
+                const blocks = {json_points};
+                const canvas = document.getElementById("cv_{layer_key}");
                 const ctx = canvas.getContext('2d');
+                const todayVal = "{today_str}";
+                const historyDate = {history_target};
                 
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 blocks.forEach(b => {{
@@ -206,77 +271,77 @@ elif user_authenticated and selected_farm_id:
                 
                 const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
                 const colMultiplier = 1.8;
-                const rowMultiplier = 45.0; 
+                const rowMultiplier = 45.0;
                 
-                let scale = Math.min((canvas.width - 80) / (gw * colMultiplier), (canvas.height - 80) / (gh * rowMultiplier));
-                if(scale < 0.001 || scale === Infinity) scale = 0.3;
+                let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
+                if(scale<0.001||scale===Infinity) scale=0.3;
                 
-                let offsetX = (canvas.width / 2) - ((gw * colMultiplier * scale) / 2) - (minX * colMultiplier * scale);
-                let offsetY = (canvas.height / 2) - ((gh * rowMultiplier * scale) / 2) - (minY * rowMultiplier * scale);
+                let offsetX = (canvas.width/2)-((gw*colMultiplier*scale)/2)-(minX*colMultiplier*scale);
+                let offsetY = (canvas.height/2)-((gh*rowMultiplier*scale)/2)-(minY*rowMultiplier*scale);
                 
-                let isDragging = false, moved = false, startX, startY, initialDist = null;
+                let isDragging = false, moved = false, startX, startY;
 
                 function draw() {{
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                    ctx.save(); 
-                    ctx.translate(offsetX, offsetY); 
-                    ctx.scale(scale, scale);
+                    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                     
                     blocks.forEach(b => {{
-                        let status = 'pending';
-                        if("{layer_id}" === "peg") status = b.pegging_status;
-                        else if("{layer_id}" === "pil") status = b.piling_status;
-                        else if("{layer_id}" === "mnt") status = b.mounting_status;
-                        else if("{layer_id}" === "cab") status = b.dc_cabling_status;
+                        let dCol = "pegging_date", sCol = "pegging_status";
+                        if("{layer_key}" === "pil") {{ dCol="piling_date"; sCol="piling_status"; }}
+                        else if("{layer_key}" === "mnt") {{ dCol="mounting_date"; sCol="mounting_status"; }}
+                        else if("{layer_key}" === "mod") {{ dCol="modules_date"; sCol="modules_status"; }}
+                        else if("{layer_id}" === "cab") {{ dCol="cabling_date"; sCol="cabling_status"; }}
                         
-                        ctx.fillStyle = status === 'completed' ? '#22c55e' : '#2563eb';
+                        let recordDate = b[dCol];
+                        let isDone = b[sCol] === 'completed' || b[sCol] === 'yellow' || b[sCol] === 'green';
+                        
+                        // Default Base Color State Configuration Node
+                        ctx.fillStyle = '#2563eb'; // Blue - Pending
+                        
+                        if (isDone) {{
+                            if (historyDate) {{
+                                if (recordDate === historyDate) ctx.fillStyle = '#u22c55e'; // Green historical highlight
+                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e';
+                                else ctx.fillStyle = '#2563eb';
+                            }} else {{
+                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; // Yellow - Built Today
+                                else ctx.fillStyle = '#22c55e'; // Green - Built Previously
+                            }}
+                        }}
                         
                         const x = b.min_c * colMultiplier;
                         const y = b.min_r * rowMultiplier;
-                        const w = (b.max_c - b.min_c + 1) * colMultiplier - 0.4;
-                        const h = (b.max_r - b.min_r + 1) * rowMultiplier - 2.0;
-                        
-                        ctx.fillRect(x, y, w, h);
-                        ctx.strokeStyle = '#ffffff'; 
-                        ctx.lineWidth = 0.15; 
-                        ctx.strokeRect(x, y, w, h);
+                        ctx.fillRect(x, y, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.12; ctx.strokeRect(x, y, (b.max_c-b.min_c+1)*colMultiplier, (b.max_r-b.min_r+1)*rowMultiplier);
                     }});
                     ctx.restore();
                 }}
                 
-                function handleTap(clientX, clientY) {{
+                function runFieldSubmission(clientX, clientY) {{
                     const rect = canvas.getBoundingClientRect();
-                    const canvasX = clientX - rect.left;
-                    const canvasY = clientY - rect.top;
-                    
-                    const worldX = (canvasX - offsetX) / scale;
-                    const worldY = (canvasY - offsetY) / scale;
+                    const cx = (clientX - rect.left - offsetX) / scale / colMultiplier;
+                    const cy = (clientY - rect.top - offsetY) / scale / rowMultiplier;
                     
                     blocks.forEach(b => {{
-                        const x = b.min_c * colMultiplier;
-                        const y = b.min_r * rowMultiplier;
-                        const w = (b.max_c - b.min_c + 1) * colMultiplier;
-                        const h = (b.max_r - b.min_r + 1) * rowMultiplier;
-                        
-                        if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {{
-                            const bodyPayload = {{}};
-                            bodyPayload["{status_column}"] = "completed";
+                        if (cx >= b.min_c && cx <= b.max_c + 1 && cy >= b.min_r && cy <= b.max_r + 1) {{
+                            let targetCol = "pegging_status", dateCol = "pegging_date";
+                            if("{layer_key}" === "pil") {{ targetCol="piling_status"; dateCol="piling_date"; }}
+                            else if("{layer_key}" === "mnt") {{ targetCol="mounting_status"; dateCol="mounting_date"; }}
+                            else if("{layer_key}" === "mod") {{ targetCol="modules_status"; dateCol="modules_date"; }}
+                            else if("{layer_key}" === "cab") {{ targetCol="cabling_status"; dateCol="cabling_date"; }}
+                            
+                            const payload = {{}};
+                            payload[targetCol] = "completed";
+                            payload[dateCol] = todayVal;
                             
                             fetch("{SUPABASE_URL}/rest/v1/structures?id=eq." + b.id, {{
                                 method: "PATCH",
                                 headers: {{
-                                    "apikey": "{SUPABASE_KEY}",
-                                    "Authorization": "Bearer {SUPABASE_KEY}",
-                                    "Content-Type": "application/json",
-                                    "Prefer": "return=minimal"
+                                    "apikey": "{SUPABASE_KEY}", "Authorization": "Bearer {SUPABASE_KEY}",
+                                    "Content-Type": "application/json", "Prefer": "return=minimal"
                                 }},
-                                body: JSON.stringify(bodyPayload)
+                                body: JSON.stringify(payload)
                             }}).then(() => {{
-                                if("{layer_id}" === "peg") b.pegging_status = "completed";
-                                else if("{layer_id}" === "pil") b.piling_status = "completed";
-                                else if("{layer_id}" === "mnt") b.mounting_status = "completed";
-                                else if("{layer_id}" === "cab") b.dc_cabling_status = "completed";
-                                draw();
+                                b[targetCol] = "completed"; b[dateCol] = todayVal; draw();
                             }});
                         }}
                     }});
@@ -284,76 +349,76 @@ elif user_authenticated and selected_farm_id:
                 
                 canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; moved=false; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
                 canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; moved=true; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
-                window.addEventListener('mouseup',(e)=>{{ 
-                    isDragging=false; 
-                    if(!moved) handleTap(e.clientX, e.clientY);
-                }});
-                canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.15:0.85); draw(); }},{{passive:false}});
+                window.addEventListener('mouseup',(e)=>{{ isDragging=false; if(!moved) runFieldSubmission(e.clientX, e.clientY); }});
+                canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.12:0.88); draw(); }},{{passive:false}});
                 
-                canvas.addEventListener('touchstart',(e)=>{{
-                    moved = false;
-                    if(e.touches.length===1){{ isDragging=true; startX=e.touches[0].clientX-offsetX; startY=e.touches[0].clientY-offsetY; }}
-                    else if(e.touches.length===2){{ isDragging=false; initialDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }}
-                }});
-                canvas.addEventListener('touchmove',(e)=>{{
-                    moved = true;
-                    if(isDragging && e.touches.length===1){{ offsetX=e.touches[0].clientX-startX; offsetY=e.touches[0].clientY-startY; draw(); }}
-                    else if(e.touches.length===2 && initialDist){{
-                        const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-                        scale*=(d>initialDist?1.05:0.95); initialDist=d; draw();
-                    }}
-                }});
-                canvas.addEventListener('touchend',(e)=>{{ 
-                    isDragging=false; initialDist=null; 
-                    if(!moved && e.changedTouches.length > 0) {{
-                        handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-                    }}
-                }});
+                canvas.addEventListener('touchstart',(e)=>{{ moved=false; if(e.touches.length===1){{ isDragging=true; startX=e.touches[0].clientX-offsetX; startY=e.touches[0].clientY-offsetY; }} }});
+                canvas.addEventListener('touchmove',(e)=>{{ moved=true; if(isDragging && e.touches.length===1){{ offsetX=e.touches[0].clientX-startX; offsetY=e.touches[0].clientY-startY; draw(); }} }});
+                canvas.addEventListener('touchend',(e)=>{{ isDragging=false; if(!moved && e.changedTouches.length>0) runFieldSubmission(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }});
                 
                 draw();
             }})();
         </script>
         """
 
-    def render_ledger_dashboard(label, total_count, done_count):
-        st.subheader(f"📊 {label} Phase Tracker Ledger Spreadsheet")
-        st.table([{
-            "Operational Step": f"{label} Progress", "Total Site Volume": f"{total_count:,}",
-            "Verified Complete": f"{done_count:,}", "Remaining Units": f"{total_count - done_count:,}",
-            "Daily Run-Rate Target": f"{round(total_count/44,1)} / Day", "Status Notes": "Active database link live"
-        }])
+    # --------------------------------------------------------------------------
+    # PRODUCTION SCHEDULE LEDGER ENGINE (WEEKDAYS FRAMEWORK GENERATOR)
+    # --------------------------------------------------------------------------
+    def render_production_scheduler_ledger(layer_name, zone_data, structures_total):
+        st.write(f"#### 📅 Production Target Schedule Ledger — {zone_data['name']}")
+        
+        sd = datetime.strptime(zone_data["start_date"], "%Y-%m-%d").date()
+        ed = datetime.strptime(zone_data["end_date"], "%Y-%m-%d").date()
+        total_w_days = zone_data["total_weekdays"]
+        
+        target_per_day = round(structures_total / total_w_days, 1)
+        
+        st.info(f"📐 **Calculation Run-Rate Matrix Parameters:** Start: {sd} | End: {ed} | Available Workdays: {total_w_days} Weekdays | Total Zone Units: {structures_total} | Target: **{target_per_day} / Day**")
+        
+        # Build Weekday Dynamic Date Arrays
+        rows = []
+        curr = sd
+        while curr <= ed:
+            if curr.weekday() < 5:
+                rows.append({
+                    "Date Tracker": str(curr),
+                    "Verified Installed": 0,
+                    "Daily Target Pace": target_per_day,
+                    "Variance Matrix Offset": 0,
+                    "Live Remarks Log": ""
+                })
+            curr += timedelta(days=1)
+            
+        st.table(rows[:5]) # Display clean localized tabular interface summary row
+        
+    # Generate the shared tab layouts cleanly
+    def process_standard_construction_tab(tab_object, unique_key, layer_field):
+        with tab_object:
+            st.markdown(f"### {tab_object.label} Interactive Visualizer Workspace")
+            
+            # Historical Date Travel Widget Override Checkbox
+            hist_date = None
+            if st.checkbox(f"🕰️ Activate Historical Date Query Travel View", key=f"hist_cb_{unique_key}"):
+                hist_date = st.date_input("Select Historical Tracking Day target:", value=date.today(), key=f"hist_d_{unique_key}")
+            
+            # Load active structural lists
+            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=550)
+            
+            # Handle Ledger Scheduler calculations for zones
+            loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            if loaded_zones:
+                for zone in loaded_zones:
+                    render_production_scheduler_ledger(tab_object.label, zone, len(active_table_data))
+            else:
+                st.warning("No construction scheduling zones have been initialized by the administrator for this site platform yet.")
 
-    t_peg, t_pil, t_mnt, t_mod, t_cab = st.tabs(["📌 Pegging Stage", "🪵 Piling Stage", "🏗️ Mounting Structure", "☀️ PV Module Large Grid", "🔌 DC Cabling Matrix"])
-    total_t = len(active_table_data)
-    
-    with t_peg:
-        st.header("📌 Pegging Tracking Viewport")
-        done = sum(1 for b in active_table_data if b.get("pegging_status") == "completed")
-        if active_table_data: components.html(render_map_script("peg", active_table_data), height=550)
-        render_ledger_dashboard("Pegging", total_t * 12, done * 12)
-        
-    with t_pil:
-        st.header("🪵 Piling Foundation Viewport")
-        done = sum(1 for b in active_table_data if b.get("piling_status") == "completed")
-        if active_table_data: components.html(render_map_script("pil", active_table_data), height=550)
-        render_ledger_dashboard("Piling", total_t * 12, done * 12)
-        
-    with t_mnt:
-        st.header("🏗️ Mounting Frame Tracker")
-        done = sum(1 for b in active_table_data if b.get("mounting_status") == "completed")
-        if active_table_data: components.html(render_map_script("mnt", active_table_data), height=550)
-        render_ledger_dashboard("Mounting Structures", total_t, done)
-        
-    with t_mod:
-        st.header("☀️ PV Module Scale Mapping")
-        if active_table_data: components.html(render_map_script("mod", active_table_data), height=550)
-        render_ledger_dashboard("PV Modules Mounted", total_t * 54, 0)
-        
-    with t_cab:
-        st.header("🔌 DC Cabling Layout Interconnection")
-        done = sum(1 for b in active_table_data if b.get("dc_cabling_status") == "completed")
-        if active_table_data: components.html(render_map_script("cab", active_table_data), height=550)
-        render_ledger_dashboard("DC Cabling Matrix Blocks", total_t, done)
-        
-else:
-    st.info("🔒 Please select a work location site and insert the valid security credentials to populate the interactive digital twin layout blueprint mapping screens.")
+    # Execute and thread layout models safely
+    process_standard_construction_tab(t_peg, "peg", "pegging_status")
+    process_standard_construction_tab(t_pil, "pil", "piling_status")
+    process_standard_construction_tab(t_mnt, "mnt", "mounting_status")
+    process_standard_construction_tab(t_mod, "mod", "modules_status")
+    process_standard_construction_tab(t_inv_str, "istr", "mounting_status")
+    process_standard_construction_tab(t_inv_hub, "ihub", "mounting_status")
+    process_standard_construction_tab(t_trans, "tran", "mounting_status")
+    process_standard_construction_tab(t_dc_cab, "dcab", "cabling_status")
+    process_standard_construction_tab(t_ac_cab, "acab", "cabling_status")

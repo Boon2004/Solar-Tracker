@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 
 # Enterprise Database Credentials Bridge
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
 
 @st.cache_resource
 def get_supabase_client():
@@ -211,7 +211,7 @@ else:
 
         if st.session_state.is_admin_mode:
             st.markdown("---")
-            st.info("🎨 **Admin Visual Painter Mode Active:** Select a destination target zone, then click blocks on the interactive layout map grid to assign them directly!")
+            st.info("🎨 Admin Visual Painter Mode Active: Select a target zone, then click blocks on the map to paint them.")
             target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
             
             json_str = json.dumps(active_table_data)

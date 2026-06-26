@@ -19,7 +19,7 @@ st.set_page_config(layout="wide", page_title="Universal Solar Twin Cloud")
 st.title("🚜 Universal Solar Farm EPC Digital Twin Platform")
 
 # --- PHASE 1: SYSTEM DYNAMIC MULTI-SITE SELECTOR HUB ---
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1)
 def get_available_farms():
     try:
         res = supabase.table("farms").select("*").execute()
@@ -80,13 +80,11 @@ if onboarding_mode:
                 wb = openpyxl.load_workbook(uploaded_file, data_only=True)
                 sheet = wb.active
                 
-                # Double-tap security guard: clear old matching site rows cleanly
                 try:
                     supabase.table("farms").delete().eq("name", raw_filename).execute()
                 except Exception:
                     pass
                 
-                # Secure registration payload
                 farm_res = supabase.table("farms").insert({
                     "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
                 }).execute()
@@ -149,9 +147,25 @@ if onboarding_mode:
 
 # --- PHASE 3: ISOLATED WORKSPACE VIEWPORT RENDERING ---
 elif user_authenticated and selected_farm_id:
-    @st.cache_data(ttl=2)
+    # Handle incoming dynamic URL tap parameters from custom JavaScript
+    query_params = st.query_transform() if hasattr(st, "query_transform") else st.experimental_get_query_params()
+    if "clicked_table_id" in query_params and "active_layer" in query_params:
+        target_tid = query_params["clicked_table_id"][0]
+        layer_field = query_params["active_layer"][0]
+        
+        status_column = "pegging_status"
+        if layer_field == "pil": status_column = "piling_status"
+        elif layer_field == "mnt": status_column = "mounting_status"
+        elif layer_field == "cab": status_column = "dc_cabling_status"
+        
+        supabase.table("structures").update({status_column: "completed"}).eq("id", target_tid).execute()
+        st.experimental_set_query_params() # Clear query tags after execution
+        st.cache_data.clear()
+        st.rerun()
+
+    @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
-        res = supabase.table("structures").select("min_r, max_r, min_c, max_c, table_label, structure_type, pegging_status, piling_status, mounting_status, dc_cabling_status").eq("farm_id", farm_id).execute()
+        res = supabase.table("structures").select("id, min_r, max_r, min_c, max_c, table_label, structure_type, pegging_status, piling_status, mounting_status, dc_cabling_status").eq("farm_id", farm_id).execute()
         return res.data if res.data else []
 
     active_table_data = load_site_isolated_tables(selected_farm_id)
@@ -175,7 +189,6 @@ elif user_authenticated and selected_farm_id:
                 }});
                 
                 const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                
                 const colMultiplier = 1.8;
                 const rowMultiplier = 45.0; 
                 
@@ -185,7 +198,7 @@ elif user_authenticated and selected_farm_id:
                 let offsetX = (canvas.width / 2) - ((gw * colMultiplier * scale) / 2) - (minX * colMultiplier * scale);
                 let offsetY = (canvas.height / 2) - ((gh * rowMultiplier * scale) / 2) - (minY * rowMultiplier * scale);
                 
-                let isDragging = false, startX, startY, initialDist = null;
+                let isDragging = false, moved = false, startX, startY, initialDist = null;
 
                 function draw() {{
                     ctx.clearRect(0, 0, canvas.width, canvas.height); 
@@ -215,23 +228,64 @@ elif user_authenticated and selected_farm_id:
                     ctx.restore();
                 }}
                 
-                canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
-                canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
-                window.addEventListener('mouseup',()=>isDragging=false);
+                function handleTap(clientX, clientY) {{
+                    const rect = canvas.getBoundingClientRect();
+                    const canvasX = clientX - rect.left;
+                    const canvasY = clientY - rect.top;
+                    
+                    // Transform pixel point screen taps back into spatial map data positions
+                    const worldX = (canvasX - offsetX) / scale;
+                    const worldY = (canvasY - offsetY) / scale;
+                    
+                    blocks.forEach(b => {{
+                        const x = b.min_c * colMultiplier;
+                        const y = b.min_r * rowMultiplier;
+                        const w = (b.max_c - b.min_c + 1) * colMultiplier;
+                        const h = (b.max_r - b.min_r + 1) * rowMultiplier;
+                        
+                        if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {{
+                            // Push the exact clicked block index back up to Python
+                            window.parent.postMessage({{
+                                type: 'streamlit:setComponentValue',
+                                value: b.id
+                            }}, '*');
+                            
+                            // Native browser dynamic reload backup bridge
+                            const url = new URL(window.parent.location.href);
+                            url.searchParams.set('clicked_table_id', b.id);
+                            url.searchParams.set('active_layer', "{layer_id}");
+                            window.parent.location.href = url.href;
+                        }}
+                    }});
+                }}
+                
+                canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; moved=false; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
+                canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; moved=true; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
+                window.addEventListener('mouseup',(e)=>{{ 
+                    isDragging=false; 
+                    if(!moved) handleTap(e.clientX, e.clientY);
+                }});
                 canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.15:0.85); draw(); }},{{passive:false}});
                 
                 canvas.addEventListener('touchstart',(e)=>{{
+                    moved = false;
                     if(e.touches.length===1){{ isDragging=true; startX=e.touches[0].clientX-offsetX; startY=e.touches[0].clientY-offsetY; }}
                     else if(e.touches.length===2){{ isDragging=false; initialDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }}
                 }});
                 canvas.addEventListener('touchmove',(e)=>{{
+                    moved = true;
                     if(isDragging && e.touches.length===1){{ offsetX=e.touches[0].clientX-startX; offsetY=e.touches[0].clientY-startY; draw(); }}
                     else if(e.touches.length===2 && initialDist){{
                         const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
                         scale*=(d>initialDist?1.05:0.95); initialDist=d; draw();
                     }}
                 }});
-                canvas.addEventListener('touchend',()=>{{ isDragging=false; initialDist=null; }});
+                canvas.addEventListener('touchend',(e)=>{{ 
+                    isDragging=false; initialDist=null; 
+                    if(!moved && e.changedTouches.length > 0) {{
+                        handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                    }}
+                }});
                 
                 draw();
             }})();

@@ -202,9 +202,6 @@ else:
         if img_src: st.image(img_src, caption="Active Operational Blueprint View", use_column_width=True)
         else: st.warning("No overview picture uploaded by the admin yet.")
 
-    # --------------------------------------------------------------------------
-    # MAP RENDERING UTILITY ENGINE WITH REAL-TIME FLUID DRAWING 
-    # --------------------------------------------------------------------------
     def inject_time_based_map(layer_key, data_array, selected_history_date=None):
         json_points = json.dumps(data_array)
         today_str = str(date.today())
@@ -337,10 +334,9 @@ else:
             curr += timedelta(days=1)
         st.table(rows[:5])
 
-    # CORE PHASE BOUNDARY INITIALIZATION CONTAINER MODULE
     def process_standard_construction_tab(tab_object, label_string, unique_key):
         with tab_object:
-            st.markdown(f"### {label_string} Interactive Workspace Viewport")
+            st.markdown(f"### {label_string} Workspace Viewport")
             
             col_act1, col_act2 = st.columns([3, 7])
             with col_act1:
@@ -353,7 +349,7 @@ else:
                     
             components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
             
-            # --- FULL MANUAL ADMIN ZONE ASSIGNER PORTAL ---
+            # --- FIXED MANUAL ADMINISTRATIVE ZONE ASSIGNER PORTAL ---
             if st.session_state.is_admin_mode:
                 st.markdown("---")
                 with st.expander(f"⚙️ Manual Zone Grouping Console — {label_string}", expanded=False):
@@ -366,22 +362,26 @@ else:
                     
                     if input_blocks and st.button(f"Deploy Custom Grouping to {z_name}", key=f"btn_z_{unique_key}"):
                         w_days = get_working_days(z_start, z_end)
-                        parsed_sections = [s.strip() for s in input_blocks.split(",")]
                         
                         try:
                             supabase.table("zones").insert({
-                                "farm_id": st.session_state.active_site_id, "name": f"{z_name} - {label_string}",
-                                "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days, "phase_milestone": label_string
+                                "farm_id": st.session_state.active_site_id, 
+                                "name": f"{z_name} - {label_string}",
+                                "start_date": str(z_start), 
+                                "end_date": str(z_end), 
+                                "total_weekdays": int(w_days), 
+                                "phase_milestone": label_string
                             }).execute()
-                            st.success(f"Timeline deployed successfully for sections: {', '.join(parsed_sections)}!")
+                            st.success("Timeline metrics deployed successfully!")
                             time.sleep(0.5); st.rerun()
-                        except Exception:
-                            st.info("Timeline metrics populated inside memory pipeline layer.")
+                        except Exception as e:
+                            st.error(f"Failed to save schedule metrics: {str(e)}")
                             
-            # Render corresponding schedulers
+            # Render corresponding schedulers safely
             try:
                 loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).eq("phase_milestone", label_string).execute().data or []
-            except Exception: loaded_zones = []
+            except Exception: 
+                loaded_zones = []
             
             for zone in loaded_zones:
                 render_phase_isolated_ledger(label_string, zone, len(active_table_data))

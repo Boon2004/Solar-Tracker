@@ -119,14 +119,8 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        # AUTOMATED SPATIAL AUTO-LABELLING ENGINE
-                                        sec_label = "A1"
-                                        if min_r < max_rows / 3:
-                                            sec_label = f"B{min(8, 1 + (min_c // 180))}"
-                                        elif min_r < (max_rows * 2) / 3:
-                                            sec_label = f"C{min(6, 1 + (min_c // 240))}"
-                                        else:
-                                            sec_label = f"A{min(2, 1 + (min_c // 300))}"
+                                        # Uniform initialization - Admin assigns groupings dynamically later
+                                        sec_label = "Unassigned"
                                             
                                         h = max_br - min_br + 1
                                         stype = "double_6x9" if h >= 6 else "single_3x9"
@@ -143,7 +137,7 @@ if st.session_state.active_site_id is None:
                                 supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
                                 time.sleep(0.04)
                                 
-                            st.success(f"Successfully deployed {len(structures_queue)} Tables across designated sections!")
+                            st.success(f"Successfully deployed {len(structures_queue)} Tables across the site digital twin matrix!")
                             st.cache_data.clear()
                             st.rerun()
 
@@ -262,16 +256,16 @@ else:
                         let recordDate = b[dCol];
                         let isDone = b[sCol] === 'completed' || b[sCol] === 'yellow' || b[sCol] === 'green';
                         
-                        ctx.fillStyle = '#2563eb'; // Default Blue
+                        ctx.fillStyle = '#2563eb'; 
                         
                         if (isDone) {{
                             if (historyDate) {{
-                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; -- Yellow on that selected history date
-                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e'; -- Green for past
+                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; 
+                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e'; 
                                 else ctx.fillStyle = '#2563eb';
                             }} else {{
-                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; -- Yellow today
-                                else ctx.fillStyle = '#22c55e'; -- Green history
+                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; 
+                                else ctx.fillStyle = '#22c55e'; 
                             }}
                         }}
                         
@@ -359,30 +353,30 @@ else:
                     
             components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
             
-            # --- TAB-LOCALIZED VISUAL AUTOMATIC SECTION ASSIGNMENT PANEL ---
+            # --- FULL MANUAL ADMIN ZONE ASSIGNER PORTAL ---
             if st.session_state.is_admin_mode:
                 st.markdown("---")
-                with st.expander(f"➕ Configure Phase Timeline Target Matrix for {label_string}", expanded=False):
-                    z_name = st.selectbox("Assign To Master Target Zone Identifier:", ["Zone A", "Zone B", "Zone C"], key=f"zn_{unique_key}")
-                    
-                    # Group available sub-sections dynamically
-                    unique_sections = sorted(list(set([b.get('section_block', 'A1') for b in active_table_data if b.get('section_block')])))
-                    selected_blocks = st.multiselect("Select Sub-Sections to Group into this Timeline:", unique_sections, key=f"sb_{unique_key}")
+                with st.expander(f"⚙️ Manual Zone Grouping Console — {label_string}", expanded=False):
+                    z_name = st.selectbox("Select Target Master Zone Grouping:", ["Zone A", "Zone B", "Zone C"], key=f"zn_{unique_key}")
+                    input_blocks = st.text_input("Type Sub-Sections to couple into this Zone (separated by commas, e.g., B3, B4, B5):", key=f"sb_{unique_key}")
                     
                     col_d1, col_d2 = st.columns(2)
                     with col_d1: z_start = st.date_input("Phase Operation Start:", value=date.today(), key=f"zs_{unique_key}")
                     with col_d2: z_end = st.date_input("Phase Operation End:", value=date.today()+timedelta(days=15), key=f"ze_{unique_key}")
                     
-                    if selected_blocks and st.button(f"Deploy {z_name} Timeline Trackers", key=f"btn_z_{unique_key}"):
+                    if input_blocks and st.button(f"Deploy Custom Grouping to {z_name}", key=f"btn_z_{unique_key}"):
                         w_days = get_working_days(z_start, z_end)
+                        parsed_sections = [s.strip() for s in input_blocks.split(",")]
+                        
                         try:
                             supabase.table("zones").insert({
                                 "farm_id": st.session_state.active_site_id, "name": f"{z_name} - {label_string}",
                                 "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days, "phase_milestone": label_string
                             }).execute()
-                            st.success("Target production schedule deployed successfully!"); time.sleep(0.5); st.rerun()
+                            st.success(f"Timeline deployed successfully for sections: {', '.join(parsed_sections)}!")
+                            time.sleep(0.5); st.rerun()
                         except Exception:
-                            st.info("Timeline metrics active inside current cache layer.")
+                            st.info("Timeline metrics populated inside memory pipeline layer.")
                             
             # Render corresponding schedulers
             try:
@@ -390,8 +384,7 @@ else:
             except Exception: loaded_zones = []
             
             for zone in loaded_zones:
-                zone_units = len([b for b in active_table_data if b.get('section_block') in unique_sections])
-                render_phase_isolated_ledger(label_string, zone, zone_units or len(active_table_data))
+                render_phase_isolated_ledger(label_string, zone, len(active_table_data))
 
     # Parallelize tracking matrix layers cleanly
     process_standard_construction_tab(t_peg, "Pegging Stage", "peg")

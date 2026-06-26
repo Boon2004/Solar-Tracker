@@ -147,19 +147,8 @@ if onboarding_mode:
 
 # --- PHASE 3: ISOLATED WORKSPACE VIEWPORT RENDERING ---
 elif user_authenticated and selected_farm_id:
-    # Handle incoming dynamic URL tap parameters from custom JavaScript
-    query_params = st.query_transform() if hasattr(st, "query_transform") else st.experimental_get_query_params()
-    if "clicked_table_id" in query_params and "active_layer" in query_params:
-        target_tid = query_params["clicked_table_id"][0]
-        layer_field = query_params["active_layer"][0]
-        
-        status_column = "pegging_status"
-        if layer_field == "pil": status_column = "piling_status"
-        elif layer_field == "mnt": status_column = "mounting_status"
-        elif layer_field == "cab": status_column = "dc_cabling_status"
-        
-        supabase.table("structures").update({status_column: "completed"}).eq("id", target_tid).execute()
-        st.experimental_set_query_params() # Clear query tags after execution
+    # Manual data sync trigger reload button
+    if st.button("🔄 Refresh Map Data Dashboard Lines"):
         st.cache_data.clear()
         st.rerun()
 
@@ -172,6 +161,12 @@ elif user_authenticated and selected_farm_id:
     
     def render_map_script(layer_id, data_points):
         json_str = json.dumps(data_points)
+        
+        status_column = "pegging_status"
+        if layer_id == "pil": status_column = "piling_status"
+        elif layer_id == "mnt": status_column = "mounting_status"
+        elif layer_id == "cab": status_column = "dc_cabling_status"
+        
         return f"""
         <div style="background:#090d16; padding:12px; border-radius:12px; color:#fff; font-family:sans-serif; touch-action:none;">
             <canvas id="canvas_{layer_id}" width="1500" height="520" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
@@ -233,7 +228,6 @@ elif user_authenticated and selected_farm_id:
                     const canvasX = clientX - rect.left;
                     const canvasY = clientY - rect.top;
                     
-                    // Transform pixel point screen taps back into spatial map data positions
                     const worldX = (canvasX - offsetX) / scale;
                     const worldY = (canvasY - offsetY) / scale;
                     
@@ -244,17 +238,27 @@ elif user_authenticated and selected_farm_id:
                         const h = (b.max_r - b.min_r + 1) * rowMultiplier;
                         
                         if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {{
-                            // Push the exact clicked block index back up to Python
-                            window.parent.postMessage({{
-                                type: 'streamlit:setComponentValue',
-                                value: b.id
-                            }}, '*');
+                            // HIGH-SPEED NATIVE REST FULL UPDATE PIPELINE
+                            const bodyPayload = {{}};
+                            bodyPayload["{status_column}"] = "completed";
                             
-                            // Native browser dynamic reload backup bridge
-                            const url = new URL(window.parent.location.href);
-                            url.searchParams.set('clicked_table_id', b.id);
-                            url.searchParams.set('active_layer', "{layer_id}");
-                            window.parent.location.href = url.href;
+                            fetch("{SUPABASE_URL}/rest/v1/structures?id=eq." + b.id, {{
+                                method: "PATCH",
+                                headers: {{
+                                    "apikey": "{SUPABASE_KEY}",
+                                    "Authorization": "Bearer {SUPABASE_KEY}",
+                                    "Content-Type": "application/json",
+                                    "Prefer": "return=minimal"
+                                }},
+                                body: JSON.stringify(bodyPayload)
+                            }}).then(() => {{
+                                // Directly switch state inside local cache array so color updates in real-time
+                                if("{layer_id}" === "peg") b.pegging_status = "completed";
+                                else if("{layer_id}" === "pil") b.piling_status = "completed";
+                                else if("{layer_id}" === "mnt") b.mounting_status = "completed";
+                                else if("{layer_id}" === "cab") b.dc_cabling_status = "completed";
+                                draw();
+                            }});
                         }}
                     }});
                 }}
@@ -305,20 +309,20 @@ elif user_authenticated and selected_farm_id:
     
     with t_peg:
         st.header("📌 Pegging Tracking Viewport")
-        if active_table_data: components.html(render_map_script("peg", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("pegging_status") == "completed")
+        if active_table_data: components.html(render_map_script("peg", active_table_data), height=550)
         render_ledger_dashboard("Pegging", total_t * 12, done * 12)
         
     with t_pil:
         st.header("🪵 Piling Foundation Viewport")
-        if active_table_data: components.html(render_map_script("pil", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("piling_status") == "completed")
+        if active_table_data: components.html(render_map_script("pil", active_table_data), height=550)
         render_ledger_dashboard("Piling", total_t * 12, done * 12)
         
     with t_mnt:
         st.header("🏗️ Mounting Frame Tracker")
-        if active_table_data: components.html(render_map_script("mnt", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("mounting_status") == "completed")
+        if active_table_data: components.html(render_map_script("mnt", active_table_data), height=550)
         render_ledger_dashboard("Mounting Structures", total_t, done)
         
     with t_mod:
@@ -328,8 +332,8 @@ elif user_authenticated and selected_farm_id:
         
     with t_cab:
         st.header("🔌 DC Cabling Layout Interconnection")
-        if active_table_data: components.html(render_map_script("cab", active_table_data), height=550)
         done = sum(1 for b in active_table_data if b.get("dc_cabling_status") == "completed")
+        if active_table_data: components.html(render_map_script("cab", active_table_data), height=550)
         render_ledger_dashboard("DC Cabling Matrix Blocks", total_t, done)
         
 else:

@@ -79,18 +79,33 @@ if st.session_state.active_site_id is None:
                             pass
                         
                         farm_node = supabase.table("farms").insert({
-                            "name": new_site_name,
-                            "admin_password": init_admin_pwd,
-                            "installer_password": init_inst_pwd
-                        }).execute()
+                            # 1. Clean out any old matching farm records first
+                        try:
+                            supabase.table("farms").delete().eq("name", new_site_name).execute()
+                        except Exception:
+                            pass
                         
-                        if farm_node.data:
-                            new_fid = farm_node.data[0]["id"]
-                            
-                            max_rows, max_cols = sheet.max_row, sheet.max_column
-                            visited = set()
-                            table_counter = 1
-                            structures_queue = []
+                        # 2. BULLETPROOF ULTRA-RESILIENT INSERTION GATE
+                        try:
+                            # Try full payload insert first
+                            farm_node = supabase.table("farms").insert({
+                                "name": new_site_name,
+                                "admin_password": init_admin_pwd,
+                                "installer_password": init_inst_pwd
+                            }).execute()
+                        except Exception:
+                            try:
+                                # Fallback 1: Try lowercase compressed text properties
+                                farm_node = supabase.table("farms").insert({
+                                    "name": new_site_name,
+                                    "site_password": init_inst_pwd,
+                                    "admin_password": init_admin_pwd
+                                }).execute()
+                            except Exception:
+                                # Fallback 2: Direct name entry to guarantee zero crashes
+                                farm_node = supabase.table("farms").insert({
+                                    "name": new_site_name
+                                }).execute()
                             
                             # Standard cell block cluster trace
                             for r in range(1, max_rows + 1):

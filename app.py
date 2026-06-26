@@ -199,7 +199,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     # --------------------------------------------------------------------------
-    # TAB 1: SITE WORKSPACE OVERVIEW (WITH DIRECT SAFE PICTURE LOGIC)
+    # TAB 1: SITE WORKSPACE OVERVIEW
     # --------------------------------------------------------------------------
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
@@ -214,7 +214,6 @@ else:
             st.info("🎨 **Admin Visual Painter Mode Active:** Select a destination target zone, then click blocks on the interactive layout map grid to assign them directly!")
             target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
             
-            # Master Interactive Zone Selection Matrix JavaScript Canvas Code
             json_str = json.dumps(active_table_data)
             html_engine = f"""
             <div style="background:#090d16; padding:12px; border-radius:12px;">
@@ -241,7 +240,6 @@ else:
                     function draw() {{
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => {{
-                            // Self-Healing NULL check to completely prevent black box freeze crashes
                             let az = b.assigned_zone || "Unassigned";
                             if (az === 'Zone A') ctx.fillStyle = '#ff4b4b';      
                             else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; 
@@ -278,7 +276,7 @@ else:
             components.html(html_engine, height=450)
 
     # --------------------------------------------------------------------------
-    # MAP RENDERING UTILITY ENGINE WITH INLINE CRASH FALLBACK GUARDS
+    # MAP RENDERING UTILITY ENGINE
     # --------------------------------------------------------------------------
     def inject_time_based_map(layer_key, data_array, selected_history_date=None):
         json_points = json.dumps(data_array)
@@ -422,7 +420,6 @@ else:
                     
             components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
             
-            # Tab-localized timeline scheduler configurator
             if st.session_state.is_admin_mode:
                 st.markdown("---")
                 with st.expander(f"⚙️ Target Scheduling Parameters — {label_string}", expanded=False):
@@ -436,12 +433,11 @@ else:
                         supabase.table("zones").insert({"farm_id": st.session_state.active_site_id, "name": f"{z_target} - {label_string}", "start_date": str(s_d), "end_date": str(e_d), "total_weekdays": w_days, "phase_milestone": label_string}).execute()
                         st.success("Target timeline logged!"); time.sleep(0.5); st.rerun()
 
-            # Render calculations for active grouped tables
             try: loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).eq("phase_milestone", label_string).execute().data or []
             except Exception: loaded_zones = []
             
             for zone in loaded_zones:
-                zone_tag = zone['name'].split(" - ")[0] # Extracts 'Zone A', etc.
+                zone_tag = zone['name'].split(" - ")[0] 
                 tables_in_zone = len([b for b in active_table_data if b.get('assigned_zone') == zone_tag])
                 render_phase_isolated_ledger(label_string, zone, tables_in_zone)
 

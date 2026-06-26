@@ -19,10 +19,10 @@ st.set_page_config(layout="wide", page_title="Universal Solar Twin Cloud")
 st.title("🚜 Universal Solar Farm EPC Digital Twin Platform")
 
 # --- PHASE 1: SYSTEM DYNAMIC MULTI-SITE SELECTOR HUB ---
-@st.cache_data(ttl=3)
+@st.cache_data(ttl=2)
 def get_available_farms():
     try:
-        res = supabase.table("farms").select("*").execute() # Safe pull all columns
+        res = supabase.table("farms").select("*").execute()
         return res.data if res.data else []
     except Exception:
         return []
@@ -44,11 +44,9 @@ with st.sidebar:
         current_site_data = next(f for f in all_farms if f["name"] == chosen_site_name)
         selected_farm_id = current_site_data["id"]
         
-        # Safe structural dictionary fallback handling for missing schema elements
-        expected_site_pass = current_site_data.get("site_password") or current_site_data.get("site_pwd") or "1234"
-        expected_admin_pass = current_site_data.get("admin_password") or current_site_data.get("admin_pwd") or "ok"
+        expected_site_pass = current_site_data.get("site_password") or "1234"
+        expected_admin_pass = current_site_data.get("admin_password") or "ok"
         
-        # Security Access Gates
         site_pwd = st.text_input("Enter Field Installer Password:", type="password", key="site_pwd")
         if str(site_pwd) == str(expected_site_pass):
             user_authenticated = True
@@ -61,14 +59,14 @@ with st.sidebar:
         elif site_pwd:
             st.error("Incorrect Installer password credential.")
     elif not farm_names and not onboarding_mode:
-        st.warning("No sites stored in database cloud directory. Check the checkbox above to onboard your first layout file!")
+        st.warning("No sites stored in cloud directory. Check the checkbox above to onboard your first layout file!")
 
 # --- PHASE 2: AUTOMATED LAYOUT FILENAME UPLOADER ---
 if onboarding_mode:
     st.header("🚀 Blueprint Template Onboarding Console")
-    st.write("Upload an engineering grid spreadsheet. The software will extract the filename to name the site asset automatically.")
+    st.write("Upload your engineering layout spreadsheet (.xlsx file).")
     
-    uploaded_file = st.file_uploader("Drop your blueprint file here (.xlsx)", type=["xlsx"])
+    uploaded_file = st.file_uploader("Drop your blueprint file here", type=["xlsx"])
     if uploaded_file:
         raw_filename = uploaded_file.name.rsplit('.', 1)[0]
         st.info(f"Detected Project Asset Label: **{raw_filename}**")
@@ -78,29 +76,26 @@ if onboarding_mode:
         with col_p2: new_a_pass = st.text_input("Set Admin Password for this site:", value="ok")
         
         if st.button(f"Compile & Deploy {raw_filename} To Enterprise Cloud"):
-            with st.spinner("Processing template boundaries and computing table matrices..."):
+            with st.spinner("Parsing grid coordinate boundaries safely..."):
                 wb = openpyxl.load_workbook(uploaded_file, data_only=True)
                 sheet = wb.active
                 
-                # Check for duplications
+                # Double-tap security guard: clear old matching site rows cleanly
                 try:
                     supabase.table("farms").delete().eq("name", raw_filename).execute()
                 except Exception:
                     pass
                 
-                # Resilient payload definition
-                farm_payload = {"name": raw_filename}
+                # Secure registration payload
+                farm_res = supabase.table("farms").insert({
+                    "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
+                }).execute()
                 
-                # Safely insert password data to avoid database schema column mismatches
-                try:
-                    farm_res = supabase.table("farms").insert({
-                        "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
-                    }).execute()
-                except Exception:
-                    # Fallback structural payload if custom text parameters aren't configured in columns
-                    farm_res = supabase.table("farms").insert({"name": raw_filename}).execute()
-                
-                new_farm_id = farm_res.data[0]["id"]
+                if farm_res.data:
+                    new_farm_id = farm_res.data[0]["id"]
+                else:
+                    st.error("Cloud insertion rejected. Check table column naming models.")
+                    st.stop()
                 
                 max_rows, max_cols = sheet.max_row, sheet.max_column
                 visited = set()
@@ -128,25 +123,27 @@ if onboarding_mode:
                                             visited.add((nr, nc))
                                             queue.append((nr, nc))
                             
-                            b_rows = [cell[0] for cell in block_cells]
-                            b_cols = [cell[1] for cell in block_cells]
+                            b_rows = [item[0] for item in block_cells]
+                            b_cols = [item[1] for item in block_cells]
                             min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                             
                             h, w = max_br - min_br + 1, max_bc - min_bc + 1
                             stype = "double_6x9" if h >= 6 else "single_3x9"
                             
                             structures_batch.append({
-                                "farm_id": new_farm_id, "table_label": f"{raw_filename}-T{table_counter}",
-                                "min_r": min_br, "max_r": max_br, "min_c": min_bc, "max_c": max_bc,
+                                "farm_id": new_farm_id, 
+                                "table_label": f"{raw_filename}-T{table_counter}",
+                                "min_r": int(min_br), "max_r": int(max_br), 
+                                "min_c": int(min_bc), "max_c": int(max_bc),
                                 "structure_type": stype
                             })
                             table_counter += 1
                 
                 if structures_batch:
-                    chunk_size = 400
+                    chunk_size = 300
                     for i in range(0, len(structures_batch), chunk_size):
                         supabase.table("structures").insert(structures_batch[i:i+chunk_size]).execute()
-                    st.success(f"Successfully deployed project! {len(structures_batch)} structural framing blocks mapped.")
+                    st.success(f"Success! {len(structures_batch)} layout tables cleanly registered to cloud.")
                     st.cache_data.clear()
                     st.rerun()
 
@@ -154,11 +151,8 @@ if onboarding_mode:
 elif user_authenticated and selected_farm_id:
     @st.cache_data(ttl=2)
     def load_site_isolated_tables(farm_id):
-        try:
-            res = supabase.table("structures").select("min_r, max_r, min_c, max_c, table_label, structure_type, pegging_status, piling_status, mounting_status, dc_cabling_status").eq("farm_id", farm_id).execute()
-            return res.data if res.data else []
-        except Exception:
-            return []
+        res = supabase.table("structures").select("min_r, max_r, min_c, max_c, table_label, structure_type, pegging_status, piling_status, mounting_status, dc_cabling_status").eq("farm_id", farm_id).execute()
+        return res.data if res.data else []
 
     active_table_data = load_site_isolated_tables(selected_farm_id)
     
@@ -173,31 +167,49 @@ elif user_authenticated and selected_farm_id:
                 const blocks = {json_str};
                 const canvas = document.getElementById("canvas_{layer_id}");
                 const ctx = canvas.getContext('2d');
+                
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 blocks.forEach(b => {{
                     if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
                     if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
                 }});
+                
                 const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                let scale = Math.min((canvas.width-60)/gw, (canvas.height-60)/gh);
-                if(scale<0.01||scale===Infinity) scale=0.5;
-                let offsetX = (canvas.width/2)-(gw*scale/2)-(minX*scale), offsetY = (canvas.height/2)-(gh*scale/2)-(minY*scale);
+                
+                let scale = Math.min((canvas.width - 100) / gw, (canvas.height - 100) / (gh * 4));
+                if(scale < 0.005 || scale === Infinity) scale = 0.4;
+                
+                let offsetX = (canvas.width / 2) - ((gw * scale) / 2) - (minX * scale);
+                let offsetY = (canvas.height / 2) - ((gh * 4 * scale) / 2) - (minY * 4 * scale);
+                
                 let isDragging = false, startX, startY, initialDist = null;
 
                 function draw() {{
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                    ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                    ctx.save(); 
+                    ctx.translate(offsetX, offsetY); 
+                    ctx.scale(scale, scale);
+                    
                     blocks.forEach(b => {{
                         let status = 'pending';
                         if("{layer_id}" === "peg") status = b.pegging_status;
                         else if("{layer_id}" === "pil") status = b.piling_status;
                         else if("{layer_id}" === "mnt") status = b.mounting_status;
                         else if("{layer_id}" === "cab") status = b.dc_cabling_status;
+                        
                         ctx.fillStyle = status === 'completed' ? '#22c55e' : '#2563eb';
-                        ctx.fillRect(b.min_c, b.min_r, b.max_c-b.min_c+1, b.max_r-b.min_r+1);
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.15; ctx.strokeRect(b.min_c, b.min_r, b.max_c-b.min_c+1, b.max_r-b.min_r+1);
+                        
+                        const w = b.max_c - b.min_c + 1;
+                        const h = (b.max_r - b.min_r + 1) * 4;
+                        
+                        ctx.fillRect(b.min_c, b.min_r * 4, w, h);
+                        ctx.strokeStyle = '#ffffff'; 
+                        ctx.lineWidth = 0.2; 
+                        ctx.strokeRect(b.min_c, b.min_r * 4, w, h);
                     }});
                     ctx.restore();
                 }}
+                
                 canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
                 canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
                 window.addEventListener('mouseup',()=>isDragging=false);
@@ -215,6 +227,7 @@ elif user_authenticated and selected_farm_id:
                     }}
                 }});
                 canvas.addEventListener('touchend',()=>{{ isDragging=false; initialDist=null; }});
+                
                 draw();
             }})();
         </script>

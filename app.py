@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import openpyxl
 from supabase import create_client, Client
 import json
+import time
 from datetime import datetime, date
 
 # Pre-loaded live project credentials
@@ -80,25 +81,24 @@ if onboarding_mode:
                 wb = openpyxl.load_workbook(uploaded_file, data_only=True)
                 sheet = wb.active
                 
-                # Pre-clean existing duplicates
+                # Clean old matching farm records
                 try:
                     supabase.table("farms").delete().eq("name", raw_filename).execute()
                 except Exception:
                     pass
                 
-                # BULLETPROOF TRY BLOCK FOR INSERTION
+                # Secure registration payload
                 try:
                     farm_res = supabase.table("farms").insert({
                         "name": raw_filename, "site_password": new_s_pass, "admin_password": new_a_pass
                     }).execute()
                 except Exception:
-                    # Absolute emergency fallback entry payload
                     farm_res = supabase.table("farms").insert({"name": raw_filename}).execute()
                 
                 if farm_res.data:
                     new_farm_id = farm_res.data[0]["id"]
                 else:
-                    st.error("Cloud insertion rejected. Reset database table constraints.")
+                    st.error("Cloud insertion rejected.")
                     st.stop()
                 
                 max_rows, max_cols = sheet.max_row, sheet.max_column
@@ -144,11 +144,27 @@ if onboarding_mode:
                             table_counter += 1
                 
                 if structures_batch:
-                    chunk_size = 300
-                    for i in range(0, len(structures_batch), chunk_size):
-                        supabase.table("structures").insert(structures_batch[i:i+chunk_size]).execute()
-                    st.success(f"Success! {len(structures_batch)} layout tables cleanly registered to cloud.")
+                    # SAFE CHUNKING MECHANISM: Upload in tiny batches of 50 to avoid network payload limits
+                    chunk_size = 50
+                    progress_bar = st.progress(0)
+                    total_chunks = len(structures_batch)
+                    
+                    for i in range(0, total_chunks, chunk_size):
+                        chunk = structures_batch[i:i+chunk_size]
+                        try:
+                            supabase.table("structures").insert(chunk).execute()
+                            time.sleep(0.05) # Brief pause to prevent database network throttling
+                        except Exception as e:
+                            st.error(f"Database write interrupted at position {i}: {str(e)}")
+                            st.stop()
+                        
+                        # Update progress tracking
+                        pct = min((i + chunk_size) / total_chunks, 1.0)
+                        progress_bar.progress(pct)
+                        
+                    st.success(f"Success! {len(structures_batch)} tables cleanly registered to cloud.")
                     st.cache_data.clear()
+                    st.after_loops_reset = True
                     st.rerun()
 
 # --- PHASE 3: ISOLATED WORKSPACE VIEWPORT RENDERING ---
@@ -258,7 +274,7 @@ elif user_authenticated and selected_farm_id:
                             }}).then(() => {{
                                 if("{layer_id}" === "peg") b.pegging_status = "completed";
                                 else if("{layer_id}" === "pil") b.piling_status = "completed";
-                                else if("{layer_id}" === "mnt") status = b.mounting_status = "completed";
+                                else if("{layer_id}" === "mnt") b.mounting_status = "completed";
                                 else if("{layer_id}" === "cab") b.dc_cabling_status = "completed";
                                 draw();
                             }});

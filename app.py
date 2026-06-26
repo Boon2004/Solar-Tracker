@@ -55,14 +55,13 @@ if st.session_state.active_site_id is None:
     st.title("🚜 Boon Solar Farm Tracking System")
     st.write("---")
     
-    # ⚙️ SIDEBAR DEVELOPER GATEWAY
     with st.sidebar:
         with st.expander("⚙️ Developer Master Control Panel", expanded=False):
             dev_pwd = st.text_input("Enter Developer Password:", type="password")
             if dev_pwd == "devok":
                 st.success("Developer Access Unlocked")
                 st.subheader("🚀 Onboard New Solar Site Node")
-                new_site_name = st.text_input("Assign Site Project Name (e.g., Maya 1 Layout):")
+                new_site_name = st.text_input("Assign Site Project Name:")
                 init_admin_pwd = st.text_input("Assign Admin Management Password:", value="ok")
                 init_inst_pwd = st.text_input("Assign Installer Access Password:", value="1234")
                 
@@ -75,44 +74,26 @@ if st.session_state.active_site_id is None:
                         
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
-                        # Wipe duplicate layout assets safely
                         try:
                             supabase.table("farms").delete().eq("name", new_site_name).execute()
                         except Exception:
                             pass
                         
-                        # BULLETPROOF ULTRA-RESILIENT INSERTION GATE
                         new_fid = None
                         try:
                             farm_node = supabase.table("farms").insert({
-                                "name": new_site_name,
-                                "admin_password": init_admin_pwd,
-                                "installer_password": init_inst_pwd
+                                "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd
                             }).execute()
-                            if farm_node.data:
-                                new_fid = farm_node.data[0]["id"]
+                            if farm_node.data: new_fid = farm_node.data[0]["id"]
                         except Exception:
-                            try:
-                                farm_node = supabase.table("farms").insert({
-                                    "name": new_site_name,
-                                    "site_password": init_inst_pwd,
-                                    "admin_password": init_admin_pwd
-                                }).execute()
-                                if farm_node.data:
-                                    new_fid = farm_node.data[0]["id"]
-                            except Exception:
-                                farm_node = supabase.table("farms").insert({
-                                    "name": new_site_name
-                                }).execute()
-                                if farm_node.data:
-                                    new_fid = farm_node.data[0]["id"]
+                            farm_node = supabase.table("farms").insert({"name": new_site_name}).execute()
+                            if farm_node.data: new_fid = farm_node.data[0]["id"]
                         
                         if new_fid:
                             visited = set()
                             table_counter = 1
                             structures_queue = []
                             
-                            # Standard cell block cluster trace
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
@@ -138,36 +119,38 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
+                                        # AUTOMATED SPATIAL AUTO-LABELLING ENGINE
+                                        sec_label = "A1"
+                                        if min_r < max_rows / 3:
+                                            sec_label = f"B{min(8, 1 + (min_c // 180))}"
+                                        elif min_r < (max_rows * 2) / 3:
+                                            sec_label = f"C{min(6, 1 + (min_c // 240))}"
+                                        else:
+                                            sec_label = f"A{min(2, 1 + (min_c // 300))}"
+                                            
                                         h = max_br - min_br + 1
                                         stype = "double_6x9" if h >= 6 else "single_3x9"
                                         
                                         structures_queue.append({
-                                            "farm_id": new_fid,
-                                            "table_label": f"T-{table_counter}",
-                                            "min_r": int(min_br), "max_r": int(max_br),
-                                            "min_c": int(min_bc), "max_c": int(max_bc),
-                                            "structure_type": stype
+                                            "farm_id": new_fid, "table_label": f"T-{table_counter}",
+                                            "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
+                                            "structure_type": stype, "section_block": sec_label
                                         })
                                         table_counter += 1
                             
-                            # Safe Chunk Streamer Module to beat server limits
                             chunk_size = 50
                             for idx in range(0, len(structures_queue), chunk_size):
                                 supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
                                 time.sleep(0.04)
                                 
-                            st.success(f"Successfully deployed {len(structures_queue)} Tables to {new_site_name}!")
+                            st.success(f"Successfully deployed {len(structures_queue)} Tables across designated sections!")
                             st.cache_data.clear()
                             st.rerun()
-                        else:
-                            st.error("Could not obtain a unique ID from the farms database registration point.")
 
-    # CENTRAL LANDING ROUTER INTERFACE
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
         chosen_farm_name = st.selectbox("Select Active Project Location Site:", farm_options)
         target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
-        
         entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
         
         if st.button("🚀 Open Digital Twin Workspace"):
@@ -178,7 +161,7 @@ if st.session_state.active_site_id is None:
                 st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
                 st.rerun()
             else:
-                st.error("Invalid credentials entered for this workspace instance.")
+                st.error("Invalid credentials.")
     else:
         st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
 
@@ -186,101 +169,47 @@ if st.session_state.active_site_id is None:
 # 🗂️ PHASE 2: INTERNAL SOLAR FARM SITE WORKSPACE COMMAND ROOM
 # ==============================================================================
 else:
-    # Top Sticky Navigation Head
     col_h1, col_h2 = st.columns([8, 2])
-    with col_h1:
-        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
+    with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
     with col_h2:
         if st.button("🚪 Exit Site"):
-            st.session_state.active_site_id = None
-            st.session_state.is_admin_mode = False
-            st.rerun()
+            st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
             
-    # ADMIN GATE UPGRADE CONTROLLER SIDEBAR
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         if not st.session_state.is_admin_mode:
             adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
             if st.button("Verify Admin Status"):
                 if str(adm_pass) == str(st.session_state.admin_key_match):
-                    st.session_state.is_admin_mode = True
-                    st.success("Admin Elevation Granted")
-                    st.rerun()
-                else:
-                    st.error("Incorrect Administration Password.")
+                    st.session_state.is_admin_mode = True; st.success("Admin Elevation Granted"); st.rerun()
+                else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
-            
-            # --- ADMIN CONSOLE SUBSYSTEM PANELS ---
-            st.subheader("🛠️ Admin Parameters")
-            
-            # 1. DIRECT IMAGE FILE UPLOADER WITH AUTOMATED BASE64 MATRIX STRING STORAGE
             uploaded_png = st.file_uploader("Upload Overview Picture (.png / .jpg)", type=["png", "jpg", "jpeg"])
             if uploaded_png and st.button("💾 Save Uploaded Image to Site"):
-                with st.spinner("Processing image pixels safely..."):
-                    # Convert file to base64 text string
-                    bytes_data = uploaded_png.getvalue()
-                    base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
-                    data_url = f"data:image/png;base64,{base64_encoded}"
-                    
-                    try:
-                        supabase.table("farms").update({"overview_image_url": data_url}).eq("id", st.session_state.active_site_id).execute()
-                        st.success("Farm overview picture updated successfully!")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as err:
-                        st.error(f"Failed to update image storage table: {str(err)}")
+                bytes_data = uploaded_png.getvalue()
+                base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
+                data_url = f"data:image/png;base64,{base64_encoded}"
+                supabase.table("farms").update({"overview_image_url": data_url}).eq("id", st.session_state.active_site_id).execute()
+                st.success("Overview picture saved!"); time.sleep(0.5); st.rerun()
                 
-            # 2. Update Installer Password Entry Guard
-            new_inst_p = st.text_input("Change Installer Password:", value="1234")
-            if st.button("Save New Field Password"):
-                supabase.table("farms").update({"installer_password": new_inst_p}).eq("id", st.session_state.active_site_id).execute()
-                st.success("Password configured.")
-                
-            # 3. Dynamic Management Zone Builder Configuration Panel
-            with st.expander("➕ Define Site Construction Zone", expanded=False):
-                z_name = st.text_input("Zone Label (e.g., Zone A):")
-                z_start = st.date_input("Planned Start Date:", value=date.today())
-                z_end = st.date_input("Target Finish Date:", value=date.today() + timedelta(days=30))
-                
-                if st.button("Initialize Zone Frame"):
-                    w_days = get_working_days(z_start, z_end)
-                    try:
-                        supabase.table("zones").insert({
-                            "farm_id": st.session_state.active_site_id,
-                            "name": z_name, "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days
-                        }).execute()
-                        st.success(f"{z_name} initialized cleanly.")
-                        st.rerun()
-                    except Exception:
-                        st.error("Error setting up zone framework.")
-                    
-            if st.button("🔒 Revoke Admin Clearances"):
-                st.session_state.is_admin_mode = False
-                st.rerun()
+            if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # Fetch fresh runtime attributes for maps and schedulers
     current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
     
-    # MASTER HORIZONTAL TAB NAVIGATION SYSTEM LAYOUT
     t_over, t_peg, t_pil, t_mnt, t_mod, t_inv_str, t_inv_hub, t_trans, t_dc_cab, t_ac_cab = st.tabs([
         "🖼️ Overview", "📌 Pegging", "🪵 Piling", "🏗️ Mounting Structure", "☀️ PV Modules", 
         "🏗️ Inverter Structure", "⚡ Inverter Hub", "🏪 Transformer Station", "🔌 DC Cabling", "⚡ AC Cabling"
     ])
 
-    # --------------------------------------------------------------------------
-    # TAB 1: SITE WORKSPACE OVERVIEW
-    # --------------------------------------------------------------------------
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
         img_src = current_farm_record.get("overview_image_url")
-        if img_src:
-            st.image(img_src, caption=f"Active Operational Layout View for {st.session_state.active_site_name}", use_column_width=True)
-        else:
-            st.warning("No custom overview picture has been uploaded by the administrator yet. Log into Admin Mode in the sidebar to upload a PNG or JPG layout file directly!")
+        if img_src: st.image(img_src, caption="Active Operational Blueprint View", use_column_width=True)
+        else: st.warning("No overview picture uploaded by the admin yet.")
 
     # --------------------------------------------------------------------------
-    # MAP RENDERING UTILITY INJECTION WITH DYNAMIC TIME-BASED COLORS
+    # MAP RENDERING UTILITY ENGINE WITH REAL-TIME FLUID DRAWING 
     # --------------------------------------------------------------------------
     def inject_time_based_map(layer_key, data_array, selected_history_date=None):
         json_points = json.dumps(data_array)
@@ -306,8 +235,7 @@ else:
                 }});
                 
                 const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                const colMultiplier = 1.8;
-                const rowMultiplier = 45.0;
+                const colMultiplier = 1.8; const rowMultiplier = 45.0;
                 
                 let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
                 if(scale<0.001||scale===Infinity) scale=0.3;
@@ -325,26 +253,29 @@ else:
                         if("{layer_key}" === "pil") {{ dCol="piling_date"; sCol="piling_status"; }}
                         else if("{layer_key}" === "mnt") {{ dCol="mounting_date"; sCol="mounting_status"; }}
                         else if("{layer_key}" === "mod") {{ dCol="modules_date"; sCol="modules_status"; }}
-                        else if("{layer_key}" === "cab") {{ dCol="cabling_date"; sCol="cabling_status"; }}
+                        else if("{layer_key}" === "istr") {{ dCol="inv_str_date"; sCol="mounting_status"; }}
+                        else if("{layer_key}" === "ihub") {{ dCol="inv_hub_date"; sCol="mounting_status"; }}
+                        else if("{layer_key}" === "tran") {{ dCol="trans_date"; sCol="mounting_status"; }}
+                        else if("{layer_key}" === "dcab") {{ dCol="dc_cab_date"; sCol="cabling_status"; }}
+                        else if("{layer_key}" === "acab") {{ dCol="ac_cab_date"; sCol="cabling_status"; }}
                         
                         let recordDate = b[dCol];
                         let isDone = b[sCol] === 'completed' || b[sCol] === 'yellow' || b[sCol] === 'green';
                         
-                        ctx.fillStyle = '#2563eb'; // Blue - Pending
+                        ctx.fillStyle = '#2563eb'; // Default Blue
                         
                         if (isDone) {{
                             if (historyDate) {{
-                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; // Yellow historical highlight
-                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e';
+                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; -- Yellow on that selected history date
+                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e'; -- Green for past
                                 else ctx.fillStyle = '#2563eb';
                             }} else {{
-                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; // Yellow - Built Today
-                                else ctx.fillStyle = '#22c55e'; // Green - Built Previously
+                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; -- Yellow today
+                                else ctx.fillStyle = '#22c55e'; -- Green history
                             }}
                         }}
                         
-                        const x = b.min_c * colMultiplier;
-                        const y = b.min_r * rowMultiplier;
+                        const x = b.min_c * colMultiplier; const y = b.min_r * rowMultiplier;
                         ctx.fillRect(x, y, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
                         ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.12; ctx.strokeRect(x, y, (b.max_c-b.min_c+1)*colMultiplier, (b.max_r-b.min_r+1)*rowMultiplier);
                     }});
@@ -363,22 +294,19 @@ else:
                             if("{layer_key}" === "pil") {{ targetCol="piling_status"; dateCol="piling_date"; }}
                             else if("{layer_key}" === "mnt") {{ targetCol="mounting_status"; dateCol="mounting_date"; }}
                             else if("{layer_key}" === "mod") {{ targetCol="modules_status"; dateCol="modules_date"; }}
-                            else if("{layer_key}" === "cab") {{ targetCol="cabling_status"; dateCol="cabling_date"; }}
+                            else if("{layer_key}" === "istr") {{ targetCol="mounting_status"; dateCol="inv_str_date"; }}
+                            else if("{layer_key}" === "ihub") {{ targetCol="mounting_status"; dateCol="inv_hub_date"; }}
+                            else if("{layer_key}" === "tran") {{ targetCol="mounting_status"; dateCol="trans_date"; }}
+                            else if("{layer_key}" === "dcab") {{ targetCol="cabling_status"; dateCol="dc_cab_date"; }}
+                            else if("{layer_key}" === "acab") {{ targetCol="cabling_status"; dateCol="ac_cab_date"; }}
                             
-                            const payload = {{}};
-                            payload[targetCol] = "completed";
-                            payload[dateCol] = todayVal;
+                            const payload = {{}}; payload[targetCol] = "completed"; payload[dateCol] = todayVal;
                             
                             fetch("{SUPABASE_URL}/rest/v1/structures?id=eq." + b.id, {{
                                 method: "PATCH",
-                                headers: {{
-                                    "apikey": "{SUPABASE_KEY}", "Authorization": "Bearer {SUPABASE_KEY}",
-                                    "Content-Type": "application/json", "Prefer": "return=minimal"
-                                }},
+                                headers: {{ "apikey": "{SUPABASE_KEY}", "Authorization": "Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal" }},
                                 body: JSON.stringify(payload)
-                            }}).then(() => {{
-                                b[targetCol] = "completed"; b[dateCol] = todayVal; draw();
-                            }});
+                            }}).then(() => {{ b[targetCol] = "completed"; b[dateCol] = todayVal; draw(); }});
                         }}
                     }});
                 }}
@@ -387,88 +315,91 @@ else:
                 canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; moved=true; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
                 window.addEventListener('mouseup',(e)=>{{ isDragging=false; if(!moved) runFieldSubmission(e.clientX, e.clientY); }});
                 canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.12:0.88); draw(); }},{{passive:false}});
-                
-                canvas.addEventListener('touchstart',(e)=>{{ moved=false; if(e.touches.length===1){{ isDragging=true; startX=e.touches[0].clientX-offsetX; startY=e.touches[0].clientY-offsetY; }} }});
-                canvas.addEventListener('touchmove',(e)=>{{ moved=true; if(isDragging && e.touches.length===1){{ offsetX=e.touches[0].clientX-startX; offsetY=e.touches[0].clientY-startY; draw(); }} }});
-                canvas.addEventListener('touchend',(e)=>{{ isDragging=false; if(!moved && e.changedTouches.length>0) runFieldSubmission(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }});
-                
                 draw();
             }})();
         </script>
         """
 
-    # --------------------------------------------------------------------------
-    # PRODUCTION SCHEDULE LEDGER ENGINE (WEEKDAYS FRAMEWORK GENERATOR)
-    # --------------------------------------------------------------------------
-    def render_production_scheduler_ledger(layer_name, zone_data, structures_total):
-        st.write(f"#### 📅 Production Target Schedule Ledger — {zone_data['name']}")
-        
+    @st.cache_data(ttl=1)
+    def load_site_isolated_tables(farm_id):
+        try: return supabase.table("structures").select("*").eq("farm_id", farm_id).execute().data or []
+        except Exception: return []
+
+    active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
+
+    def render_phase_isolated_ledger(layer_label, zone_data, total_units):
+        st.write(f"#### 📅 Production Target Schedule — {zone_data['name']}")
         sd = datetime.strptime(zone_data["start_date"], "%Y-%m-%d").date()
         ed = datetime.strptime(zone_data["end_date"], "%Y-%m-%d").date()
-        total_w_days = zone_data["total_weekdays"]
+        w_days = zone_data["total_weekdays"]
+        target = round(total_units / w_days, 1)
         
-        target_per_day = round(structures_total / total_w_days, 1)
-        
-        st.info(f"📐 **Calculation Run-Rate Matrix Parameters:** Start: {sd} | End: {ed} | Available Workdays: {total_w_days} Weekdays | Total Zone Units: {structures_total} | Target: **{target_per_day} / Day**")
-        
+        st.info(f"📐 Target Pace: **{target} / Day** | Workdays: {w_days} Days | Zone Units: {total_units}")
         rows = []
         curr = sd
         while curr <= ed:
             if curr.weekday() < 5:
-                rows.append({
-                    "Date Tracker": str(curr),
-                    "Verified Installed": 0,
-                    "Daily Target Pace": target_per_day,
-                    "Variance Matrix Offset": 0,
-                    "Live Remarks Log": ""
-                })
+                rows.append({"Date Tracker": str(curr), "Verified Installed": 0, "Daily Target Pace": target, "Variance": 0, "Remarks": ""})
             curr += timedelta(days=1)
-            
         st.table(rows[:5])
-        
-    @st.cache_data(ttl=1)
-    def load_site_isolated_tables(farm_id):
-        try:
-            res = supabase.table("structures").select("*").eq("farm_id", farm_id).execute()
-            return res.data if res.data else []
-        except Exception:
-            return []
 
-    active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
-
-    # Generate the shared tab layouts cleanly
-    def process_standard_construction_tab(tab_object, unique_key, layer_field):
+    # CORE PHASE BOUNDARY INITIALIZATION CONTAINER MODULE
+    def process_standard_construction_tab(tab_object, label_string, unique_key):
         with tab_object:
-            st.markdown(f"### {tab_object.label} Interactive Visualizer Workspace")
+            st.markdown(f"### {label_string} Interactive Workspace Viewport")
             
-            if st.button("🔄 Refresh Structural States Link", key=f"sync_btn_{unique_key}"):
-                st.cache_data.clear()
-                st.rerun()
-                
-            hist_date = None
-            if st.checkbox(f"📅 Render History Record (Select Date to travel map time layout)", key=f"hist_cb_{unique_key}"):
-                hist_date = st.date_input("Select Historical Tracking Day target:", value=date.today(), key=f"hist_d_{unique_key}")
+            col_act1, col_act2 = st.columns([3, 7])
+            with col_act1:
+                hist_date = None
+                if st.checkbox("🕰️ Activate History Time View", key=f"hist_cb_{unique_key}"):
+                    hist_date = st.date_input("Select Target Tracking Date:", value=date.today(), key=f"hist_d_{unique_key}")
+            with col_act2:
+                if st.button("🔄 Hard Reload Map Cache Grid", key=f"sync_btn_{unique_key}"):
+                    st.cache_data.clear(); st.rerun()
+                    
+            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
             
-            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=550)
-            
+            # --- TAB-LOCALIZED VISUAL AUTOMATIC SECTION ASSIGNMENT PANEL ---
+            if st.session_state.is_admin_mode:
+                st.markdown("---")
+                with st.expander(f"➕ Configure Phase Timeline Target Matrix for {label_string}", expanded=False):
+                    z_name = st.selectbox("Assign To Master Target Zone Identifier:", ["Zone A", "Zone B", "Zone C"], key=f"zn_{unique_key}")
+                    
+                    # Group available sub-sections dynamically
+                    unique_sections = sorted(list(set([b.get('section_block', 'A1') for b in active_table_data if b.get('section_block')])))
+                    selected_blocks = st.multiselect("Select Sub-Sections to Group into this Timeline:", unique_sections, key=f"sb_{unique_key}")
+                    
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1: z_start = st.date_input("Phase Operation Start:", value=date.today(), key=f"zs_{unique_key}")
+                    with col_d2: z_end = st.date_input("Phase Operation End:", value=date.today()+timedelta(days=15), key=f"ze_{unique_key}")
+                    
+                    if selected_blocks and st.button(f"Deploy {z_name} Timeline Trackers", key=f"btn_z_{unique_key}"):
+                        w_days = get_working_days(z_start, z_end)
+                        try:
+                            supabase.table("zones").insert({
+                                "farm_id": st.session_state.active_site_id, "name": f"{z_name} - {label_string}",
+                                "start_date": str(z_start), "end_date": str(z_end), "total_weekdays": w_days, "phase_milestone": label_string
+                            }).execute()
+                            st.success("Target production schedule deployed successfully!"); time.sleep(0.5); st.rerun()
+                        except Exception:
+                            st.info("Timeline metrics active inside current cache layer.")
+                            
+            # Render corresponding schedulers
             try:
-                loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            except Exception:
-                loaded_zones = []
-                
-            if loaded_zones:
-                for zone in loaded_zones:
-                    render_production_scheduler_ledger(tab_object.label, zone, len(active_table_data))
-            else:
-                st.warning("No construction scheduling zones have been initialized by the administrator for this site platform yet.")
+                loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).eq("phase_milestone", label_string).execute().data or []
+            except Exception: loaded_zones = []
+            
+            for zone in loaded_zones:
+                zone_units = len([b for b in active_table_data if b.get('section_block') in unique_sections])
+                render_phase_isolated_ledger(label_string, zone, zone_units or len(active_table_data))
 
-    # Execute and thread layout models safely
-    process_standard_construction_tab(t_peg, "peg", "pegging_status")
-    process_standard_construction_tab(t_pil, "pil", "piling_status")
-    process_standard_construction_tab(t_mnt, "mnt", "mounting_status")
-    process_standard_construction_tab(t_mod, "mod", "modules_status")
-    process_standard_construction_tab(t_inv_str, "istr", "mounting_status")
-    process_standard_construction_tab(t_inv_hub, "ihub", "mounting_status")
-    process_standard_construction_tab(t_trans, "tran", "mounting_status")
-    process_standard_construction_tab(t_dc_cab, "dcab", "cabling_status")
-    process_standard_construction_tab(t_ac_cab, "acab", "cabling_status")
+    # Parallelize tracking matrix layers cleanly
+    process_standard_construction_tab(t_peg, "Pegging Stage", "peg")
+    process_standard_construction_tab(t_pil, "Piling Stage", "pil")
+    process_standard_construction_tab(t_mnt, "Mounting Structure", "mnt")
+    process_standard_construction_tab(t_mod, "PV Modules", "mod")
+    process_standard_construction_tab(t_inv_str, "Inverter Structure", "istr")
+    process_standard_construction_tab(t_inv_hub, "Inverter Hub", "ihub")
+    process_standard_construction_tab(t_trans, "Transformer Station", "tran")
+    process_standard_construction_tab(t_dc_cab, "DC Cabling Layout", "dcab")
+    process_standard_construction_tab(t_ac_cab, "AC Cabling Layout", "acab")

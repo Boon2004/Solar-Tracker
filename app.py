@@ -74,20 +74,21 @@ if st.session_state.active_site_id is None:
                         
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
-                        try:
-                            supabase.table("farms").delete().eq("name", new_site_name).execute()
-                        except Exception:
-                            pass
+                        # Fix: Overwrite existing farm structures instead of throwing an error
+                        existing_farm = supabase.table("farms").select("id").eq("name", new_site_name).execute()
                         
-                        new_fid = None
-                        try:
-                            farm_node = supabase.table("farms").insert({
-                                "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd
-                            }).execute()
-                            if farm_node.data: new_fid = farm_node.data[0]["id"]
-                        except Exception:
-                            farm_node = supabase.table("farms").insert({"name": new_site_name}).execute()
-                            if farm_node.data: new_fid = farm_node.data[0]["id"]
+                        if existing_farm.data:
+                            new_fid = existing_farm.data[0]["id"]
+                            supabase.table("structures").delete().eq("farm_id", new_fid).execute()
+                        else:
+                            try:
+                                farm_node = supabase.table("farms").insert({
+                                    "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd
+                                }).execute()
+                                new_fid = farm_node.data[0]["id"]
+                            except Exception:
+                                farm_node = supabase.table("farms").insert({"name": new_site_name}).execute()
+                                new_fid = farm_node.data[0]["id"]
                         
                         if new_fid:
                             visited = set()
@@ -132,7 +133,7 @@ if st.session_state.active_site_id is None:
                                 supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
                                 time.sleep(0.04)
                                 
-                            st.success(f"Successfully deployed {len(structures_queue)} Tables cross-linked to backend database panels.")
+                            st.success(f"Successfully processed and uploaded layout components to the cloud!")
                             st.cache_data.clear()
                             st.rerun()
 
@@ -196,6 +197,7 @@ else:
         try: return supabase.table("structures").select("*").eq("farm_id", farm_id).execute().data or []
         except Exception: return []
 
+    # CRITICAL AUTOMATIC CLOUD SYNC ENGINE - Pulls data dynamically from Supabase on load/restart
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     # --------------------------------------------------------------------------
@@ -211,7 +213,7 @@ else:
 
         if st.session_state.is_admin_mode:
             st.markdown("---")
-            st.info("🎨 Admin Visual Painter Mode Active: Select a target zone, then click blocks on the map to paint them.")
+            st.info("🎨 **Admin Visual Painter Mode Active:** Select a destination target zone, then click blocks on the interactive layout map grid to assign them directly!")
             target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
             
             json_str = json.dumps(active_table_data)
@@ -276,7 +278,7 @@ else:
             components.html(html_engine, height=450)
 
     # --------------------------------------------------------------------------
-    # MAP RENDERING UTILITY ENGINE
+    # MAP RENDERING ENGINE (Comment Error Fixed)
     # --------------------------------------------------------------------------
     def inject_time_based_map(layer_key, data_array, selected_history_date=None):
         json_points = json.dumps(data_array)

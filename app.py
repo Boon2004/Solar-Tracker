@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 
 # Enterprise Database Credentials Bridge
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5xXp0b2lYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
 
 @st.cache_resource
 def get_supabase_client():
@@ -17,6 +17,7 @@ def get_supabase_client():
 
 supabase: Client = get_supabase_client()
 
+# Set Global Wide View Constraints
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
 def get_working_days(start_d, end_d):
@@ -52,6 +53,24 @@ if st.session_state.active_site_id is None:
             dev_pwd = st.text_input("Enter Developer Password:", type="password")
             if dev_pwd == "devok":
                 st.success("Developer Access Unlocked")
+                
+                st.subheader("🗑️ Cloud Database Cleaner")
+                if farm_options:
+                    wipe_target = st.selectbox("Select Cloud Project to Clear:", farm_options)
+                    if st.button("💥 Force Clear Cloud Database Records", type="primary"):
+                        with st.spinner("Purging data assets from cloud tables..."):
+                            try:
+                                supabase.table("farms").delete().eq("name", wipe_target).execute()
+                                st.success(f"Successfully purged all cloud data for {wipe_target}!")
+                                st.cache_data.clear()
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Purge request rejected: {str(e)}")
+                else:
+                    st.info("No active cloud entries found to clear.")
+                
+                st.write("---")
                 st.subheader("🚀 Onboard New Solar Site Node")
                 new_site_name = st.text_input("Assign Site Project Name:")
                 init_admin_pwd = st.text_input("Assign Admin Management Password:", value="ok")
@@ -65,7 +84,6 @@ if st.session_state.active_site_id is None:
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
-                        # TOTAL BYPASS GATE: Create farm record directly without checking name existence
                         new_fid = None
                         try:
                             farm_node = supabase.table("farms").insert({
@@ -123,23 +141,28 @@ if st.session_state.active_site_id is None:
                             st.success("Layout arrays updated perfectly!")
                             st.cache_data.clear(); st.rerun()
                         else:
-                            st.error("Submission failed. Give the project a slightly different variant name (e.g., Maya 1B) to clear duplicates.")
+                            st.error("Submission failed. Select this project name in the dropdown above, clear it first, then re-upload.")
 
+    # ⌨️ NATIVE FORM WRAPPER FOR FIELD RE-AUTHENTICATION GATEWAY
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
-        chosen_farm_name = st.selectbox("Select Active Project Location Site:", farm_options)
-        target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
-        entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
-        
-        if st.button("🚀 Open Digital Twin Workspace"):
-            expected_pass = target_site_record.get("installer_password") or target_site_record.get("site_password") or "1234"
-            if str(entered_inst_pass) == str(expected_pass):
-                st.session_state.active_site_id = target_site_record["id"]
-                st.session_state.active_site_name = target_site_record["name"]
-                st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
-                st.rerun()
-            else: st.error("Invalid credentials.")
-    else: st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
+        with st.form("workspace_access_form", clear_on_submit=False):
+            chosen_farm_name = st.selectbox("Select Active Project Location Site:", farm_options)
+            entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
+            submit_login = st.form_submit_button("🚀 Open Digital Twin Workspace")
+            
+            if submit_login:
+                target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
+                expected_pass = target_site_record.get("installer_password") or target_site_record.get("site_password") or "1234"
+                if str(entered_inst_pass) == str(expected_pass):
+                    st.session_state.active_site_id = target_site_record["id"]
+                    st.session_state.active_site_name = target_site_record["name"]
+                    st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
+                    st.rerun()
+                else: 
+                    st.error("Invalid credentials entered.")
+    else: 
+        st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
 
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL TRACKING SYSTEMS ROOM
@@ -153,11 +176,19 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         if not st.session_state.is_admin_mode:
-            adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
-            if st.button("Verify Admin Status"):
-                if str(adm_pass) == str(st.session_state.admin_key_match):
-                    st.session_state.is_admin_mode = True; st.success("Admin Elevation Granted"); st.rerun()
-                else: st.error("Incorrect Password.")
+            # ⌨️ NATIVE FORM WRAPPER FOR SIDEBAR ADMIN UPGRADE GATEWAY
+            with st.form("admin_upgrade_form", clear_on_submit=True):
+                st.write("Elevate Workspace Rights")
+                adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
+                submit_admin = st.form_submit_button("Verify Admin Status")
+                
+                if submit_admin:
+                    if str(adm_pass) == str(st.session_state.admin_key_match):
+                        st.session_state.is_admin_mode = True
+                        st.success("Admin Elevation Granted")
+                        st.rerun()
+                    else: 
+                        st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
             uploaded_png = st.file_uploader("Upload Overview Picture (.png / .jpg)", type=["png", "jpg", "jpeg"])
@@ -313,6 +344,8 @@ else:
                             else if(layerKey === "dcab") { targetCol="cabling_status"; dateCol="dc_cab_date"; }
                             else if(layerKey === "acab") { targetCol="cabling_status"; dateCol="ac_cab_date"; }
                             const payload = {}; payload[targetCol] = "completed"; payload[dateCol] = todayVal;
+                            
+                            // Fix: Restored routing reference variable
                             fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + b.id, {
                                 method: "PATCH", headers: { "apikey": '""" + SUPABASE_KEY + """', "Authorization": 'Bearer """ + SUPABASE_KEY + """', "Content-Type": "application/json", "Prefer": "return=minimal" },
                                 body: JSON.stringify(payload)

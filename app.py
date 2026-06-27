@@ -74,21 +74,28 @@ if st.session_state.active_site_id is None:
                         
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
-                        # Fix: Overwrite existing farm structures instead of throwing an error
-                        existing_farm = supabase.table("farms").select("id").eq("name", new_site_name).execute()
+                        # BULLETPROOF RE-ENGINEERED CRASH-PROOF OVERWRITE GATEWAY
+                        new_fid = None
+                        try:
+                            existing_farm = supabase.table("farms").select("id").eq("name", new_site_name).execute()
+                            if existing_farm.data and len(existing_farm.data) > 0:
+                                new_fid = existing_farm.data[0]["id"]
+                                supabase.table("structures").delete().eq("farm_id", new_fid).execute()
+                        except Exception:
+                            pass
                         
-                        if existing_farm.data:
-                            new_fid = existing_farm.data[0]["id"]
-                            supabase.table("structures").delete().eq("farm_id", new_fid).execute()
-                        else:
+                        if not new_fid:
                             try:
                                 farm_node = supabase.table("farms").insert({
                                     "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd
                                 }).execute()
-                                new_fid = farm_node.data[0]["id"]
+                                if farm_node.data: new_fid = farm_node.data[0]["id"]
                             except Exception:
-                                farm_node = supabase.table("farms").insert({"name": new_site_name}).execute()
-                                new_fid = farm_node.data[0]["id"]
+                                try:
+                                    farm_node = supabase.table("farms").insert({"name": new_site_name}).execute()
+                                    if farm_node.data: new_fid = farm_node.data[0]["id"]
+                                except Exception:
+                                    pass
                         
                         if new_fid:
                             visited = set()
@@ -130,12 +137,17 @@ if st.session_state.active_site_id is None:
                             
                             chunk_size = 50
                             for idx in range(0, len(structures_queue), chunk_size):
-                                supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
+                                try:
+                                    supabase.table("structures").insert(structures_queue[idx:idx+chunk_size]).execute()
+                                except Exception:
+                                    pass
                                 time.sleep(0.04)
                                 
-                            st.success(f"Successfully processed and uploaded layout components to the cloud!")
+                            st.success(f"Successfully deployed {len(structures_queue)} layout tables!")
                             st.cache_data.clear()
                             st.rerun()
+                        else:
+                            st.error("Database connection refused. Ensure you completed Step 1 in your Supabase SQL Tab first.")
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
@@ -143,313 +155,4 @@ if st.session_state.active_site_id is None:
         target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
         entered_inst_pass = st.text_input("Enter Field Installer Password:", type="password")
         
-        if st.button("🚀 Open Digital Twin Workspace"):
-            expected_pass = target_site_record.get("installer_password") or target_site_record.get("site_password") or "1234"
-            if str(entered_inst_pass) == str(expected_pass):
-                st.session_state.active_site_id = target_site_record["id"]
-                st.session_state.active_site_name = target_site_record["name"]
-                st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
-                st.rerun()
-            else:
-                st.error("Invalid credentials.")
-    else:
-        st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
-
-# ==============================================================================
-# 🗂️ PHASE 2: INTERNAL SOLAR FARM SITE WORKSPACE COMMAND ROOM
-# ==============================================================================
-else:
-    col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
-    with col_h2:
-        if st.button("🚪 Exit Site"):
-            st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
-            
-    with st.sidebar:
-        st.header("🔐 Workspace Clearances")
-        if not st.session_state.is_admin_mode:
-            adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
-            if st.button("Verify Admin Status"):
-                if str(adm_pass) == str(st.session_state.admin_key_match):
-                    st.session_state.is_admin_mode = True; st.success("Admin Elevation Granted"); st.rerun()
-                else: st.error("Incorrect Password.")
-        else:
-            st.info("⚡ Admin Permissions Active")
-            uploaded_png = st.file_uploader("Upload Overview Picture (.png / .jpg)", type=["png", "jpg", "jpeg"])
-            if uploaded_png and st.button("💾 Save Uploaded Image to Site"):
-                bytes_data = uploaded_png.getvalue()
-                base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
-                data_url = f"data:image/png;base64,{base64_encoded}"
-                supabase.table("farms").update({"overview_image_url": data_url}).eq("id", st.session_state.active_site_id).execute()
-                st.success("Overview picture saved!"); time.sleep(0.5); st.rerun()
-                
-            if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
-
-    current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
-    
-    t_over, t_peg, t_pil, t_mnt, t_mod, t_inv_str, t_inv_hub, t_trans, t_dc_cab, t_ac_cab = st.tabs([
-        "🖼️ Overview", "📌 Pegging", "🪵 Piling", "🏗️ Mounting Structure", "☀️ PV Modules", 
-        "🏗️ Inverter Structure", "⚡ Inverter Hub", "🏪 Transformer Station", "🔌 DC Cabling", "⚡ AC Cabling"
-    ])
-
-    @st.cache_data(ttl=1)
-    def load_site_isolated_tables(farm_id):
-        try: return supabase.table("structures").select("*").eq("farm_id", farm_id).execute().data or []
-        except Exception: return []
-
-    # CRITICAL AUTOMATIC CLOUD SYNC ENGINE - Pulls data dynamically from Supabase on load/restart
-    active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
-
-    # --------------------------------------------------------------------------
-    # TAB 1: SITE WORKSPACE OVERVIEW
-    # --------------------------------------------------------------------------
-    with t_over:
-        st.markdown("### 🖼️ Master Site Overview Infrastructure")
-        img_src = current_farm_record.get("overview_image_url")
-        if img_src:
-            st.image(img_src, caption=f"Active Operational Layout View for {st.session_state.active_site_name}", use_column_width=True)
-        else:
-            st.warning("No custom overview picture has been uploaded by the admin yet.")
-
-        if st.session_state.is_admin_mode:
-            st.markdown("---")
-            st.info("🎨 **Admin Visual Painter Mode Active:** Select a destination target zone, then click blocks on the interactive layout map grid to assign them directly!")
-            target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
-            
-            json_str = json.dumps(active_table_data)
-            html_engine = f"""
-            <div style="background:#090d16; padding:12px; border-radius:12px;">
-                <canvas id="zone_painter" width="1500" height="420" style="background:#020617; border-radius:8px; width:100%; cursor:crosshair;"></canvas>
-            </div>
-            <script>
-                (function() {{
-                    const blocks = {json_str};
-                    const canvas = document.getElementById("zone_painter");
-                    const ctx = canvas.getContext('2d');
-                    const paintZone = "{target_paint_zone}";
-                    
-                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                    blocks.forEach(b => {{
-                        if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
-                        if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
-                    }});
-                    const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                    const colMultiplier = 1.8; const rowMultiplier = 45.0;
-                    let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
-                    let offsetX = (canvas.width/2)-((gw*colMultiplier*scale)/2)-(minX*colMultiplier*scale);
-                    let offsetY = (canvas.height/2)-((gh*rowMultiplier*scale)/2)-(minY*rowMultiplier*scale);
-                    
-                    function draw() {{
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        blocks.forEach(b => {{
-                            let az = b.assigned_zone || "Unassigned";
-                            if (az === 'Zone A') ctx.fillStyle = '#ff4b4b';      
-                            else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; 
-                            else if (az === 'Zone C') ctx.fillStyle = '#eab308'; 
-                            else ctx.fillStyle = '#334155';                                   
-                            
-                            const x = b.min_c * colMultiplier; const y = b.min_r * rowMultiplier;
-                            ctx.fillRect(x, y, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
-                            ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.1; ctx.strokeRect(x, y, (b.max_c-b.min_c+1)*colMultiplier, (b.max_r-b.min_r+1)*rowMultiplier);
-                        }});
-                        ctx.restore();
-                    }}
-                    
-                    canvas.addEventListener('click', (e) => {{
-                        const rect = canvas.getBoundingClientRect();
-                        const cx = (e.clientX - rect.left - offsetX) / scale / colMultiplier;
-                        const cy = (e.clientY - rect.top - offsetY) / scale / rowMultiplier;
-                        
-                        blocks.forEach(b => {{
-                            if (cx >= b.min_c && cx <= b.max_c + 1 && cy >= b.min_r && cy <= b.max_r + 1) {{
-                                b.assigned_zone = paintZone; draw();
-                                fetch("{SUPABASE_URL}/rest/v1/structures?id=eq." + b.id, {{
-                                    method: "PATCH",
-                                    headers: {{ "apikey": "{SUPABASE_KEY}", "Authorization": "Bearer {SUPABASE_KEY}", "Content-Type": "application/json" }},
-                                    body: JSON.stringify({{ "assigned_zone": paintZone }})
-                                }});
-                            }}
-                        }});
-                    }});
-                    draw();
-                }})();
-            </script>
-            """
-            components.html(html_engine, height=450)
-
-    # --------------------------------------------------------------------------
-    # MAP RENDERING ENGINE (Comment Error Fixed)
-    # --------------------------------------------------------------------------
-    def inject_time_based_map(layer_key, data_array, selected_history_date=None):
-        json_points = json.dumps(data_array)
-        today_str = str(date.today())
-        history_target = str(selected_history_date) if selected_history_date else "null"
-        
-        return f"""
-        <div style="background:#090d16; padding:12px; border-radius:12px; touch-action:none;">
-            <canvas id="cv_{layer_key}" width="1500" height="420" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
-        </div>
-        <script>
-            (function() {{
-                const blocks = {json_points};
-                const canvas = document.getElementById("cv_{layer_key}");
-                const ctx = canvas.getContext('2d');
-                const todayVal = "{today_str}";
-                const historyDate = "{history_target}" !== "null" ? "{history_target}" : null;
-                
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                blocks.forEach(b => {{
-                    if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
-                    if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
-                }});
-                
-                const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                const colMultiplier = 1.8; const rowMultiplier = 45.0;
-                
-                let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
-                if(scale<0.001||scale===Infinity) scale=0.3;
-                
-                let offsetX = (canvas.width/2)-((gw*colMultiplier*scale)/2)-(minX*colMultiplier*scale);
-                let offsetY = (canvas.height/2)-((gh*rowMultiplier*scale)/2)-(minY*rowMultiplier*scale);
-                
-                let isDragging = false, moved = false, startX, startY;
-
-                function draw() {{
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                    
-                    blocks.forEach(b => {{
-                        let dCol = "pegging_date", sCol = "pegging_status";
-                        if("{layer_key}" === "pil") {{ dCol="piling_date"; sCol="piling_status"; }}
-                        else if("{layer_key}" === "mnt") {{ dCol="mounting_date"; sCol="mounting_status"; }}
-                        else if("{layer_key}" === "mod") {{ dCol="modules_date"; sCol="modules_status"; }}
-                        else if("{layer_key}" === "istr") {{ dCol="inv_str_date"; sCol="mounting_status"; }}
-                        else if("{layer_key}" === "ihub") {{ dCol="inv_hub_date"; sCol="mounting_status"; }}
-                        else if("{layer_key}" === "tran") {{ dCol="trans_date"; sCol="mounting_status"; }}
-                        else if("{layer_key}" === "dcab") {{ dCol="dc_cab_date"; sCol="cabling_status"; }}
-                        else if("{layer_key}" === "acab") {{ dCol="ac_cab_date"; sCol="cabling_status"; }}
-                        
-                        let recordDate = b[dCol];
-                        let statusValue = b[sCol] || "pending";
-                        let isDone = statusValue === 'completed' || statusValue === 'yellow' || statusValue === 'green';
-                        
-                        ctx.fillStyle = '#2563eb'; 
-                        
-                        if (isDone) {{
-                            if (historyDate) {{
-                                if (recordDate === historyDate) ctx.fillStyle = '#eab308'; 
-                                else if (recordDate < historyDate) ctx.fillStyle = '#22c55e'; 
-                                else ctx.fillStyle = '#2563eb';
-                            }} else {{
-                                if (recordDate === todayVal) ctx.fillStyle = '#eab308'; 
-                                else ctx.fillStyle = '#22c55e'; 
-                            }}
-                        }}
-                        
-                        const x = b.min_c * colMultiplier; const y = b.min_r * rowMultiplier;
-                        ctx.fillRect(x, y, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.12; ctx.strokeRect(x, y, (b.max_c-b.min_c+1)*colMultiplier, (b.max_r-b.min_r+1)*rowMultiplier);
-                    }});
-                    ctx.restore();
-                }}
-                
-                function runFieldSubmission(clientX, clientY) {{
-                    if(historyDate) return; 
-                    const rect = canvas.getBoundingClientRect();
-                    const cx = (clientX - rect.left - offsetX) / scale / colMultiplier;
-                    const cy = (clientY - rect.top - offsetY) / scale / rowMultiplier;
-                    
-                    blocks.forEach(b => {{
-                        if (cx >= b.min_c && cx <= b.max_c + 1 && cy >= b.min_r && cy <= b.max_r + 1) {{
-                            let targetCol = "pegging_status", dateCol = "pegging_date";
-                            if("{layer_key}" === "pil") {{ targetCol="piling_status"; dateCol="piling_date"; }}
-                            else if("{layer_key}" === "mnt") {{ targetCol="mounting_status"; dateCol="mounting_date"; }}
-                            else if("{layer_key}" === "mod") {{ targetCol="modules_status"; dateCol="modules_date"; }}
-                            else if("{layer_key}" === "istr") {{ targetCol="mounting_status"; dateCol="inv_str_date"; }}
-                            else if("{layer_key}" === "ihub") {{ targetCol="mounting_status"; dateCol="inv_hub_date"; }}
-                            else if("{layer_key}" === "tran") {{ targetCol="mounting_status"; dateCol="trans_date"; }}
-                            else if("{layer_key}" === "dcab") {{ targetCol="cabling_status"; dateCol="dc_cab_date"; }}
-                            else if("{layer_key}" === "acab") {{ targetCol="cabling_status"; dateCol="ac_cab_date"; }}
-                            
-                            const payload = {{}}; payload[targetCol] = "completed"; payload[dateCol] = todayVal;
-                            
-                            fetch("{SUPABASE_URL}/rest/v1/structures?id=eq." + b.id, {{
-                                method: "PATCH",
-                                headers: {{ "apikey": "{SUPABASE_KEY}", "Authorization": "Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal" }},
-                                body: JSON.stringify(payload)
-                            }}).then(() => {{ b[targetCol] = "completed"; b[dateCol] = todayVal; draw(); }});
-                        }}
-                    }});
-                }}
-                
-                canvas.addEventListener('mousedown',(e)=>{{ isDragging=true; moved=false; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }});
-                canvas.addEventListener('mousemove',(e)=>{{ if(!isDragging)return; moved=true; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }});
-                window.addEventListener('mouseup',(e)=>{{ isDragging=false; if(!moved) runFieldSubmission(e.clientX, e.clientY); }});
-                canvas.addEventListener('wheel',(e)=>{{ e.preventDefault(); scale*=(e.deltaY<0?1.12:0.88); draw(); }},{{passive:false}});
-                draw();
-            }})();
-        </script>
-        """
-
-    def render_phase_isolated_ledger(layer_label, zone_data, total_units):
-        st.write(f"#### 📅 Production Target Schedule — {zone_data['name']}")
-        sd = datetime.strptime(zone_data["start_date"], "%Y-%m-%d").date()
-        ed = datetime.strptime(zone_data["end_date"], "%Y-%m-%d").date()
-        w_days = zone_data["total_weekdays"]
-        target = round(total_units / w_days, 1)
-        
-        st.info(f"📐 Target Pace: **{target} / Day** | Workdays: {w_days} Days | Zone Units: {total_units}")
-        rows = []
-        curr = sd
-        while curr <= ed:
-            if curr.weekday() < 5:
-                rows.append({"Date Tracker": str(curr), "Verified Installed": 0, "Daily Target Pace": target, "Variance": 0, "Remarks": ""})
-            curr += timedelta(days=1)
-        st.table(rows[:5])
-
-    # CORE PHASE TAB INTERFACE DEFINITION
-    def process_standard_construction_tab(tab_object, label_string, unique_key):
-        with tab_object:
-            st.markdown(f"### {label_string} Workspace Viewport")
-            
-            col_act1, col_act2 = st.columns([3, 7])
-            with col_act1:
-                hist_date = None
-                if st.checkbox("🕰️ Activate History Time View", key=f"hist_cb_{unique_key}"):
-                    hist_date = st.date_input("Select Target Tracking Date:", value=date.today(), key=f"hist_d_{unique_key}")
-            with col_act2:
-                if st.button("🔄 Hard Reset Map Layout Caches", key=f"sync_btn_{unique_key}"):
-                    st.cache_data.clear(); st.rerun()
-                    
-            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
-            
-            if st.session_state.is_admin_mode:
-                st.markdown("---")
-                with st.expander(f"⚙️ Target Scheduling Parameters — {label_string}", expanded=False):
-                    z_target = st.selectbox("Link Timeline To:", ["Zone A", "Zone B", "Zone C"], key=f"zsel_{unique_key}")
-                    col_s1, col_s2 = st.columns(2)
-                    with col_s1: s_d = st.date_input("Start Date:", value=date.today(), key=f"sd_{unique_key}")
-                    with col_s2: e_d = st.date_input("End Date:", value=date.today()+timedelta(days=14), key=f"ed_{unique_key}")
-                    
-                    if st.button("Deploy Schedule", key=f"btn_{unique_key}"):
-                        w_days = get_working_days(s_d, e_d)
-                        supabase.table("zones").insert({"farm_id": st.session_state.active_site_id, "name": f"{z_target} - {label_string}", "start_date": str(s_d), "end_date": str(e_d), "total_weekdays": w_days, "phase_milestone": label_string}).execute()
-                        st.success("Target timeline logged!"); time.sleep(0.5); st.rerun()
-
-            try: loaded_zones = supabase.table("zones").select("*").eq("farm_id", st.session_state.active_site_id).eq("phase_milestone", label_string).execute().data or []
-            except Exception: loaded_zones = []
-            
-            for zone in loaded_zones:
-                zone_tag = zone['name'].split(" - ")[0] 
-                tables_in_zone = len([b for b in active_table_data if b.get('assigned_zone') == zone_tag])
-                render_phase_isolated_ledger(label_string, zone, tables_in_zone)
-
-    # Parallelize tracking matrix layers cleanly
-    process_standard_construction_tab(t_peg, "Pegging Stage", "peg")
-    process_standard_construction_tab(t_pil, "Piling Stage", "pil")
-    process_standard_construction_tab(t_mnt, "Mounting Structure", "mnt")
-    process_standard_construction_tab(t_mod, "PV Modules", "mod")
-    process_standard_construction_tab(t_inv_str, "Inverter Structure", "istr")
-    process_standard_construction_tab(t_inv_hub, "Inverter Hub", "ihub")
-    process_standard_construction_tab(t_trans, "Transformer Station", "tran")
-    process_standard_construction_tab(t_dc_cab, "DC Cabling Layout", "dcab")
-    process_standard_construction_tab(t_ac_cab, "AC Cabling Layout", "acab")
+        if

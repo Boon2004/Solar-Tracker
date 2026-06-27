@@ -7,7 +7,7 @@ import time
 import base64
 from datetime import datetime, date, timedelta
 
-# Enterprise Database Credentials Bridge (Restored to original unbroken token)
+# Enterprise Database Credentials Bridge
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
 
@@ -31,6 +31,7 @@ def get_working_days(start_d, end_d):
 if "active_site_id" not in st.session_state: st.session_state.active_site_id = None
 if "is_admin_mode" not in st.session_state: st.session_state.is_admin_mode = False
 
+# Fresh Cloud Fetching Engine
 @st.cache_data(ttl=1)
 def fetch_farms_directory():
     try:
@@ -54,22 +55,22 @@ if st.session_state.active_site_id is None:
             if dev_pwd == "devok":
                 st.success("Developer Access Unlocked")
                 
-                # --- OVERRIDE CLOUD WIPEOUT TOOL ---
+                # --- AUTOMATIC DYNAMIC DROPDOWN WIPEOUT TOOL ---
                 st.subheader("🗑️ Cloud Database Cleaner")
-                wipe_target_manual = st.text_input("Type Project Name to Force Clear (e.g., Maya 1):")
-                if st.button("💥 Force Clear Cloud Database Records", type="primary"):
-                    if wipe_target_manual:
-                        with st.spinner("Purging data assets from cloud tables..."):
+                if farm_options:
+                    wipe_target = st.selectbox("Select Cloud Project to Clear:", farm_options, key="dev_clear_dropdown")
+                    if st.button("💥 Force Clear Cloud Database Records", type="primary"):
+                        with st.spinner(f"Purging data assets for {wipe_target}..."):
                             try:
-                                supabase.table("farms").delete().eq("name", wipe_target_manual.strip()).execute()
-                                st.success(f"Successfully purged all cloud data for {wipe_target_manual}!")
+                                supabase.table("farms").delete().eq("name", wipe_target).execute()
+                                st.success(f"Successfully purged all cloud data for {wipe_target}!")
                                 st.cache_data.clear()
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Purge request rejected: {str(e)}")
-                    else:
-                        st.warning("Please type a project name first.")
+                else:
+                    st.info("No active cloud entries found to clear.")
                 
                 st.write("---")
                 st.subheader("🚀 Onboard New Solar Site Node")
@@ -142,9 +143,9 @@ if st.session_state.active_site_id is None:
                             st.success("Layout arrays updated perfectly!")
                             st.cache_data.clear(); st.rerun()
                         else:
-                            st.error("Submission failed. Type this project name in the manual clear field above, delete it, then re-upload.")
+                            st.error("Submission failed. Select this project name in the dropdown cleaner list above, clear it first, then re-upload.")
 
-    # NATIVE FORM ACCESS
+    # NATIVE FORM LOGIN GATEWAY
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
         with st.form("workspace_access_form", clear_on_submit=False):
@@ -164,7 +165,7 @@ if st.session_state.active_site_id is None:
     else: st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
 
 # ==============================================================================
-# 🗂️ PHASE 2: INTERNAL TRACKING SYSTEMS ROOM
+# 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING COMMAND CENTER
 # ==============================================================================
 else:
     col_h1, col_h2 = st.columns([8, 2])
@@ -283,7 +284,7 @@ else:
                 const ctx = canvas.getContext('2d');
                 const todayVal = '""" + today_str + """';
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
-                const layerKey = '\\""" + layer_key + """';
+                const layerKey = '""" + layer_key + """';
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 blocks.forEach(b => {
                     if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;

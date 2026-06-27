@@ -54,21 +54,22 @@ if st.session_state.active_site_id is None:
             if dev_pwd == "devok":
                 st.success("Developer Access Unlocked")
                 
+                # --- MANUAL OVERRIDE CLOUD WIPEOUT TOOL ---
                 st.subheader("🗑️ Cloud Database Cleaner")
-                if farm_options:
-                    wipe_target = st.selectbox("Select Cloud Project to Clear:", farm_options)
-                    if st.button("💥 Force Clear Cloud Database Records", type="primary"):
+                wipe_target_manual = st.text_input("Type Project Name to Force Clear (e.g., Maya 1):")
+                if st.button("💥 Force Clear Cloud Database Records", type="primary"):
+                    if wipe_target_manual:
                         with st.spinner("Purging data assets from cloud tables..."):
                             try:
-                                supabase.table("farms").delete().eq("name", wipe_target).execute()
-                                st.success(f"Successfully purged all cloud data for {wipe_target}!")
+                                supabase.table("farms").delete().eq("name", wipe_target_manual.strip()).execute()
+                                st.success(f"Successfully purged all cloud data for {wipe_target_manual}!")
                                 st.cache_data.clear()
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Purge request rejected: {str(e)}")
-                else:
-                    st.info("No active cloud entries found to clear.")
+                    else:
+                        st.warning("Please type a project name first.")
                 
                 st.write("---")
                 st.subheader("🚀 Onboard New Solar Site Node")
@@ -141,9 +142,9 @@ if st.session_state.active_site_id is None:
                             st.success("Layout arrays updated perfectly!")
                             st.cache_data.clear(); st.rerun()
                         else:
-                            st.error("Submission failed. Select this project name in the dropdown above, clear it first, then re-upload.")
+                            st.error("Submission failed. Type this project name in the manual clear field above, delete it, then re-upload.")
 
-    # ⌨️ NATIVE FORM WRAPPER FOR FIELD RE-AUTHENTICATION GATEWAY
+    # NATIVE FORM ACCESS
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
         with st.form("workspace_access_form", clear_on_submit=False):
@@ -159,10 +160,8 @@ if st.session_state.active_site_id is None:
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
                     st.rerun()
-                else: 
-                    st.error("Invalid credentials entered.")
-    else: 
-        st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
+                else: st.error("Invalid credentials entered.")
+    else: st.info("No active installations found. Open Left Developer Panel to upload blueprint grid arrays.")
 
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL TRACKING SYSTEMS ROOM
@@ -176,7 +175,6 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         if not st.session_state.is_admin_mode:
-            # ⌨️ NATIVE FORM WRAPPER FOR SIDEBAR ADMIN UPGRADE GATEWAY
             with st.form("admin_upgrade_form", clear_on_submit=True):
                 st.write("Elevate Workspace Rights")
                 adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
@@ -184,11 +182,8 @@ else:
                 
                 if submit_admin:
                     if str(adm_pass) == str(st.session_state.admin_key_match):
-                        st.session_state.is_admin_mode = True
-                        st.success("Admin Elevation Granted")
-                        st.rerun()
-                    else: 
-                        st.error("Incorrect Password.")
+                        st.session_state.is_admin_mode = True; st.success("Admin Elevation Granted"); st.rerun()
+                    else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
             uploaded_png = st.file_uploader("Upload Overview Picture (.png / .jpg)", type=["png", "jpg", "jpeg"])
@@ -286,7 +281,7 @@ else:
                 const blocks = """ + json_points + """;
                 const canvas = document.getElementById("cv_""" + layer_key + """");
                 const ctx = canvas.getContext('2d');
-                const todayVal = '""" + today_str + """';
+                const todayVal = ' Bird ';
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
                 const layerKey = '""" + layer_key + """';
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -344,8 +339,6 @@ else:
                             else if(layerKey === "dcab") { targetCol="cabling_status"; dateCol="dc_cab_date"; }
                             else if(layerKey === "acab") { targetCol="cabling_status"; dateCol="ac_cab_date"; }
                             const payload = {}; payload[targetCol] = "completed"; payload[dateCol] = todayVal;
-                            
-                            // Fix: Restored routing reference variable
                             fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + b.id, {
                                 method: "PATCH", headers: { "apikey": '""" + SUPABASE_KEY + """', "Authorization": 'Bearer """ + SUPABASE_KEY + """', "Content-Type": "application/json", "Prefer": "return=minimal" },
                                 body: JSON.stringify(payload)

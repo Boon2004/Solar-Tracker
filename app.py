@@ -7,9 +7,9 @@ import time
 import base64
 from datetime import datetime, date, timedelta
 
-# Enterprise Database Credentials Bridge
+# Enterprise Database Credentials Bridge (Restored to original unbroken token)
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
 
 @st.cache_resource
 def get_supabase_client():
@@ -54,7 +54,7 @@ if st.session_state.active_site_id is None:
             if dev_pwd == "devok":
                 st.success("Developer Access Unlocked")
                 
-                # --- MANUAL OVERRIDE CLOUD WIPEOUT TOOL ---
+                # --- OVERRIDE CLOUD WIPEOUT TOOL ---
                 st.subheader("🗑️ Cloud Database Cleaner")
                 wipe_target_manual = st.text_input("Type Project Name to Force Clear (e.g., Maya 1):")
                 if st.button("💥 Force Clear Cloud Database Records", type="primary"):
@@ -281,9 +281,9 @@ else:
                 const blocks = """ + json_points + """;
                 const canvas = document.getElementById("cv_""" + layer_key + """");
                 const ctx = canvas.getContext('2d');
-                const todayVal = ' Bird ';
+                const todayVal = '""" + today_str + """';
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
-                const layerKey = '""" + layer_key + """';
+                const layerKey = '\\""" + layer_key + """';
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 blocks.forEach(b => {
                     if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;

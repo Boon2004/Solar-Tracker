@@ -42,7 +42,7 @@ farm_options = [f["name"] for f in all_registered_farms]
 # 🏡 MAIN ENTRY SITE GATEWAY
 # ==============================================================================
 if st.session_state.active_site_id is None:
-    st.title("⚙️ Universal Solar Farm Engineering & Layout Tool")
+    st.title("🚜 Boon Solar Farm Tracking System")
     st.write("---")
     
     with st.sidebar:
@@ -62,6 +62,8 @@ if st.session_state.active_site_id is None:
                                 st.cache_data.clear()
                                 time.sleep(1); st.rerun()
                             except Exception as e: st.error(f"Purge rejected: {str(e)}")
+                else:
+                    st.info("No active cloud entries found to clear.")
                 
                 st.write("---")
                 st.subheader("🚀 Onboard New Layout Framework")
@@ -72,7 +74,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    with st.spinner("Parsing granular array matrices..."):
+                    with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
@@ -87,41 +89,51 @@ if st.session_state.active_site_id is None:
                         except Exception: pass
                         
                         if new_fid:
+                            visited = set()
+                            table_counter = 1
                             structures_queue = []
-                            cell_counter = 1
                             
+                            # RETURNING TO THE BETTER GROUP-BASED SEARCH PARSER:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
+                                    has_border = cell.border and ((cell.border.top and cell.border.top.style) or (cell.border.left and cell.border.left.style))
                                     
-                                    has_top = cell.border and cell.border.top and cell.border.top.style
-                                    has_left = cell.border and cell.border.left and cell.border.left.style
-                                    has_bottom = cell.border and cell.border.bottom and cell.border.bottom.style
-                                    has_right = cell.border and cell.border.right and cell.border.right.style
-                                    
-                                    if has_top or has_left or has_bottom or has_right:
+                                    if has_border and (r, c) not in visited:
+                                        block_cells = []
+                                        queue = [(r, c)]
+                                        visited.add((r, c))
+                                        while queue:
+                                            curr_r, curr_c = queue.pop(0)
+                                            block_cells.append((curr_r, curr_c))
+                                            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                                                nr, nc = curr_r + dr, curr_c + dc
+                                                if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
+                                                    n_cell = sheet.cell(row=nr, column=nc)
+                                                    if n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or (n_cell.border.left and n_cell.border.left.style)):
+                                                        visited.add((nr, nc))
+                                                        queue.append((nr, nc))
+                                        b_rows = [item[0] for item in block_cells]
+                                        b_cols = [item[1] for item in block_cells]
+                                        min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
+                                        
                                         structures_queue.append({
-                                            "farm_id": new_fid,
-                                            "table_label": f"C-{cell_counter}",
-                                            "min_r": r, "max_r": r,
-                                            "min_c": c, "max_c": c,
-                                            "assigned_zone": "Unassigned",
-                                            "border_top": bool(has_top),
-                                            "border_left": bool(has_left),
-                                            "border_bottom": bool(has_bottom),
-                                            "border_right": bool(has_right)
+                                            "farm_id": new_fid, "table_label": f"T-{table_counter}",
+                                            "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
+                                            "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
+                                            "assigned_zone": "Unassigned"
                                         })
-                                        cell_counter += 1
+                                        table_counter += 1
                             
                             for idx in range(0, len(structures_queue), 50):
                                 try: supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
                                 except Exception: pass
-                                time.sleep(0.02)
+                                time.sleep(0.04)
                                 
-                            st.success("Granular grid framework built perfectly!")
+                            st.success("Clean layout trackers saved perfectly!")
                             st.cache_data.clear(); st.rerun()
 
-    st.subheader("🌐 Entry Gateway Workspace Portal")
+    st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
         with st.form("workspace_access_form"):
             chosen_farm_name = st.selectbox("Select Project Site Layout Location:", farm_options)
@@ -158,7 +170,6 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
-            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -183,7 +194,6 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # Database Pull
     @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
         try: return supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").execute().data or []
@@ -191,32 +201,30 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
+    # Dynamic layout bounding math
     min_r = min([b.get("min_r", 1) for b in active_table_data]) if active_table_data else 1
     max_r = max([b.get("max_r", 100) for b in active_table_data]) if active_table_data else 100
     min_c = min([b.get("min_c", 1) for b in active_table_data]) if active_table_data else 1
     max_c = max([b.get("max_c", 150) for b in active_table_data]) if active_table_data else 150
 
     CELL_SIZE = 14
-    canvas_w = (max_c - min_c + 5) * CELL_SIZE
-    canvas_h = (max_r - min_r + 5) * CELL_SIZE
+    canvas_w = (max_c - min_c + 8) * CELL_SIZE
+    canvas_h = (max_r - min_r + 8) * CELL_SIZE
     json_str = json.dumps(active_table_data)
 
-    # Automatically handle fallback zone structures
     for b in active_table_data:
         z = b.get("assigned_zone")
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
 
     # ==============================================================================
-    # 🚨 INTERFACE ROUTING ENGINE RULES (LOCKED SETUP CHECK SYSTEM)
+    # 🚨 INTERFACE ROUTING ENGINE RULES
     # ==============================================================================
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
         st.warning("🚧 **Configuration Incomplete:** This project site layout layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
-        st.info("🔒 If you are the site manager, please log in as Admin in the left clearance panel to configure zoning boundaries.")
         st.stop()
 
-    # Dynamic Tab Compilation Array routing logic
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
             "🖼️ Step 1: Base Overview & Zone Assignation", 
@@ -257,26 +265,32 @@ else:
                     const ctx = canvas.getContext('2d');
                     const paintZone = 'PAINT_ZONE_VAL';
                     const CELL = CELL_SIZE_VAL;
-                    const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2;
+                    const offsetCol = MIN_C_VAL - 4; const offsetRow = MIN_R_VAL - 4;
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName === 'Unassigned') return '#27272a';
+                        if (!zoneName || zoneName === 'Unassigned') return '#334155';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash % 360)}, 80%, 50%)`;
+                        return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
                     }
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         blocks.forEach(b => {
                             let isHovered = hoverGroupBlockIds.includes(b.id); let isStaged = stagedBlockIds.includes(b.id);
+                            
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            if (isHovered) ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
-                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
-                            ctx.fillRect(x, y, CELL, CELL);
-                            ctx.strokeStyle = '#18181b'; ctx.lineWidth = 0.5;
-                            if (b.border_top) { ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=1.5; }
-                            ctx.strokeRect(x, y, CELL, CELL);
-                            if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.strokeRect(x, y, CELL, CELL); }
+                            if (isHovered) ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+                            
+                            let x = (b.min_c - offsetCol) * CELL; 
+                            let y = (b.min_r - offsetRow) * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL;
+                            let h = (b.max_r - b.min_r + 1) * CELL;
+                            
+                            ctx.fillRect(x, y, w, h);
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.5;
+                            ctx.strokeRect(x, y, w, h);
+
+                            if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
                         });
                     }
                     function getGroupCluster(targetBlock) {
@@ -293,7 +307,8 @@ else:
                         let found = null;
                         blocks.forEach(b => {
                             let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
-                            if (mx >= x && mx <= x + CELL && my >= y && my <= y + CELL) found = b;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
                         });
                         if (found) { hoverGroupBlockIds = getGroupCluster(found); } else { hoverGroupBlockIds = []; }
                         draw();
@@ -327,18 +342,34 @@ else:
             html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MIN_R_VAL", str(min_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             components.html(html_zone_engine, height=660)
 
-        # --- STAGE 2: INVERTER SETUP VIEWS ---
+        # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
         with setup_tabs[1]:
             st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
             html_inverter_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:580px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas></div></div>
             <script>
                 (function() { 
-                    const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2; 
+                    const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL; const offsetCol = MIN_C_VAL - 4; const offsetRow = MIN_R_VAL - 4; 
                     blocks.forEach(b => { 
-                        ctx.fillStyle = '#1e293b'; let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL; ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; 
-                        if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; } 
-                        ctx.strokeRect(x, y, CELL, CELL); 
+                        ctx.fillStyle = '#1e293b'; 
+                        let x = (b.min_c - offsetCol) * CELL; 
+                        let y = (b.min_r - offsetRow) * CELL; 
+                        let w = (b.max_c - b.min_c + 1) * CELL;
+                        let h = (b.max_r - b.min_r + 1) * CELL;
+                        
+                        ctx.fillRect(x, y, w, h); 
+                        ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.5; 
+                        ctx.strokeRect(x, y, w, h); 
+                        
+                        // DRAW STRING FACING LINE: If the block is a double height tracker frame (6 rows high),
+                        // we draw a clear divider line directly down its horizontal center.
+                        if (b.structure_type === 'double_6x9') {
+                            ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
+                            ctx.beginPath();
+                            ctx.moveTo(x, y + (h / 2));
+                            ctx.lineTo(x + w, y + (h / 2));
+                            ctx.stroke();
+                        }
                     }); 
                 })();
             </script>
@@ -371,28 +402,30 @@ else:
         def inject_crew_tracking_map(layer_key, data_array, min_c, max_c, min_r, max_r):
             json_points = json.dumps(data_array)
             today_str = str(date.today())
-            canvas_w_val = (max_c - min_c + 5) * 14
-            canvas_h_val = (max_r - min_r + 5) * 14
+            canvas_w_val = (max_c - min_c + 8) * 14
+            canvas_h_val = (max_r - min_r + 8) * 14
 
             html_crew_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="crew_LAYER_KEY" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:pointer;"></canvas></div></div>
             <script>
                 (function() {
                     const blocks = __JSON_DATA__; const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
-                    const CELL = 14; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2;
+                    const CELL = 14; const offsetCol = MIN_C_VAL - 4; const offsetRow = MIN_R_VAL - 4;
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         blocks.forEach(b => {
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#2563eb';
                             let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
-                            ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#0f172a'; ctx.strokeRect(x, y, CELL, CELL);
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h);
                         });
                     }
                     canvas.addEventListener('click', (e) => {
                         const rect = canvas.getBoundingClientRect(); const cx = e.clientX - rect.left; const cy = e.clientY - rect.top;
                         blocks.forEach(b => {
                             let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
-                            if (cx >= x && cx <= x + CELL && cy >= y && cy <= y + CELL) {
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) {
                                 b['LAYER_KEY_status'] = 'completed';
                                 const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
                                 fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {

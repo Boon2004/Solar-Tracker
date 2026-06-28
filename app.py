@@ -55,7 +55,7 @@ if st.session_state.active_site_id is None:
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     if st.button("💥 Purge Cloud Data Records", type="primary"):
-                        with st.spinner(f"Wiping data assets for {wipe_target}..."):
+                        with st.spinner(f"Purging data assets for {wipe_target}..."):
                             try:
                                 supabase.table("farms").delete().eq("name", wipe_target).execute()
                                 st.success(f"Purged all records for {wipe_target}!")
@@ -194,7 +194,7 @@ else:
     json_str = json.dumps(active_table_data)
 
     # ==============================================================================
-    # 🖼️ TAB 1: ZONE ASSIGNATION (BRACKET ESCAPING APPLIED)
+    # 🖼️ TAB 1: ZONE ASSIGNATION (ROBUST CLEAN REPLACEMENT STRUCTURE)
     # ==============================================================================
     with all_tabs[0]:
         st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
@@ -210,7 +210,7 @@ else:
                         st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
                         st.rerun()
 
-            html_zone_engine = f"""
+            html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; font-family:sans-serif; user-select:none;">
                 
                 <div id="dialogue_overlay" style="display:none; position:fixed; bottom:40px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -220,35 +220,35 @@ else:
                 </div>
 
                 <div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;">
-                    <canvas id="zone_canvas" width="{canvas_w}" height="{canvas_h}" style="background:#020617; display:block;"></canvas>
+                    <canvas id="zone_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
 
             <script>
-                (function() {{
-                    const blocks = {json_str};
+                (function() {
+                    const blocks = __JSON_DATA__;
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
-                    const paintZone = '{target_paint_zone}';
+                    const paintZone = 'PAINT_ZONE_VAL';
                     
-                    const CELL = {CELL_SIZE};
-                    const offsetCol = {min_c} - 2;
-                    const offsetRow = {min_r} - 2;
+                    const CELL = CELL_SIZE_VAL;
+                    const offsetCol = MIN_C_VAL - 2;
+                    const offsetRow = MIN_R_VAL - 2;
 
                     let hoverGroupBlockIds = [];
                     let stagedBlockIds = [];
 
-                    function getZoneColor(zoneName) {{
+                    function getZoneColor(zoneName) {
                         if (!zoneName || zoneName === 'Unassigned') return '#27272a';
                         let hash = 0;
-                        for (let i = 0; i < zoneName.length; i++) {{ hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }}
-                        return `hsl(${{Math.abs(hash % 360)}}, 80%, 50%)`;
-                    }}
+                        for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
+                        return `hsl(${Math.abs(hash % 360)}, 80%, 50%)`;
+                    }
 
-                    function draw() {{
+                    function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                        blocks.forEach(b => {{
+                        blocks.forEach(b => {
                             let isHovered = hoverGroupBlockIds.includes(b.id);
                             let isStaged = stagedBlockIds.includes(b.id);
                             
@@ -264,84 +264,96 @@ else:
                             
                             ctx.strokeStyle = '#18181b';
                             ctx.lineWidth = 0.5;
-                            if (b.border_top) {{ ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=1.5; }}
+                            if (b.border_top) { ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=1.5; }
                             ctx.strokeRect(x, y, w, h);
 
-                            if (isStaged) {{
+                            if (isStaged) {
                                 ctx.strokeStyle = '#ffffff';
                                 ctx.lineWidth = 2;
                                 ctx.strokeRect(x, y, w, h);
-                            }}
-                        }});
-                    }}
+                            }
+                        });
+                    }
 
-                    function getGroupCluster(targetBlock) {{
+                    function getGroupCluster(targetBlock) {
                         let cluster = [];
-                        blocks.forEach(b => {{
-                            if (Math.abs(b.min_c - targetBlock.min_c) < 15 && Math.abs(b.min_r - targetBlock.min_r) < 30) {{
+                        blocks.forEach(b => {
+                            if (Math.abs(b.min_c - targetBlock.min_c) < 15 && Math.abs(b.min_r - targetBlock.min_r) < 30) {
                                 cluster.push(b.id);
-                            }}
-                        }});
+                            }
+                        });
                         return cluster;
-                    }}
+                    }
 
-                    canvas.addEventListener('mousemove', (e) => {{
+                    canvas.addEventListener('mousemove', (e) => {
                         if (stagedBlockIds.length > 0) return;
                         const rect = canvas.getBoundingClientRect();
                         const mx = e.clientX - rect.left;
                         const my = e.clientY - rect.top;
 
                         let found = null;
-                        blocks.forEach(b => {{
+                        blocks.forEach(b => {
                             let x = (b.min_c - offsetCol) * CELL;
                             let y = (b.min_r - offsetRow) * CELL;
                             if (mx >= x && mx <= x + CELL && my >= y && my <= y + CELL) found = b;
-                        }});
+                        });
 
-                        if (found) {{
+                        if (found) {
                             hoverGroupBlockIds = getGroupCluster(found);
-                        }} else {{
+                        } else {
                             hoverGroupBlockIds = [];
-                        }}
+                        }
                         draw();
-                    }});
+                    });
 
-                    canvas.addEventListener('click', (e) => {{
+                    canvas.addEventListener('click', (e) => {
                         if (stagedBlockIds.length > 0) return;
-                        if (hoverGroupBlockIds.length > 0) {{
+                        if (hoverGroupBlockIds.length > 0) {
                             stagedBlockIds = [...hoverGroupBlockIds];
                             document.getElementById("lbl_zone").innerText = paintZone;
                             document.getElementById("dialogue_overlay").style.display = "block";
                             draw();
-                        }}
-                    }});
+                        }
+                    });
 
-                    document.getElementById("btn_yes").addEventListener('click', () => {{
-                        stagedBlockIds.forEach(id => {{
+                    document.getElementById("btn_yes").addEventListener('click', () => {
+                        stagedBlockIds.forEach(id => {
                             let target = blocks.find(b => b.id === id);
                             if (target) target.assigned_zone = paintZone;
 
-                            fetch('{SUPABASE_URL}/rest/v1/structures?id=eq.' + id, {{
+                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
                                 method: "PATCH", 
-                                headers: {{ "apikey": '{SUPABASE_KEY}', "Authorization": 'Bearer {SUPABASE_KEY}', "Content-Type": "application/json" }},
-                                body: JSON.stringify({{ "assigned_zone": paintZone }})
-                            }});
-                        }});
+                                headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                                body: JSON.stringify({ "assigned_zone": paintZone })
+                            });
+                        });
                         stagedBlockIds = [];
                         document.getElementById("dialogue_overlay").style.display = "none";
                         draw();
-                    }});
+                    });
 
-                    document.getElementById("btn_no").addEventListener('click', () => {{
+                    document.getElementById("btn_no").addEventListener('click', () => {
                         stagedBlockIds = [];
                         document.getElementById("dialogue_overlay").style.display = "none";
                         draw();
-                    }});
+                    });
 
                     draw();
                 })();
             </script>
             """
+            
+            # Injection via clear string variable maps
+            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w))\
+                                                 .replace("CANVAS_H", str(canvas_h))\
+                                                 .replace("__JSON_DATA__", json_str)\
+                                                 .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                                 .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                 .replace("MIN_C_VAL", str(min_c))\
+                                                 .replace("MIN_R_VAL", str(min_r))\
+                                                 .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                                 .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            
             components.html(html_zone_engine, height=660)
         else: st.warning("Please activate Admin clearance configurations to map layout zones.")
 
@@ -351,22 +363,22 @@ else:
     with all_tabs[1]:
         st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
         
-        html_inverter_engine = f"""
+        html_inverter_engine = """
         <div style="background:#090d16; padding:12px; border-radius:12px;">
             <div style="width:100%; max-height:580px; overflow:auto; border:2px solid #1e293b; border-radius:8px;">
-                <canvas id="inv_canvas" width="{canvas_w}" height="{canvas_h}" style="background:#020617; display:block;"></canvas>
+                <canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas>
             </div>
         </div>
         <script>
-            (function() {{
-                const blocks = {json_str};
+            (function() {
+                const blocks = __JSON_DATA__;
                 const canvas = document.getElementById("inv_canvas");
                 const ctx = canvas.getContext('2d');
-                const CELL = {CELL_SIZE};
-                const offsetCol = {min_c} - 2;
-                const offsetRow = {min_r} - 2;
+                const CELL = CELL_SIZE_VAL;
+                const offsetCol = MIN_C_VAL - 2;
+                const offsetRow = MIN_R_VAL - 2;
 
-                blocks.forEach(b => {{
+                blocks.forEach(b => {
                     ctx.fillStyle = '#1e293b';
                     let x = (b.min_c - offsetCol) * CELL;
                     let y = (b.min_r - offsetRow) * CELL;
@@ -375,12 +387,18 @@ else:
                     
                     ctx.strokeStyle = '#020617';
                     ctx.lineWidth = 0.5;
-                    if (b.border_top) {{ ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; }}
+                    if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; }
                     ctx.strokeRect(x, y, CELL, CELL);
-                }});
+                });
             })();
         </script>
         """
+        html_inverter_engine = html_inverter_engine.replace("CANVAS_W", str(canvas_w))\
+                                                   .replace("CANVAS_H", str(canvas_h))\
+                                                   .replace("__JSON_DATA__", json_str)\
+                                                   .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                   .replace("MIN_C_VAL", str(min_c))\
+                                                   .replace("MIN_R_VAL", str(min_r))
         components.html(html_inverter_engine, height=620)
 
     # ==============================================================================
@@ -413,7 +431,7 @@ else:
             components.html(html_micro_template, height=280)
         with col_t2:
             st.subheader("Fleetwide Automated Propagation Properties")
-            st.info("🚀 Clicking Replicate will match master geometric fingerprints to parse every tracker grid cell, cloning pegging parameters across thousands of cells诞 instantly.")
+            st.info("🚀 Clicking Replicate will match master geometric fingerprints to parse every tracker grid cell, cloning pegging parameters across thousands of cells instantly.")
 
     # ==============================================================================
     # 🏪 TAB 4: TRANSFORMER PLACEMENT VIEWS

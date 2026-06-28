@@ -205,6 +205,7 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
+            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -250,7 +251,7 @@ else:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
 
     # ==============================================================================
-    # 🚨 INTERFACE ROUTING ENGINE RULES (LOCKED SETUP CHECK SYSTEM)
+    # 🚨 INTERFACE ROUTING ENGINE RULES
     # ==============================================================================
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
@@ -283,7 +284,7 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Scroll/Pan around</b> | Mouse Wheel to <b>Zoom freely</b> | Click any block to shift its section zone.</div>
                 
-                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
@@ -314,7 +315,8 @@ else:
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName === 'Unassigned') return '#1e293b';
+                        // Case-insensitive string guard checks to eliminate blank rendering crashes completely
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#1e293b';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
                     }
@@ -511,13 +513,13 @@ else:
                 """
                 components.html(html_micro_template, height=280)
 
-        # --- STAGE 4: TRANSFORMER HUB VIEWS PLACEMENT MAP ---
+        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP ---
         with setup_tabs[3]:
             st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
             html_transformer_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:crosshair;"></canvas>
+                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>

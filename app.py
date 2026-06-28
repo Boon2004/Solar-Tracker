@@ -22,10 +22,10 @@ supabase: Client = get_supabase_client()
 # Page Configurations
 st.set_page_config(layout="wide", page_title="Universal Solar Digital Twin System")
 
-# Initialize robust session arrays to make the system fully dynamic and extensible
 if "active_site_id" not in st.session_state: st.session_state.active_site_id = None
 if "is_admin_mode" not in st.session_state: st.session_state.is_admin_mode = False
-if "managed_zones" not in st.session_state: st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
+if "managed_zones" not in st.session_state: 
+    st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
 if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
 
 @st.cache_data(ttl=1)
@@ -90,13 +90,10 @@ if st.session_state.active_site_id is None:
                             structures_queue = []
                             cell_counter = 1
                             
-                            # HIGH RESOLUTION CELL PARSER: Evaluates individual cell elements directly
-                            # maps coordinates perfectly to match thick/thin layout lines exactly
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
                                     
-                                    # Identify thick/thin line boundaries natively
                                     has_top = cell.border and cell.border.top and cell.border.top.style
                                     has_left = cell.border and cell.border.left and cell.border.left.style
                                     has_bottom = cell.border and cell.border.bottom and cell.border.bottom.style
@@ -158,7 +155,6 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
-            # --- EXTENSIBILITY SYSTEM BLOCK: Custom Tab Creator ---
             st.write("---")
             st.subheader("🛠️ Custom Interface Tab Builder")
             custom_tab_name = st.text_input("Assign New Tracker Tab Label:", placeholder="e.g. Floating Cell, Cabling Phase...")
@@ -172,7 +168,6 @@ else:
 
     current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
     
-    # Generate complete layout tabs including dynamically compiled user templates
     base_tab_labels = [
         "🖼️ Phase 1: Zone Assignation", 
         "🔌 Phase 2: Inverter Mapping", 
@@ -188,7 +183,6 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
-    # Resolve grid layout dimensions safely
     min_r = min([b.get("min_r", 1) for b in active_table_data]) if active_table_data else 1
     max_r = max([b.get("max_r", 100) for b in active_table_data]) if active_table_data else 100
     min_c = min([b.get("min_c", 1) for b in active_table_data]) if active_table_data else 1
@@ -200,7 +194,7 @@ else:
     json_str = json.dumps(active_table_data)
 
     # ==============================================================================
-    # 🖼️ TAB 1: ZONE ASSIGNATION (HIGH CONTRAST HOVER HOOKS + OVERLAY BAR BUTTONS)
+    # 🖼️ TAB 1: ZONE ASSIGNATION (BRACKET ESCAPING APPLIED)
     # ==============================================================================
     with all_tabs[0]:
         st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
@@ -268,7 +262,6 @@ else:
 
                             ctx.fillRect(x, y, w, h);
                             
-                            // High Resolution Structural Border Framing Map Linker
                             ctx.strokeStyle = '#18181b';
                             ctx.lineWidth = 0.5;
                             if (b.border_top) {{ ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=1.5; }}
@@ -353,11 +346,10 @@ else:
         else: st.warning("Please activate Admin clearance configurations to map layout zones.")
 
     # ==============================================================================
-    # 🔌 TAB 2: INVERTER CONFIGURATION LAYER (STRING ALIGNMENT DISCOVERY VIEWS)
+    # 🔌 TAB 2: INVERTER CONFIGURATION LAYER
     # ==============================================================================
     with all_tabs[1]:
         st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
-        st.info("💡 Complete individual cell granularity outlines draw standard lines and structural borders cleanly to track unique facing properties.")
         
         html_inverter_engine = f"""
         <div style="background:#090d16; padding:12px; border-radius:12px;">
@@ -381,10 +373,9 @@ else:
                     
                     ctx.fillRect(x, y, CELL, CELL);
                     
-                    // Precise Internal Structural Border Rendering Engine
                     ctx.strokeStyle = '#020617';
                     ctx.lineWidth = 0.5;
-                    if (b.border_top) {{ ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; }} // Draw individual Facing Dividers
+                    if (b.border_top) {{ ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; }}
                     ctx.strokeRect(x, y, CELL, CELL);
                 }});
             })();
@@ -393,7 +384,7 @@ else:
         components.html(html_inverter_engine, height=620)
 
     # ==============================================================================
-    # 📌 TAB 3: PEG&PIL CLONE BLUEPRINT TEMPLATES GENERATOR MODULE
+    # 📌 TAB 3: PEG & PIL TEMPLATES MODULE
     # ==============================================================================
     with all_tabs[2]:
         st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
@@ -401,9 +392,7 @@ else:
         col_t1, col_t2 = st.columns([4, 6])
         with col_t1:
             st.subheader("Isolated Blueprint Variant Template Pattern Frame")
-            st.write("Map out precise pegging/piling pin layouts on this single master module pattern frame once:")
             
-            # Draw highly detailed magnified master tracking reference frame isolated cleanly 
             html_micro_template = """
             <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;">
                 <canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas>
@@ -415,17 +404,16 @@ else:
             <script>
                 const c = document.getElementById("micro_canvas");
                 const ctx = c.getContext('2d');
-                // Render beautiful schematic model tracking tracker components
                 ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140);
                 ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140);
-                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); // Preset Pin Target
-                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill(); // Preset Pin Target
+                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();
             </script>
             """
             components.html(html_micro_template, height=280)
         with col_t2:
             st.subheader("Fleetwide Automated Propagation Properties")
-            st.info("🚀 Clicking Replicate will match master geometric fingerprints to parse every tracker grid cell, cloning pegging parameters across thousands of cells instantaneously.")
+            st.info("🚀 Clicking Replicate will match master geometric fingerprints to parse every tracker grid cell, cloning pegging parameters across thousands of cells诞 instantly.")
 
     # ==============================================================================
     # 🏪 TAB 4: TRANSFORMER PLACEMENT VIEWS
@@ -435,7 +423,7 @@ else:
         st.write("Click anywhere inside open layout spaces to station Transformer Hubs and aggregate related inverter networks.")
 
     # ==============================================================================
-    # 🛠️ AUTO COMPILED USER ASSIGNED EXTRA WORKFLOW TEMPLATE CHANNELS
+    # 🛠️ EXTRA WORKFLOW INTERFACE GENERATOR
     # ==============================================================================
     for idx, tab_label in enumerate(st.session_state.custom_tabs):
         with all_tabs[4 + idx]:

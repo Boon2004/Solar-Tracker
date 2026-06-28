@@ -216,7 +216,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     # ==============================================================================
-    # 🖼️ OVERVIEW: ZOOMABLE + SCROLLABLE + SINGLE CLICK NEIGHBORHOOD GROUPER
+    # 🖼️ OVERVIEW: INTERACTIVE VIEWPORT WITH SELECTION SAFETY GUARD BUTTONS
     # ==============================================================================
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
@@ -233,8 +233,15 @@ else:
 
             json_str = json.dumps(active_table_data)
             html_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; touch-action:none; user-select: none;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Scroll/Pan</b> | Mouse wheel to <b>Zoom</b> | Click a tracker to assign its full section.</div>
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Pan/Scroll</b> | Mouse Wheel to <b>Zoom</b> | Click a tracker to stage group section.</div>
+                
+                <div id="action_bar" style="display:none; position:absolute; top:50px; left:30px; background:#1e293b; padding:12px 20px; border-radius:8px; border:2px solid #38bdf8; z-index:1000; box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-family:sans-serif;">
+                    <span style="color:#f1f5f9; font-weight:bold; margin-right:15px; font-size:14px;">Assign Section Group to <span id="target_txt" style="text-decoration:underline;"></span>?</span>
+                    <button id="btn_confirm" style="background:#22c55e; color:white; border:none; padding:6px 14px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:8px;">✅ Confirm</button>
+                    <button id="btn_cancel" style="background:#ef4444; color:white; border:none; padding:6px 14px; border-radius:4px; font-weight:bold; cursor:pointer;">❌ Cancel</button>
+                </div>
+
                 <canvas id="zone_painter" width="1500" height="600" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
             </div>
             <script>
@@ -244,7 +251,6 @@ else:
                     const ctx = canvas.getContext('2d');
                     const paintZone = '""" + target_paint_zone + """';
                     
-                    // Fixed visual proportions matching Excel cell footprints
                     const CELL_W = 14.0; 
                     const CELL_H = 14.0;
 
@@ -254,7 +260,6 @@ else:
                     const totalWidth = totalCols * CELL_W;
                     const totalHeight = totalRows * CELL_H;
 
-                    // Compute start framing bounds dynamically
                     let scale = Math.min((canvas.width - 60) / totalWidth, (canvas.height - 60) / totalHeight);
                     if (scale <= 0 || scale === Infinity) scale = 0.4;
 
@@ -262,6 +267,7 @@ else:
                     let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
 
                     let isDragging = false, moved = false, startX, startY;
+                    let stagedBlockIds = []; // Stores the currently selected group block targets safely
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); 
@@ -270,7 +276,9 @@ else:
                         ctx.scale(scale, scale);
 
                         blocks.forEach(b => {
+                            let isStaged = stagedBlockIds.includes(b.id);
                             let az = b.assigned_zone || "Unassigned";
+                            
                             if (az === 'Zone A') ctx.fillStyle = '#ff4b4b'; 
                             else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; 
                             else if (az === 'Zone C') ctx.fillStyle = '#eab308'; 
@@ -283,16 +291,26 @@ else:
 
                             ctx.fillRect(x, y, w, h);
                             
-                            // High contrast clear outline borders around each individual tracker item 
+                            // High contrast clear outline borders
                             ctx.strokeStyle = '#0f172a';
                             ctx.lineWidth = 1.0;
                             ctx.strokeRect(x, y, w, h);
+
+                            // If this chunk is currently staged, draw a thick neon glowing highlight border on it
+                            if (isStaged) {
+                                ctx.strokeStyle = '#38bdf8';
+                                ctx.lineWidth = 2.5;
+                                ctx.strokeRect(x, y, w, h);
+                            }
                         });
 
                         ctx.restore();
                     }
 
-                    function runSectionSelection(clientX, clientY) {
+                    function runSectionStaging(clientX, clientY) {
+                        // Prevent changing selection if there is an active confirmation waiting
+                        if (stagedBlockIds.length > 0) return;
+
                         const rect = canvas.getBoundingClientRect();
                         const clickX = (clientX - rect.left - offsetX) / scale;
                         const clickY = (clientY - rect.top - offsetY) / scale;
@@ -311,30 +329,52 @@ else:
                         });
 
                         if (targetBlock) {
+                            stagedBlockIds = [];
                             blocks.forEach(b => {
-                                const rowDistance = Math.abs(b.min_r - targetBlock.min_r);
-                                const colDistance = Math.abs(b.min_c - targetBlock.min_c);
+                                // Dynamic column boundaries logic handles column tracks perfectly across blank gaps
+                                const sameColumnTrack = Math.abs(b.min_c - targetBlock.min_c) < 18;
+                                const sameVerticalBlock = Math.abs(b.min_r - targetBlock.min_r) < 35;
 
-                                // Automatically pairs components within 25 steps (stopping accurately at 5-row gaps)
-                                if (rowDistance < 25 && colDistance < 25) {
-                                    b.assigned_zone = paintZone;
-                                    
-                                    fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + b.id, {
-                                        method: "PATCH", 
-                                        headers: { 
-                                            "apikey": '""" + SUPABASE_KEY + """', 
-                                            "Authorization": 'Bearer """ + SUPABASE_KEY + """', 
-                                            "Content-Type": "application/json" 
-                                        },
-                                        body: JSON.stringify({ "assigned_zone": paintZone })
-                                    });
+                                if (sameColumnTrack && sameVerticalBlock) {
+                                    stagedBlockIds.push(b.id);
                                 }
                             });
-                            draw();
+
+                            if (stagedBlockIds.length > 0) {
+                                document.getElementById("target_txt").innerText = paintZone;
+                                document.getElementById("action_bar").style.display = "block";
+                                draw();
+                            }
                         }
                     }
 
-                    // Dynamic Drag-to-Pan Mapping Actions
+                    // Setup Validation Button Click Event Handlers
+                    document.getElementById("btn_confirm").addEventListener('click', () => {
+                        stagedBlockIds.forEach(id => {
+                            let match = blocks.find(b => b.id === id);
+                            if (match) match.assigned_zone = paintZone;
+
+                            fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + id, {
+                                method: "PATCH", 
+                                headers: { 
+                                    "apikey": '""" + SUPABASE_KEY + """', 
+                                    "Authorization": 'Bearer """ + SUPABASE_KEY + """', 
+                                    "Content-Type": "application/json" 
+                                },
+                                body: JSON.stringify({ "assigned_zone": paintZone })
+                            });
+                        });
+                        stagedBlockIds = [];
+                        document.getElementById("action_bar").style.display = "none";
+                        draw();
+                    });
+
+                    document.getElementById("btn_cancel").addEventListener('click', () => {
+                        stagedBlockIds = [];
+                        document.getElementById("action_bar").style.display = "none";
+                        draw();
+                    });
+
                     canvas.addEventListener('mousedown', (e) => {
                         isDragging = true; moved = false;
                         startX = e.clientX - offsetX; startY = e.clientY - offsetY;
@@ -352,18 +392,15 @@ else:
                         if (!isDragging) return;
                         isDragging = false;
                         canvas.style.cursor = 'grab';
-                        // If user just tapped without scrolling/dragging, run section assignment logic
-                        if (!moved) runSectionSelection(e.clientX, e.clientY);
+                        if (!moved) runSectionStaging(e.clientX, e.clientY);
                     });
 
-                    // Mouse Wheel Zooming Engine
                     canvas.addEventListener('wheel', (e) => {
                         e.preventDefault();
                         const rect = canvas.getBoundingClientRect();
                         const mouseX = e.clientX - rect.left;
                         const mouseY = e.clientY - rect.top;
 
-                        // Calculate cursor anchor points before zooming
                         const gridX = (mouseX - offsetX) / scale;
                         const gridY = (mouseY - offsetY) / scale;
 
@@ -372,7 +409,6 @@ else:
                         if (scale < 0.05) scale = 0.05;
                         if (scale > 8) scale = 8;
 
-                        // Adjust offset so zoom anchors on mouse position cleanly
                         offsetX = mouseX - gridX * scale;
                         offsetY = mouseY - gridY * scale;
 
@@ -467,7 +503,7 @@ else:
                         if (cx >= xStart && cx <= xEnd && cy >= yStart && cy <= yEnd) {
                             let targetCol = "pegging_status", dateCol = "pegging_date";
                             if(layerKey === "pil") { targetCol="piling_status"; dateCol="piling_date"; }
-                            else if(layerKey === "mnt") { targetCol="mounting_status"; dateCol="mounting_date"; }
+                            else if(layerKey === "mnt") { targetCol="mounting_status"; borderCol="mounting_date"; }
                             else if(layerKey === "mod") { targetCol="modules_status"; dateCol="modules_date"; }
                             else if(layerKey === "istr") { targetCol="mounting_status"; dateCol="inv_str_date"; }
                             else if(layerKey === "ihub") { targetCol="mounting_status"; dateCol="inv_hub_date"; }

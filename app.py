@@ -216,7 +216,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     # ==============================================================================
-    # 🖼️ OVERVIEW: INTERACTIVE VIEWPORT WITH SELECTION SAFETY GUARD BUTTONS
+    # 🖼️ OVERVIEW: ZOOMABLE VIEWPORT WITH DYNAMIC ASSIGNMENT CONFIRMATION CONTROLS
     # ==============================================================================
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
@@ -226,20 +226,18 @@ else:
 
         if st.session_state.is_admin_mode:
             st.markdown("---")
-            target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
+            # Upgraded from fixed selectbox to free text input field allowing custom named zones
+            target_paint_zone = st.text_input("✍️ Type Custom Zone Identifier Label:", value="Zone A")
             
-            max_sheet_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
-            max_sheet_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
-
             json_str = json.dumps(active_table_data)
             html_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Pan/Scroll</b> | Mouse Wheel to <b>Zoom</b> | Click a tracker to stage group section.</div>
                 
-                <div id="action_bar" style="display:none; position:absolute; top:50px; left:30px; background:#1e293b; padding:12px 20px; border-radius:8px; border:2px solid #38bdf8; z-index:1000; box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-family:sans-serif;">
-                    <span style="color:#f1f5f9; font-weight:bold; margin-right:15px; font-size:14px;">Assign Section Group to <span id="target_txt" style="text-decoration:underline;"></span>?</span>
-                    <button id="btn_confirm" style="background:#22c55e; color:white; border:none; padding:6px 14px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:8px;">✅ Confirm</button>
-                    <button id="btn_cancel" style="background:#ef4444; color:white; border:none; padding:6px 14px; border-radius:4px; font-weight:bold; cursor:pointer;">❌ Cancel</button>
+                <div id="action_bar" style="display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%); background:#1e293b; padding:15px 30px; border-radius:8px; border:2px solid #38bdf8; z-index:1000; box-shadow: 0 4px 25px rgba(0,0,0,0.7); font-family:sans-serif; text-align:center;">
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:12px; font-size:15px;">Assign Selected Section to <span id="target_txt" style="color:#38bdf8; font-weight:bold;"></span>?</div>
+                    <button id="btn_confirm" style="background:#22c55e; color:white; border:none; padding:8px 18px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Confirm</button>
+                    <button id="btn_cancel" style="background:#ef4444; color:white; border:none; padding:8px 18px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">Cancel</button>
                 </div>
 
                 <canvas id="zone_painter" width="1500" height="600" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
@@ -249,25 +247,45 @@ else:
                     const blocks = """ + json_str + """;
                     const canvas = document.getElementById("zone_painter");
                     const ctx = canvas.getContext('2d');
-                    const paintZone = '""" + target_paint_zone + """';
                     
-                    const CELL_W = 14.0; 
-                    const CELL_H = 14.0;
+                    const CELL_W = 12.0; 
+                    const CELL_H = 12.0;
 
-                    const totalRows = """ + str(max_sheet_r) + """;
-                    const totalCols = """ + str(max_sheet_c) + """;
+                    // DYNAMIC DEFENSIVE SCALING BOUNDARIES ENGINE:
+                    // Finds the exact location metrics where elements exist to avoid squeezing empty padding spaces.
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    blocks.forEach(b => {
+                        if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
+                        if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
+                    });
 
-                    const totalWidth = totalCols * CELL_W;
-                    const totalHeight = totalRows * CELL_H;
+                    if(minX === Infinity) { minX=0; maxX=100; minY=0; maxY=100; }
 
-                    let scale = Math.min((canvas.width - 60) / totalWidth, (canvas.height - 60) / totalHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.4;
+                    // Localized focused dimensions map tracking boundary parameters
+                    const mapWidth = (maxX - minX + 1) * CELL_W;
+                    const mapHeight = (maxY - minY + 1) * CELL_H;
 
-                    let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
-                    let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    // Anchor focusing view directly onto active coordinates
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL_W * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL_H * scale);
 
                     let isDragging = false, moved = false, startX, startY;
-                    let stagedBlockIds = []; // Stores the currently selected group block targets safely
+                    let stagedBlockIds = [];
+
+                    // HASH STRING COLOR MAKER ENGINE: Generates matching unique persistent colors for custom zone strings
+                    function getZoneColor(zoneName) {
+                        if (!zoneName || zoneName === 'Unassigned') return '#334155';
+                        let hash = 0;
+                        for (let i = 0; i < zoneName.length; i++) {
+                            hash = zoneName.charCodeAt(i) + ((hash << 5) - hash);
+                        }
+                        // Format colors clearly matching modern UI components
+                        const h = Math.abs(hash % 360);
+                        return `hsl(${h}, 85%, 55%)`;
+                    }
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); 
@@ -277,12 +295,7 @@ else:
 
                         blocks.forEach(b => {
                             let isStaged = stagedBlockIds.includes(b.id);
-                            let az = b.assigned_zone || "Unassigned";
-                            
-                            if (az === 'Zone A') ctx.fillStyle = '#ff4b4b'; 
-                            else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; 
-                            else if (az === 'Zone C') ctx.fillStyle = '#eab308'; 
-                            else ctx.fillStyle = '#334155';
+                            ctx.fillStyle = getZoneColor(b.assigned_zone);
 
                             let x = b.min_c * CELL_W;
                             let y = b.min_r * CELL_H;
@@ -291,15 +304,14 @@ else:
 
                             ctx.fillRect(x, y, w, h);
                             
-                            // High contrast clear outline borders
                             ctx.strokeStyle = '#0f172a';
-                            ctx.lineWidth = 1.0;
+                            ctx.lineWidth = 0.8;
                             ctx.strokeRect(x, y, w, h);
 
-                            // If this chunk is currently staged, draw a thick neon glowing highlight border on it
+                            // Active Selection Staging highlight border visualization logic
                             if (isStaged) {
-                                ctx.strokeStyle = '#38bdf8';
-                                ctx.lineWidth = 2.5;
+                                ctx.strokeStyle = '#ffffff';
+                                ctx.lineWidth = 2.0;
                                 ctx.strokeRect(x, y, w, h);
                             }
                         });
@@ -308,7 +320,6 @@ else:
                     }
 
                     function runSectionStaging(clientX, clientY) {
-                        // Prevent changing selection if there is an active confirmation waiting
                         if (stagedBlockIds.length > 0) return;
 
                         const rect = canvas.getBoundingClientRect();
@@ -331,7 +342,7 @@ else:
                         if (targetBlock) {
                             stagedBlockIds = [];
                             blocks.forEach(b => {
-                                // Dynamic column boundaries logic handles column tracks perfectly across blank gaps
+                                // Section grouping window boundaries perfectly matching your layout track configurations
                                 const sameColumnTrack = Math.abs(b.min_c - targetBlock.min_c) < 18;
                                 const sameVerticalBlock = Math.abs(b.min_r - targetBlock.min_r) < 35;
 
@@ -341,18 +352,19 @@ else:
                             });
 
                             if (stagedBlockIds.length > 0) {
-                                document.getElementById("target_txt").innerText = paintZone;
+                                const activeZoneStr = '""" + target_paint_zone + """' || 'Zone A';
+                                document.getElementById("target_txt").innerText = activeZoneStr;
                                 document.getElementById("action_bar").style.display = "block";
                                 draw();
                             }
                         }
                     }
 
-                    // Setup Validation Button Click Event Handlers
                     document.getElementById("btn_confirm").addEventListener('click', () => {
+                        const activeZoneStr = '""" + target_paint_zone + """' || 'Zone A';
                         stagedBlockIds.forEach(id => {
                             let match = blocks.find(b => b.id === id);
-                            if (match) match.assigned_zone = paintZone;
+                            if (match) match.assigned_zone = activeZoneStr;
 
                             fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + id, {
                                 method: "PATCH", 
@@ -361,7 +373,7 @@ else:
                                     "Authorization": 'Bearer """ + SUPABASE_KEY + """', 
                                     "Content-Type": "application/json" 
                                 },
-                                body: JSON.stringify({ "assigned_zone": paintZone })
+                                body: JSON.stringify({ "assigned_zone": activeZoneStr })
                             });
                         });
                         stagedBlockIds = [];
@@ -406,8 +418,8 @@ else:
 
                         const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
                         scale *= zoomFactor;
-                        if (scale < 0.05) scale = 0.05;
-                        if (scale > 8) scale = 8;
+                        if (scale < 0.02) scale = 0.02;
+                        if (scale > 10) scale = 10;
 
                         offsetX = mouseX - gridX * scale;
                         offsetY = mouseY - gridY * scale;
@@ -424,7 +436,7 @@ else:
     # ==============================================================================
     # 📌 FIELD TRACKING TIMELINE WORKSPACES
     # ==============================================================================
-    def inject_time_based_map(layer_key, data_array, max_r, max_c, selected_history_date=None):
+    def inject_time_based_map(layer_key, data_array, selected_history_date=None):
         json_points = json.dumps(data_array)
         today_str = str(date.today())
         history_target = str(selected_history_date) if selected_history_date else "null"
@@ -441,19 +453,25 @@ else:
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
                 const layerKey = '""" + layer_key + """';
 
-                const CELL_W = 14.0; 
-                const CELL_H = 14.0;
-                const totalRows = """ + str(max_r) + """;
-                const totalCols = """ + str(max_c) + """;
+                const CELL_W = 12.0; 
+                const CELL_H = 12.0;
 
-                const totalWidth = totalCols * CELL_W;
-                const totalHeight = totalRows * CELL_H;
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                blocks.forEach(b => {
+                    if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
+                    if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
+                });
 
-                let scale = Math.min((canvas.width - 40) / totalWidth, (canvas.height - 40) / totalHeight);
-                if(scale <= 0 || scale === Infinity) scale = 0.4;
+                if(minX === Infinity) { minX=0; maxX=100; minY=0; maxY=100; }
 
-                let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
-                let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
+                const mapWidth = (maxX - minX + 1) * CELL_W;
+                const mapHeight = (maxY - minY + 1) * CELL_H;
+
+                let scale = Math.min((canvas.width - 40) / mapWidth, (canvas.height - 40) / mapHeight);
+                if(scale <= 0 || scale === Infinity) scale = 0.5;
+
+                let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL_W * scale);
+                let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL_H * scale);
 
                 let isDragging = false, moved = false, startX, startY;
 
@@ -482,7 +500,7 @@ else:
                         }
                         ctx.fillRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W, (b.max_r - b.min_r + 1) * CELL_H);
                         ctx.strokeStyle = '#0f172a';
-                        ctx.lineWidth = 1.0;
+                        ctx.lineWidth = 0.8;
                         ctx.strokeRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W, (b.max_r - b.min_r + 1) * CELL_H);
                     });
                     ctx.restore();
@@ -503,7 +521,7 @@ else:
                         if (cx >= xStart && cx <= xEnd && cy >= yStart && cy <= yEnd) {
                             let targetCol = "pegging_status", dateCol = "pegging_date";
                             if(layerKey === "pil") { targetCol="piling_status"; dateCol="piling_date"; }
-                            else if(layerKey === "mnt") { targetCol="mounting_status"; borderCol="mounting_date"; }
+                            else if(layerKey === "mnt") { targetCol="mounting_status"; dateCol="mounting_date"; }
                             else if(layerKey === "mod") { targetCol="modules_status"; dateCol="modules_date"; }
                             else if(layerKey === "istr") { targetCol="mounting_status"; dateCol="inv_str_date"; }
                             else if(layerKey === "ihub") { targetCol="mounting_status"; dateCol="inv_hub_date"; }
@@ -540,10 +558,7 @@ else:
             with col_act2:
                 if st.button("🔄 Hard Reset Map Layout Caches", key=f"sync_btn_{unique_key}"): st.cache_data.clear(); st.rerun()
             
-            db_max_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
-            db_max_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
-            
-            components.html(inject_time_based_map(unique_key, active_table_data, db_max_r, db_max_c, hist_date), height=520)
+            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=520)
 
     process_standard_construction_tab(t_peg, "Pegging Stage", "peg")
     process_standard_construction_tab(t_pil, "Piling Stage", "pil")

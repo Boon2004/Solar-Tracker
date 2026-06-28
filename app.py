@@ -58,7 +58,7 @@ if st.session_state.active_site_id is None:
                         with st.spinner(f"Purging data assets for {wipe_target}..."):
                             try:
                                 supabase.table("farms").delete().eq("name", wipe_target).execute()
-                                st.success(f"Purged all records for {wipe_target}!")
+                                st.success(f"Successfully purged all cloud data for {wipe_target}!")
                                 st.cache_data.clear()
                                 time.sleep(1); st.rerun()
                             except Exception as e: st.error(f"Purge rejected: {str(e)}")
@@ -211,7 +211,6 @@ else:
     # 🚨 INTERFACE ROUTING ENGINE RULES (LOCKED SETUP CHECK SYSTEM)
     # ==============================================================================
     if not site_is_published and not st.session_state.is_admin_mode:
-        # If site layout initialization config setup isn't finalized, lock out out all tabs from crew views
         st.write("---")
         st.warning("🚧 **Configuration Incomplete:** This project site layout layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
         st.info("🔒 If you are the site manager, please log in as Admin in the left clearance panel to configure zoning boundaries.")
@@ -219,7 +218,6 @@ else:
 
     # Dynamic Tab Compilation Array routing logic
     if st.session_state.is_admin_mode:
-        # Admin gets full access configuration views to organize elements
         setup_tabs = st.tabs([
             "🖼️ Step 1: Base Overview & Zone Assignation", 
             "🔌 Step 2: Electrical Inverter Mapping", 
@@ -320,7 +318,7 @@ else:
                         stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
                     document.getElementById("btn_no").addEventListener('click', () => {
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.none"; draw();
+                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
                     draw();
                 })();
@@ -334,7 +332,16 @@ else:
             st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
             html_inverter_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:580px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas></div></div>
-            <script>(function() { const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2; blocks.forEach(b => { ctx.fillStyle = '#1e293b'; let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL; ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; } ctx.strokeRect(x, y, CELL, CELL); }); })();</script>
+            <script>
+                (function() { 
+                    const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2; 
+                    blocks.forEach(b => { 
+                        ctx.fillStyle = '#1e293b'; let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL; ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; 
+                        if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; } 
+                        ctx.strokeRect(x, y, CELL, CELL); 
+                    }); 
+                })();
+            </script>
             """
             html_inverter_engine = html_inverter_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MIN_R_VAL", str(min_r))
             components.html(html_inverter_engine, height=620)
@@ -364,41 +371,52 @@ else:
         def inject_crew_tracking_map(layer_key, data_array, min_c, max_c, min_r, max_r):
             json_points = json.dumps(data_array)
             today_str = str(date.today())
-            canvas_w = (max_c - min_c + 5) * 14
-            canvas_h = (max_r - min_r + 5) * 14
+            canvas_w_val = (max_c - min_c + 5) * 14
+            canvas_h_val = (max_r - min_r + 5) * 14
 
-            return f"""
-            <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="crew_{layer_key}" width="{canvas_w}" height="{canvas_h}" style="background:#020617; display:block; cursor:pointer;"></canvas></div></div>
+            html_crew_map = """
+            <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="crew_LAYER_KEY" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:pointer;"></canvas></div></div>
             <script>
-                (function() {{
-                    const blocks = {json_points}; const canvas = document.getElementById("crew_{layer_key}"); const ctx = canvas.getContext('2d');
-                    const CELL = 14; const offsetCol = {min_c} - 2; const offsetRow = {min_r} - 2;
-                    function draw() {{
+                (function() {
+                    const blocks = __JSON_DATA__; const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
+                    const CELL = 14; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2;
+                    function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        blocks.forEach(b => {{
-                            ctx.fillStyle = b['{layer_key}_status'] === 'completed' ? '#22c55e' : '#2563eb';
+                        blocks.forEach(b => {
+                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#2563eb';
                             let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
                             ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#0f172a'; ctx.strokeRect(x, y, CELL, CELL);
-                        }});
-                    }}
-                    canvas.addEventListener('click', (e) => {{
+                        });
+                    }
+                    canvas.addEventListener('click', (e) => {
                         const rect = canvas.getBoundingClientRect(); const cx = e.clientX - rect.left; const cy = e.clientY - rect.top;
-                        blocks.forEach(b => {{
+                        blocks.forEach(b => {
                             let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
-                            if (cx >= x && cx <= x + CELL && cy >= y && cy <= y + CELL) {{
-                                b['{layer_key}_status'] = 'completed';
-                                const p = {{}}; p['{layer_key}_status'] = 'completed'; p['{layer_key}_date'] = '{today_str}';
-                                fetch('{SUPABASE_URL}/rest/v1/structures?id=eq.' + b.id, {{
-                                    method: "PATCH", headers: {{ "apikey": '{SUPABASE_KEY}', "Authorization": 'Bearer {SUPABASE_KEY}', "Content-Type": "application/json" }},
+                            if (cx >= x && cx <= x + CELL && cy >= y && cy <= y + CELL) {
+                                b['LAYER_KEY_status'] = 'completed';
+                                const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
+                                    method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
                                     body: JSON.stringify(p)
-                                }}).then(() => draw());
-                            }}
-                        }});
-                    }});
+                                }).then(() => draw());
+                            }
+                        });
+                    });
                     draw();
                 })();
             </script>
             """
+            
+            html_crew_map = html_crew_map.replace("CANVAS_W", str(canvas_w_val))\
+                                         .replace("CANVAS_H", str(canvas_h_val))\
+                                         .replace("__JSON_DATA__", json_points)\
+                                         .replace("LAYER_KEY", str(layer_key))\
+                                         .replace("MIN_C_VAL", str(min_c))\
+                                         .replace("MIN_R_VAL", str(min_r))\
+                                         .replace("TODAY_STR_VAL", today_str)\
+                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):
             with tab_obj:

@@ -81,7 +81,7 @@ if st.session_state.active_site_id is None:
                         try:
                             farm_node = supabase.table("farms").insert({
                                 "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd,
-                                "max_rows": max_rows, "max_cols": max_cols
+                                "max_rows": max_rows, "max_cols": max_cols, "is_published": False
                             }).execute()
                             if farm_node.data: new_fid = farm_node.data[0]["id"]
                         except Exception: pass
@@ -139,6 +139,9 @@ if st.session_state.active_site_id is None:
 # 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING PLATFORM COMMAND CENTER
 # ==============================================================================
 else:
+    current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
+    site_is_published = current_farm_record.get("is_published", False)
+
     col_h1, col_h2 = st.columns([8, 2])
     with col_h1: st.subheader(f"📍 Operational Twin Workspace — {st.session_state.active_site_name}")
     with col_h2:
@@ -155,27 +158,32 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
+            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
-            st.subheader("🛠️ Custom Interface Tab Builder")
+            st.subheader("📢 Field Deployment Release")
+            if not site_is_published:
+                if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary"):
+                    supabase.table("farms").update({"is_published": True}).eq("id", st.session_state.active_site_id).execute()
+                    st.success("Workspace deployed out live successfully!")
+                    time.sleep(0.5); st.rerun()
+            else:
+                st.success("✅ Layout Workspace Status: Live to Crew")
+                if st.button("🔒 Revoke Live Deployment and Hide Workspaces"):
+                    supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
+                    st.rerun()
+            
+            st.write("---")
+            st.subheader("🛠️ Custom Tracker Tab Builder")
             custom_tab_name = st.text_input("Assign New Tracker Tab Label:", placeholder="e.g. Floating Cell, Cabling Phase...")
-            if st.button("✨ Instantiate Phase Tracker Tab") and custom_tab_name:
+            if st.button("✨ Instantiate Phase Tab") and custom_tab_name:
                 if custom_tab_name not in st.session_state.custom_tabs:
                     st.session_state.custom_tabs.append(custom_tab_name)
-                    st.success(f"Instantiated '{custom_tab_name}' Workspace Tab!")
+                    st.success(f"Instantiated '{custom_tab_name}'!")
                     time.sleep(0.4); st.rerun()
                     
-            if st.button("🔒 Revoke Admin Permissions"): st.session_state.is_admin_mode = False; st.rerun()
+            if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
-    
-    base_tab_labels = [
-        "🖼️ Phase 1: Zone Assignation", 
-        "🔌 Phase 2: Inverter Mapping", 
-        "📌 Phase 3: Pegging & Piling Templates", 
-        "🏪 Phase 4: Transformer Station Nodes"
-    ]
-    all_tabs = st.tabs(base_tab_labels + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
-    
+    # Database Pull
     @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
         try: return supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").execute().data or []
@@ -193,18 +201,41 @@ else:
     canvas_h = (max_r - min_r + 5) * CELL_SIZE
     json_str = json.dumps(active_table_data)
 
+    # Automatically handle fallback zone structures
+    for b in active_table_data:
+        z = b.get("assigned_zone")
+        if z and z not in st.session_state.managed_zones:
+            st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
+
     # ==============================================================================
-    # 🖼️ TAB 1: ZONE ASSIGNATION (ROBUST CLEAN REPLACEMENT STRUCTURE)
+    # 🚨 INTERFACE ROUTING ENGINE RULES (LOCKED SETUP CHECK SYSTEM)
     # ==============================================================================
-    with all_tabs[0]:
-        st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
-        if st.session_state.is_admin_mode:
+    if not site_is_published and not st.session_state.is_admin_mode:
+        # If site layout initialization config setup isn't finalized, lock out out all tabs from crew views
+        st.write("---")
+        st.warning("🚧 **Configuration Incomplete:** This project site layout layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
+        st.info("🔒 If you are the site manager, please log in as Admin in the left clearance panel to configure zoning boundaries.")
+        st.stop()
+
+    # Dynamic Tab Compilation Array routing logic
+    if st.session_state.is_admin_mode:
+        # Admin gets full access configuration views to organize elements
+        setup_tabs = st.tabs([
+            "🖼️ Step 1: Base Overview & Zone Assignation", 
+            "🔌 Step 2: Electrical Inverter Mapping", 
+            "📌 Step 3: Pegging & Piling Customizer",
+            "🏪 Step 4: Transformer Drop Hubs"
+        ])
+        
+        # --- STAGE 1: SETUPS OVERVIEW TAB ---
+        with setup_tabs[0]:
+            st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             col_z1, col_z2 = st.columns([6, 4])
             with col_z1:
                 target_paint_zone = st.selectbox("Active Selector Target Zone Label Options:", st.session_state.managed_zones, index=0)
             with col_z2:
-                new_zone_opt = st.text_input("➕ Extend Managed Zone List Registry:", placeholder="e.g. Zone D, Phase 4...")
-                if st.button("Register New Zone Variant Entry") and new_zone_opt:
+                new_zone_opt = st.text_input("➕ Extend Managed Zone List Registry:", placeholder="e.g. Zone D...")
+                if st.button("Register Variant Entry") and new_zone_opt:
                     clean_opt = new_zone_opt.strip()
                     if clean_opt not in st.session_state.managed_zones:
                         st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
@@ -212,100 +243,63 @@ else:
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; font-family:sans-serif; user-select:none;">
-                
                 <div id="dialogue_overlay" style="display:none; position:fixed; bottom:40px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
-
                 <div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;">
                     <canvas id="zone_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
-
             <script>
                 (function() {
                     const blocks = __JSON_DATA__;
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
                     const paintZone = 'PAINT_ZONE_VAL';
-                    
                     const CELL = CELL_SIZE_VAL;
-                    const offsetCol = MIN_C_VAL - 2;
-                    const offsetRow = MIN_R_VAL - 2;
-
-                    let hoverGroupBlockIds = [];
-                    let stagedBlockIds = [];
+                    const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2;
+                    let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName === 'Unassigned') return '#27272a';
-                        let hash = 0;
-                        for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
+                        let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash % 360)}, 80%, 50%)`;
                     }
-
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
                         blocks.forEach(b => {
-                            let isHovered = hoverGroupBlockIds.includes(b.id);
-                            let isStaged = stagedBlockIds.includes(b.id);
-                            
+                            let isHovered = hoverGroupBlockIds.includes(b.id); let isStaged = stagedBlockIds.includes(b.id);
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
                             if (isHovered) ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
-                            
-                            let x = (b.min_c - offsetCol) * CELL;
-                            let y = (b.min_r - offsetRow) * CELL;
-                            let w = CELL;
-                            let h = CELL;
-
-                            ctx.fillRect(x, y, w, h);
-                            
-                            ctx.strokeStyle = '#18181b';
-                            ctx.lineWidth = 0.5;
+                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
+                            ctx.fillRect(x, y, CELL, CELL);
+                            ctx.strokeStyle = '#18181b'; ctx.lineWidth = 0.5;
                             if (b.border_top) { ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=1.5; }
-                            ctx.strokeRect(x, y, w, h);
-
-                            if (isStaged) {
-                                ctx.strokeStyle = '#ffffff';
-                                ctx.lineWidth = 2;
-                                ctx.strokeRect(x, y, w, h);
-                            }
+                            ctx.strokeRect(x, y, CELL, CELL);
+                            if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.strokeRect(x, y, CELL, CELL); }
                         });
                     }
-
                     function getGroupCluster(targetBlock) {
                         let cluster = [];
                         blocks.forEach(b => {
-                            if (Math.abs(b.min_c - targetBlock.min_c) < 15 && Math.abs(b.min_r - targetBlock.min_r) < 30) {
-                                cluster.push(b.id);
-                            }
+                            if (Math.abs(b.min_c - targetBlock.min_c) < 15 && Math.abs(b.min_r - targetBlock.min_r) < 30) { cluster.push(b.id); }
                         });
                         return cluster;
                     }
-
                     canvas.addEventListener('mousemove', (e) => {
                         if (stagedBlockIds.length > 0) return;
                         const rect = canvas.getBoundingClientRect();
-                        const mx = e.clientX - rect.left;
-                        const my = e.clientY - rect.top;
-
+                        const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
                         let found = null;
                         blocks.forEach(b => {
-                            let x = (b.min_c - offsetCol) * CELL;
-                            let y = (b.min_r - offsetRow) * CELL;
+                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
                             if (mx >= x && mx <= x + CELL && my >= y && my <= y + CELL) found = b;
                         });
-
-                        if (found) {
-                            hoverGroupBlockIds = getGroupCluster(found);
-                        } else {
-                            hoverGroupBlockIds = [];
-                        }
+                        if (found) { hoverGroupBlockIds = getGroupCluster(found); } else { hoverGroupBlockIds = []; }
                         draw();
                     });
-
                     canvas.addEventListener('click', (e) => {
                         if (stagedBlockIds.length > 0) return;
                         if (hoverGroupBlockIds.length > 0) {
@@ -315,135 +309,102 @@ else:
                             draw();
                         }
                     });
-
                     document.getElementById("btn_yes").addEventListener('click', () => {
                         stagedBlockIds.forEach(id => {
-                            let target = blocks.find(b => b.id === id);
-                            if (target) target.assigned_zone = paintZone;
-
+                            let target = blocks.find(b => b.id === id); if (target) target.assigned_zone = paintZone;
                             fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                method: "PATCH", 
-                                headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
                                 body: JSON.stringify({ "assigned_zone": paintZone })
                             });
                         });
-                        stagedBlockIds = [];
-                        document.getElementById("dialogue_overlay").style.display = "none";
-                        draw();
+                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
-
                     document.getElementById("btn_no").addEventListener('click', () => {
-                        stagedBlockIds = [];
-                        document.getElementById("dialogue_overlay").style.display = "none";
-                        draw();
+                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.none"; draw();
                     });
-
                     draw();
                 })();
             </script>
             """
-            
-            # Injection via clear string variable maps
-            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w))\
-                                                 .replace("CANVAS_H", str(canvas_h))\
-                                                 .replace("__JSON_DATA__", json_str)\
-                                                 .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
-                                                 .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                 .replace("MIN_C_VAL", str(min_c))\
-                                                 .replace("MIN_R_VAL", str(min_r))\
-                                                 .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                                 .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
-            
+            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MIN_R_VAL", str(min_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             components.html(html_zone_engine, height=660)
-        else: st.warning("Please activate Admin clearance configurations to map layout zones.")
 
-    # ==============================================================================
-    # 🔌 TAB 2: INVERTER CONFIGURATION LAYER
-    # ==============================================================================
-    with all_tabs[1]:
-        st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
-        
-        html_inverter_engine = """
-        <div style="background:#090d16; padding:12px; border-radius:12px;">
-            <div style="width:100%; max-height:580px; overflow:auto; border:2px solid #1e293b; border-radius:8px;">
-                <canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas>
-            </div>
-        </div>
-        <script>
-            (function() {
-                const blocks = __JSON_DATA__;
-                const canvas = document.getElementById("inv_canvas");
-                const ctx = canvas.getContext('2d');
-                const CELL = CELL_SIZE_VAL;
-                const offsetCol = MIN_C_VAL - 2;
-                const offsetRow = MIN_R_VAL - 2;
+        # --- STAGE 2: INVERTER SETUP VIEWS ---
+        with setup_tabs[1]:
+            st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
+            html_inverter_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:580px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas></div></div>
+            <script>(function() { const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL; const offsetCol = MIN_C_VAL - 2; const offsetRow = MIN_R_VAL - 2; blocks.forEach(b => { ctx.fillStyle = '#1e293b'; let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL; ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; } ctx.strokeRect(x, y, CELL, CELL); }); })();</script>
+            """
+            html_inverter_engine = html_inverter_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MIN_R_VAL", str(min_r))
+            components.html(html_inverter_engine, height=620)
 
-                blocks.forEach(b => {
-                    ctx.fillStyle = '#1e293b';
-                    let x = (b.min_c - offsetCol) * CELL;
-                    let y = (b.min_r - offsetRow) * CELL;
-                    
-                    ctx.fillRect(x, y, CELL, CELL);
-                    
-                    ctx.strokeStyle = '#020617';
-                    ctx.lineWidth = 0.5;
-                    if (b.border_top) { ctx.strokeStyle='#ff007f'; ctx.lineWidth=2.0; }
-                    ctx.strokeRect(x, y, CELL, CELL);
-                });
-            })();
-        </script>
-        """
-        html_inverter_engine = html_inverter_engine.replace("CANVAS_W", str(canvas_w))\
-                                                   .replace("CANVAS_H", str(canvas_h))\
-                                                   .replace("__JSON_DATA__", json_str)\
-                                                   .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                   .replace("MIN_C_VAL", str(min_c))\
-                                                   .replace("MIN_R_VAL", str(min_r))
-        components.html(html_inverter_engine, height=620)
+        # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
+        with setup_tabs[2]:
+            st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
+            col_t1, col_t2 = st.columns([4, 6])
+            with col_t1:
+                html_micro_template = """
+                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
+                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
+                """
+                components.html(html_micro_template, height=280)
 
-    # ==============================================================================
-    # 📌 TAB 3: PEG & PIL TEMPLATES MODULE
-    # ==============================================================================
-    with all_tabs[2]:
-        st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
-        
-        col_t1, col_t2 = st.columns([4, 6])
-        with col_t1:
-            st.subheader("Isolated Blueprint Variant Template Pattern Frame")
-            
-            html_micro_template = """
-            <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;">
-                <canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas>
-                <div style="margin-top:12px;">
-                    <button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Template Blueprint Component Offsets Cloned Fleetwide Successfully!')">💾 Apply & Replicate Fleetwide</button>
-                    <button style="background:#e4e4e7; color:#18181b; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer; margin-left:6px;">Clear</button>
-                </div>
-            </div>
+        with setup_tabs[3]:
+            st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
+
+    else:
+        # ==============================================================================
+        # 👷 THE OPERATION INTERFACES (ONLY VISIBLE ONCE DEPLOYED LIVE BY ADMIN)
+        # ==============================================================================
+        crew_tabs = st.tabs([
+            "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
+        ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
+
+        def inject_crew_tracking_map(layer_key, data_array, min_c, max_c, min_r, max_r):
+            json_points = json.dumps(data_array)
+            today_str = str(date.today())
+            canvas_w = (max_c - min_c + 5) * 14
+            canvas_h = (max_r - min_r + 5) * 14
+
+            return f"""
+            <div style="background:#090d16; padding:12px; border-radius:12px;"><div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;"><canvas id="crew_{layer_key}" width="{canvas_w}" height="{canvas_h}" style="background:#020617; display:block; cursor:pointer;"></canvas></div></div>
             <script>
-                const c = document.getElementById("micro_canvas");
-                const ctx = c.getContext('2d');
-                ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140);
-                ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140);
-                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill();
-                ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();
+                (function() {{
+                    const blocks = {json_points}; const canvas = document.getElementById("crew_{layer_key}"); const ctx = canvas.getContext('2d');
+                    const CELL = 14; const offsetCol = {min_c} - 2; const offsetRow = {min_r} - 2;
+                    function draw() {{
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        blocks.forEach(b => {{
+                            ctx.fillStyle = b['{layer_key}_status'] === 'completed' ? '#22c55e' : '#2563eb';
+                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
+                            ctx.fillRect(x, y, CELL, CELL); ctx.strokeStyle = '#0f172a'; ctx.strokeRect(x, y, CELL, CELL);
+                        }});
+                    }}
+                    canvas.addEventListener('click', (e) => {{
+                        const rect = canvas.getBoundingClientRect(); const cx = e.clientX - rect.left; const cy = e.clientY - rect.top;
+                        blocks.forEach(b => {{
+                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
+                            if (cx >= x && cx <= x + CELL && cy >= y && cy <= y + CELL) {{
+                                b['{layer_key}_status'] = 'completed';
+                                const p = {{}}; p['{layer_key}_status'] = 'completed'; p['{layer_key}_date'] = '{today_str}';
+                                fetch('{SUPABASE_URL}/rest/v1/structures?id=eq.' + b.id, {{
+                                    method: "PATCH", headers: {{ "apikey": '{SUPABASE_KEY}', "Authorization": 'Bearer {SUPABASE_KEY}', "Content-Type": "application/json" }},
+                                    body: JSON.stringify(p)
+                                }}).then(() => draw());
+                            }}
+                        }});
+                    }});
+                    draw();
+                })();
             </script>
             """
-            components.html(html_micro_template, height=280)
-        with col_t2:
-            st.subheader("Fleetwide Automated Propagation Properties")
-            st.info("🚀 Clicking Replicate will match master geometric fingerprints to parse every tracker grid cell, cloning pegging parameters across thousands of cells instantly.")
 
-    # ==============================================================================
-    # 🏪 TAB 4: TRANSFORMER PLACEMENT VIEWS
-    # ==============================================================================
-    with all_tabs[3]:
-        st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
-        st.write("Click anywhere inside open layout spaces to station Transformer Hubs and aggregate related inverter networks.")
+        def process_crew_tab(tab_obj, key_val):
+            with tab_obj:
+                components.html(inject_crew_tracking_map(key_val, active_table_data, min_c, max_c, min_r, max_r), height=640)
 
-    # ==============================================================================
-    # 🛠️ EXTRA WORKFLOW INTERFACE GENERATOR
-    # ==============================================================================
-    for idx, tab_label in enumerate(st.session_state.custom_tabs):
-        with all_tabs[4 + idx]:
-            st.markdown(f"### 🛠️ Extensible Custom Dynamic Interface Node View — {tab_label}")
-            st.success("🤖 Grid framework matrix maps out structural properties dynamically. Track components, floater payloads, or customized metrics matching your template setups instantly.")
+        process_crew_tab(crew_tabs[0], "pegging")
+        process_crew_tab(crew_tabs[1], "piling")
+        process_crew_tab(crew_tabs[2], "mounting")
+        process_crew_tab(crew_tabs[3], "modules")

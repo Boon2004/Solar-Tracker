@@ -57,11 +57,18 @@ if st.session_state.active_site_id is None:
                     if st.button("💥 Purge Cloud Data Records", type="primary"):
                         with st.spinner(f"Purging data assets for {wipe_target}..."):
                             try:
-                                supabase.table("farms").delete().eq("name", wipe_target).execute()
-                                st.success(f"Successfully purged all cloud data for {wipe_target}!")
-                                st.cache_data.clear()
-                                time.sleep(1); st.rerun()
-                            except Exception as e: st.error(f"Purge rejected: {str(e)}")
+                                # Find target farm ID first to safely bypass foreign key blocks
+                                target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
+                                if target_farm:
+                                    # 1. Clear out child structure trackers first
+                                    supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
+                                    # 2. Clear parent farm record safely now
+                                    supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
+                                    st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
+                                    st.cache_data.clear()
+                                    time.sleep(1); st.rerun()
+                            except Exception as e: 
+                                st.error(f"Purge rejected: {str(e)}")
                 else:
                     st.info("No active cloud entries found to clear.")
                 
@@ -86,14 +93,14 @@ if st.session_state.active_site_id is None:
                                 "max_rows": max_rows, "max_cols": max_cols, "is_published": False
                             }).execute()
                             if farm_node.data: new_fid = farm_node.data[0]["id"]
-                        except Exception: pass
+                        except Exception as e:
+                            st.error(f"Database creation rejected: {str(e)}")
                         
                         if new_fid:
                             visited = set()
                             table_counter = 1
                             structures_queue = []
                             
-                            # STEP 1: Scan entire layout sheet grid map with defensive fallbacks to eliminate holes completely
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
@@ -136,7 +143,6 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        # Calculate 16-section block mappings directly from wide spacing lanes parameters
                                         section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                         section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                         computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -146,7 +152,7 @@ if st.session_state.active_site_id is None:
                                             "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                             "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
                                             "assigned_zone": "Unassigned",
-                                            "section_group": int(computed_section_id) # Explicit structural section key linking
+                                            "section_group": int(computed_section_id)
                                         })
                                         table_counter += 1
                             
@@ -196,7 +202,6 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
-            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -308,7 +313,7 @@ else:
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName === 'Unassigned') return '#1e293b'; // High visibility unassigned baseline contrast
+                        if (!zoneName || zoneName === 'Unassigned') return '#1e293b';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
                     }
@@ -324,7 +329,7 @@ else:
                             let isStaged = stagedBlockIds.includes(b.id);
                             
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            if (isHovered) ctx.fillStyle = 'rgba(0, 240, 255, 0.6)'; // Bright layout hover selection highlight
+                            if (isHovered) ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
                             
                             let x = b.min_c * CELL; 
                             let y = b.min_r * CELL;
@@ -344,7 +349,6 @@ else:
                         let cluster = [];
                         let sectId = targetBlock.section_group || 0;
                         blocks.forEach(b => {
-                            // Perfect 16-section neighborhood mapping locking directly to custom index groups
                             if (b.section_group === sectId && sectId !== 0) { 
                                 cluster.push(b.id); 
                             }
@@ -393,7 +397,6 @@ else:
                         stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
 
-                    // ZOOM & PAN ENG ENGINE CONTROLS
                     canvas.addEventListener('mousedown', (e) => {
                         isDragging = true; moved = false;
                         startX = e.clientX - offsetX; startY = e.clientY - offsetY;
@@ -416,7 +419,7 @@ else:
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
 
                         scale *= (e.deltaY < 0 ? 1.15 : 0.85);
-                        scale = Math.max(0.005, Math.min(scale, 30)); // Complete deep infinite zoom support
+                        scale = Math.max(0.005, Math.min(scale, 30));
 
                         offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale;
                         draw();

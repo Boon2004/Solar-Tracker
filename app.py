@@ -47,22 +47,32 @@ if st.session_state.active_site_id is None:
     
     with st.sidebar:
         with st.expander("⚙️ Developer Master Control Panel", expanded=False):
-            dev_pwd = st.text_input("Enter Control Password:", type="password")
-            if dev_pwd == "devok":
-                st.success("Access Unlocked")
+            if "dev_unlocked" not in st.session_state:
+                st.session_state.dev_unlocked = False
+
+            if not st.session_state.dev_unlocked:
+                dev_pwd = st.text_input("Enter Control Password:", type="password")
+                if dev_pwd == "devok":
+                    st.session_state.dev_unlocked = True
+                    st.rerun()
+            else:
+                st.success("Developer Access Unlocked")
                 
+                # --- EXIT DEVELOPER ACCESS CONTROL MODULE ---
+                if st.button("🔒 Exit Developer Control Panel", type="secondary"):
+                    st.session_state.dev_unlocked = False
+                    st.rerun()
+                
+                st.markdown("---")
                 st.subheader("🗑️ Cloud Database Cleaner")
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     if st.button("💥 Purge Cloud Data Records", type="primary"):
                         with st.spinner(f"Purging data assets for {wipe_target}..."):
                             try:
-                                # Find target farm ID first to safely bypass foreign key blocks
                                 target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
                                 if target_farm:
-                                    # 1. Clear out child structure trackers first
                                     supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
-                                    # 2. Clear parent farm record safely now
                                     supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                     st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
                                     st.cache_data.clear()
@@ -113,7 +123,7 @@ if st.session_state.active_site_id is None:
                                                          (cell.border.left and cell.border.left.style) or 
                                                          (cell.border.right and cell.border.right.style)):
                                         is_active_cell = True
-                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb != "00000000":
+                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF":
                                         is_active_cell = True
                                     
                                     if is_active_cell and (r, c) not in visited:
@@ -133,7 +143,7 @@ if st.session_state.active_site_id is None:
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
                                                                          (n_cell.border.left and n_cell.border.left.style) or 
                                                                          (n_cell.border.right and n_cell.border.right.style)): n_active = True
-                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb != "00000000": n_active = True
+                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": n_active = True
                                                         
                                                     if n_active:
                                                         visited.add((nr, nc))
@@ -143,6 +153,7 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
+                                        # Uniformly segment layout map coordinates into 16 distinct section group frameworks
                                         section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                         section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                         computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -202,6 +213,7 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
+            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -288,7 +300,7 @@ else:
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="zone_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
@@ -296,7 +308,7 @@ else:
                     const blocks = __JSON_DATA__;
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
-                    const paintZone = 'PAINT_ZONE_VAL';
+                    const paintZone = "PAINT_ZONE_VAL";
                     const CELL = CELL_SIZE_VAL;
                     
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
@@ -385,8 +397,8 @@ else:
                     document.getElementById("btn_yes").addEventListener('click', () => {
                         stagedBlockIds.forEach(id => {
                             let target = blocks.find(b => b.id === id); if (target) target.assigned_zone = paintZone;
-                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                            fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                 body: JSON.stringify({ "assigned_zone": paintZone })
                             });
                         });
@@ -429,9 +441,7 @@ else:
                 })();
             </script>
             """
-            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w))\
-                                                 .replace("CANVAS_H", str(canvas_h))\
-                                                 .replace("__JSON_DATA__", json_str)\
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA__", json_str)\
                                                  .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
                                                  .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
                                                  .replace("MIN_C_VAL", str(min_c))\
@@ -448,7 +458,7 @@ else:
             html_inverter_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
@@ -493,7 +503,12 @@ else:
                 })();
             </script>
             """
-            html_inverter_engine = html_inverter_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
+            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA__", json_str)\
+                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                       .replace("MIN_C_VAL", str(min_c))\
+                                                       .replace("MAX_C_VAL", str(max_c))\
+                                                       .replace("MIN_R_VAL", str(min_r))\
+                                                       .replace("MAX_R_VAL", str(max_r))
             components.html(html_inverter_engine, height=640)
 
         # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
@@ -581,9 +596,7 @@ else:
             </script>
             """
             
-            html_crew_map = html_crew_map.replace("CANVAS_W", str(canvas_w))\
-                                         .replace("CANVAS_H", str(canvas_h))\
-                                         .replace("__JSON_DATA__", json_points)\
+            html_crew_map = html_crew_map.replace("__JSON_DATA__", json_points)\
                                          .replace("LAYER_KEY", str(layer_key))\
                                          .replace("MIN_C_VAL", str(min_c))\
                                          .replace("MAX_C_VAL", str(max_c))\

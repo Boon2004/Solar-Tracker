@@ -93,11 +93,18 @@ if st.session_state.active_site_id is None:
                             table_counter = 1
                             structures_queue = []
                             
-                            # RETURNING TO THE BETTER GROUP-BASED SEARCH PARSER:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    has_border = cell.border and ((cell.border.top and cell.border.top.style) or (cell.border.left and cell.border.left.style))
+                                    
+                                    # ROBUST DEFENSIVE BORDER CHECK: Evaluates all 4 line boundaries to eliminate any holes
+                                    has_border = False
+                                    if cell.border:
+                                        if (cell.border.top and cell.border.top.style) or \
+                                           (cell.border.bottom and cell.border.bottom.style) or \
+                                           (cell.border.left and cell.border.left.style) or \
+                                           (cell.border.right and cell.border.right.style):
+                                            has_border = True
                                     
                                     if has_border and (r, c) not in visited:
                                         block_cells = []
@@ -110,9 +117,17 @@ if st.session_state.active_site_id is None:
                                                 nr, nc = curr_r + dr, curr_c + dc
                                                 if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
                                                     n_cell = sheet.cell(row=nr, column=nc)
-                                                    if n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or (n_cell.border.left and n_cell.border.left.style)):
+                                                    n_border = False
+                                                    if n_cell.border:
+                                                        if (n_cell.border.top and n_cell.border.top.style) or \
+                                                           (n_cell.border.bottom and n_cell.border.bottom.style) or \
+                                                           (n_cell.border.left and n_cell.border.left.style) or \
+                                                           (n_cell.border.right and n_cell.border.right.style):
+                                                            n_border = True
+                                                    if n_border:
                                                         visited.add((nr, nc))
                                                         queue.append((nr, nc))
+                                                        
                                         b_rows = [item[0] for item in block_cells]
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
@@ -130,7 +145,7 @@ if st.session_state.active_site_id is None:
                                 except Exception: pass
                                 time.sleep(0.04)
                                 
-                            st.success("Clean layout trackers saved perfectly!")
+                            st.success("Clean layout trackers saved perfectly with no holes!")
                             st.cache_data.clear(); st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
@@ -140,7 +155,7 @@ if st.session_state.active_site_id is None:
             entered_inst_pass = st.text_input("Enter Access Password:", type="password")
             if st.form_submit_button("🚀 Open Workspace"):
                 target_site_record = next(f for f in all_registered_farms if f["name"] == chosen_farm_name)
-                if str(entered_inst_pass) == str(target_site_record.get("installer_password", "1234")):
+                if str(entered_inst_pass) == str(target_site_record.get("installer_password") or "1234"):
                     st.session_state.active_site_id = target_site_record["id"]
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
@@ -155,7 +170,7 @@ else:
     site_is_published = current_farm_record.get("is_published", False)
 
     col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: st.subheader(f"📍 Operational Twin Workspace — {st.session_state.active_site_name}")
+    with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
     with col_h2:
         if st.button("🚪 Exit Site"): st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
             
@@ -167,9 +182,11 @@ else:
                 if st.form_submit_button("Verify Clearance"):
                     if str(adm_pass) == str(st.session_state.admin_key_match):
                         st.session_state.is_admin_mode = True; st.rerun()
+                    else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
             
+            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -201,15 +218,15 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
-    # Dynamic layout bounding math
+    # Calculate optimal start frame viewing coordinates dynamically based only on active units location boundaries
     min_r = min([b.get("min_r", 1) for b in active_table_data]) if active_table_data else 1
     max_r = max([b.get("max_r", 100) for b in active_table_data]) if active_table_data else 100
     min_c = min([b.get("min_c", 1) for b in active_table_data]) if active_table_data else 1
     max_c = max([b.get("max_c", 150) for b in active_table_data]) if active_table_data else 150
 
     CELL_SIZE = 14
-    canvas_w = (max_c - min_c + 8) * CELL_SIZE
-    canvas_h = (max_r - min_r + 8) * CELL_SIZE
+    canvas_w = 1500
+    canvas_h = 650
     json_str = json.dumps(active_table_data)
 
     for b in active_table_data:
@@ -248,14 +265,16 @@ else:
                         st.rerun()
 
             html_zone_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; font-family:sans-serif; user-select:none;">
-                <div id="dialogue_overlay" style="display:none; position:fixed; bottom:40px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Click and Drag canvas to <b>Scroll/Pan around</b> | Mouse Wheel to <b>Zoom In/Out freely</b> | Click to stage a group section.</div>
+                
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
-                <div style="width:100%; max-height:600px; overflow:auto; border:2px solid #1e293b; border-radius:8px;">
-                    <canvas id="zone_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block;"></canvas>
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="zone_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
@@ -265,7 +284,18 @@ else:
                     const ctx = canvas.getContext('2d');
                     const paintZone = 'PAINT_ZONE_VAL';
                     const CELL = CELL_SIZE_VAL;
-                    const offsetCol = MIN_C_VAL - 4; const offsetRow = MIN_R_VAL - 4;
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL;
+                    const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+
+                    let isDragging = false, moved = false, startX, startY;
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
@@ -273,48 +303,64 @@ else:
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
                     }
+
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save();
+                        ctx.translate(offsetX, offsetY);
+                        ctx.scale(scale, scale);
+
                         blocks.forEach(b => {
-                            let isHovered = hoverGroupBlockIds.includes(b.id); let isStaged = stagedBlockIds.includes(b.id);
+                            let isHovered = hoverGroupBlockIds.includes(b.id); 
+                            let isStaged = stagedBlockIds.includes(b.id);
                             
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            if (isHovered) ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+                            if (isHovered) ctx.fillStyle = 'rgba(56, 189, 248, 0.6)';
                             
-                            let x = (b.min_c - offsetCol) * CELL; 
-                            let y = (b.min_r - offsetRow) * CELL;
+                            let x = b.min_c * CELL; 
+                            let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL;
                             let h = (b.max_r - b.min_r + 1) * CELL;
                             
                             ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0;
                             ctx.strokeRect(x, y, w, h);
 
                             if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
                         });
+                        ctx.restore();
                     }
+
                     function getGroupCluster(targetBlock) {
                         let cluster = [];
                         blocks.forEach(b => {
-                            if (Math.abs(b.min_c - targetBlock.min_c) < 15 && Math.abs(b.min_r - targetBlock.min_r) < 30) { cluster.push(b.id); }
+                            // Enhanced cluster lookups grouping trackers bound cleanly by the wide 5-cell lanes
+                            if (Math.abs(b.min_c - targetBlock.min_c) < 18 && Math.abs(b.min_r - targetBlock.min_r) < 32) { 
+                                cluster.push(b.id); 
+                            }
                         });
                         return cluster;
                     }
+
                     canvas.addEventListener('mousemove', (e) => {
                         if (stagedBlockIds.length > 0) return;
                         const rect = canvas.getBoundingClientRect();
-                        const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+                        const mx = (e.clientX - rect.left - offsetX) / scale; 
+                        const my = (e.clientY - rect.top - offsetY) / scale;
+
                         let found = null;
                         blocks.forEach(b => {
-                            let x = (b.min_c - offsetCol) * CELL; let y = (b.min_r - offsetRow) * CELL;
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
                         });
+
                         if (found) { hoverGroupBlockIds = getGroupCluster(found); } else { hoverGroupBlockIds = []; }
                         draw();
                     });
+
                     canvas.addEventListener('click', (e) => {
-                        if (stagedBlockIds.length > 0) return;
+                        if (stagedBlockIds.length > 0 || moved) return;
                         if (hoverGroupBlockIds.length > 0) {
                             stagedBlockIds = [...hoverGroupBlockIds];
                             document.getElementById("lbl_zone").innerText = paintZone;
@@ -322,6 +368,7 @@ else:
                             draw();
                         }
                     });
+
                     document.getElementById("btn_yes").addEventListener('click', () => {
                         stagedBlockIds.forEach(id => {
                             let target = blocks.find(b => b.id === id); if (target) target.assigned_zone = paintZone;
@@ -332,15 +379,57 @@ else:
                         });
                         stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
+
                     document.getElementById("btn_no").addEventListener('click', () => {
                         stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
+
+                    // PAN ENGINE CONTROLS
+                    canvas.addEventListener('mousedown', (e) => {
+                        isDragging = true; moved = false;
+                        startX = e.clientX - offsetX; startY = e.clientY - offsetY;
+                        canvas.style.cursor = 'grabbing';
+                    });
+                    canvas.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        moved = true;
+                        offsetX = e.clientX - startX; offsetY = e.clientY - startY;
+                        draw();
+                    });
+                    window.addEventListener('mouseup', () => {
+                        isDragging = false; canvas.style.cursor = 'grab';
+                    });
+
+                    // ZOOM ENGINE CONTROLS
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault();
+                        const rect = canvas.getBoundingClientRect();
+                        const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85);
+                        scale = Math.max(0.05, Math.min(scale, 10));
+
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale;
+                        draw();
+                    }, { passive: false });
+
                     draw();
                 })();
             </script>
             """
-            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w)).replace("CANVAS_H", str(canvas_h)).replace("__JSON_DATA__", json_str).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MIN_R_VAL", str(min_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
-            components.html(html_zone_engine, height=660)
+            html_zone_engine = html_zone_engine.replace("CANVAS_W", str(canvas_w))\
+                                                 .replace("CANVAS_H", str(canvas_h))\
+                                                 .replace("__JSON_DATA__", json_str)\
+                                                 .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                                 .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                 .replace("MIN_C_VAL", str(min_c))\
+                                                 .replace("MAX_C_VAL", str(max_c))\
+                                                 .replace("MIN_R_VAL", str(min_r))\
+                                                 .replace("MAX_R_VAL", str(max_r))\
+                                                 .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                                 .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
         with setup_tabs[1]:
@@ -361,14 +450,9 @@ else:
                         ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.5; 
                         ctx.strokeRect(x, y, w, h); 
                         
-                        // DRAW STRING FACING LINE: If the block is a double height tracker frame (6 rows high),
-                        // we draw a clear divider line directly down its horizontal center.
                         if (b.structure_type === 'double_6x9') {
                             ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
-                            ctx.beginPath();
-                            ctx.moveTo(x, y + (h / 2));
-                            ctx.lineTo(x + w, y + (h / 2));
-                            ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
                         }
                     }); 
                 })();
@@ -393,7 +477,7 @@ else:
 
     else:
         # ==============================================================================
-        # 👷 THE OPERATION INTERFACES (ONLY VISIBLE ONCE DEPLOYED LIVE BY ADMIN)
+        # 👷 THE OPERATION INTERFACES (DEPLOWED OUT FOR CREW USAGE)
         # ==============================================================================
         crew_tabs = st.tabs([
             "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"

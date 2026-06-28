@@ -90,7 +90,6 @@ if st.session_state.active_site_id is None:
                         
                         new_fid = None
                         try:
-                            # Tries to insert sizing parameters into database metadata if supported
                             farm_node = supabase.table("farms").insert({
                                 "name": new_site_name, 
                                 "admin_password": init_admin_pwd, 
@@ -217,7 +216,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     # ==============================================================================
-    # 🖼️ OVERVIEW & SINGLE-CLICK CHUNK SECTION ZONE ASSIGNMENT
+    # 🖼️ OVERVIEW: ZOOMABLE + SCROLLABLE + SINGLE CLICK NEIGHBORHOOD GROUPER
     # ==============================================================================
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
@@ -229,15 +228,14 @@ else:
             st.markdown("---")
             target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
             
-            # Formats clean framing metrics while preventing IndentationError glitches
             max_sheet_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
             max_sheet_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
 
             json_str = json.dumps(active_table_data)
             html_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; user-select: none;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">✨ <b>Admin Section Tool:</b> Click any individual tracker row to instantly auto-select its full 5-row/col bounded section neighborhood.</div>
-                <canvas id="zone_painter" width="1500" height="550" style="background:#020617; border-radius:8px; width:100%; cursor:pointer;"></canvas>
+            <div style="background:#090d16; padding:12px; border-radius:12px; touch-action:none; user-select: none;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Scroll/Pan</b> | Mouse wheel to <b>Zoom</b> | Click a tracker to assign its full section.</div>
+                <canvas id="zone_painter" width="1500" height="600" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
             </div>
             <script>
                 (function() {
@@ -246,9 +244,9 @@ else:
                     const ctx = canvas.getContext('2d');
                     const paintZone = '""" + target_paint_zone + """';
                     
-                    // Fixed visual proportions matching Excel cell shapes
-                    const CELL_W = 10.0; 
-                    const CELL_H = 10.0;
+                    // Fixed visual proportions matching Excel cell footprints
+                    const CELL_W = 14.0; 
+                    const CELL_H = 14.0;
 
                     const totalRows = """ + str(max_sheet_r) + """;
                     const totalCols = """ + str(max_sheet_c) + """;
@@ -256,11 +254,14 @@ else:
                     const totalWidth = totalCols * CELL_W;
                     const totalHeight = totalRows * CELL_H;
 
-                    let scale = Math.min((canvas.width - 40) / totalWidth, (canvas.height - 40) / totalHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+                    // Compute start framing bounds dynamically
+                    let scale = Math.min((canvas.width - 60) / totalWidth, (canvas.height - 60) / totalHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.4;
 
                     let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
                     let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
+
+                    let isDragging = false, moved = false, startX, startY;
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); 
@@ -277,26 +278,27 @@ else:
 
                             let x = b.min_c * CELL_W;
                             let y = b.min_r * CELL_H;
-                            let w = (b.max_c - b.min_c + 1) * CELL_W - 0.5;
-                            let h = (b.max_r - b.min_r + 1) * CELL_H - 0.5;
+                            let w = (b.max_c - b.min_c + 1) * CELL_W;
+                            let h = (b.max_r - b.min_r + 1) * CELL_H;
 
                             ctx.fillRect(x, y, w, h);
+                            
+                            // High contrast clear outline borders around each individual tracker item 
                             ctx.strokeStyle = '#0f172a';
-                            ctx.lineWidth = 0.5;
+                            ctx.lineWidth = 1.0;
                             ctx.strokeRect(x, y, w, h);
                         });
 
                         ctx.restore();
                     }
 
-                    canvas.addEventListener('click', (e) => {
+                    function runSectionSelection(clientX, clientY) {
                         const rect = canvas.getBoundingClientRect();
-                        const clickX = (e.clientX - rect.left - offsetX) / scale;
-                        const clickY = (e.clientY - rect.top - offsetY) / scale;
+                        const clickX = (clientX - rect.left - offsetX) / scale;
+                        const clickY = (clientY - rect.top - offsetY) / scale;
 
                         let targetBlock = null;
 
-                        // 1. Map precise cursor collision to the targeted tracker string element
                         blocks.forEach(b => {
                             let bXStart = b.min_c * CELL_W;
                             let bXEnd = (b.max_c + 1) * CELL_W;
@@ -308,13 +310,12 @@ else:
                             }
                         });
 
-                        // 2. Compute neighborhood proximity checks (stopping cleanly at 5-row/col empty gaps)
                         if (targetBlock) {
                             blocks.forEach(b => {
                                 const rowDistance = Math.abs(b.min_r - targetBlock.min_r);
                                 const colDistance = Math.abs(b.min_c - targetBlock.min_c);
 
-                                // Selects everything in the matching physical block cluster neighborhood
+                                // Automatically pairs components within 25 steps (stopping accurately at 5-row gaps)
                                 if (rowDistance < 25 && colDistance < 25) {
                                     b.assigned_zone = paintZone;
                                     
@@ -331,13 +332,58 @@ else:
                             });
                             draw();
                         }
+                    }
+
+                    // Dynamic Drag-to-Pan Mapping Actions
+                    canvas.addEventListener('mousedown', (e) => {
+                        isDragging = true; moved = false;
+                        startX = e.clientX - offsetX; startY = e.clientY - offsetY;
+                        canvas.style.cursor = 'grabbing';
                     });
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        moved = true;
+                        offsetX = e.clientX - startX; offsetY = e.clientY - startY;
+                        draw();
+                    });
+
+                    window.addEventListener('mouseup', (e) => {
+                        if (!isDragging) return;
+                        isDragging = false;
+                        canvas.style.cursor = 'grab';
+                        // If user just tapped without scrolling/dragging, run section assignment logic
+                        if (!moved) runSectionSelection(e.clientX, e.clientY);
+                    });
+
+                    // Mouse Wheel Zooming Engine
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault();
+                        const rect = canvas.getBoundingClientRect();
+                        const mouseX = e.clientX - rect.left;
+                        const mouseY = e.clientY - rect.top;
+
+                        // Calculate cursor anchor points before zooming
+                        const gridX = (mouseX - offsetX) / scale;
+                        const gridY = (mouseY - offsetY) / scale;
+
+                        const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                        scale *= zoomFactor;
+                        if (scale < 0.05) scale = 0.05;
+                        if (scale > 8) scale = 8;
+
+                        // Adjust offset so zoom anchors on mouse position cleanly
+                        offsetX = mouseX - gridX * scale;
+                        offsetY = mouseY - gridY * scale;
+
+                        draw();
+                    }, { passive: false });
 
                     draw();
                 })();
             </script>
             """
-            components.html(html_engine, height=590)
+            components.html(html_engine, height=640)
 
     # ==============================================================================
     # 📌 FIELD TRACKING TIMELINE WORKSPACES
@@ -359,8 +405,8 @@ else:
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
                 const layerKey = '""" + layer_key + """';
 
-                const CELL_W = 10.0; 
-                const CELL_H = 10.0;
+                const CELL_W = 14.0; 
+                const CELL_H = 14.0;
                 const totalRows = """ + str(max_r) + """;
                 const totalCols = """ + str(max_c) + """;
 
@@ -368,7 +414,7 @@ else:
                 const totalHeight = totalRows * CELL_H;
 
                 let scale = Math.min((canvas.width - 40) / totalWidth, (canvas.height - 40) / totalHeight);
-                if(scale <= 0 || scale === Infinity) scale = 0.5;
+                if(scale <= 0 || scale === Infinity) scale = 0.4;
 
                 let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
                 let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
@@ -398,7 +444,10 @@ else:
                                 if (b[dCol] === todayVal) ctx.fillStyle = '#eab308'; else ctx.fillStyle = '#22c55e'; 
                             }
                         }
-                        ctx.fillRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W - 0.5, (b.max_r - b.min_r + 1) * CELL_H - 0.5);
+                        ctx.fillRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W, (b.max_r - b.min_r + 1) * CELL_H);
+                        ctx.strokeStyle = '#0f172a';
+                        ctx.lineWidth = 1.0;
+                        ctx.strokeRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W, (b.max_r - b.min_r + 1) * CELL_H);
                     });
                     ctx.restore();
                 }
@@ -455,7 +504,6 @@ else:
             with col_act2:
                 if st.button("🔄 Hard Reset Map Layout Caches", key=f"sync_btn_{unique_key}"): st.cache_data.clear(); st.rerun()
             
-            # Pull grid bounds evenly for all operation views
             db_max_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
             db_max_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
             

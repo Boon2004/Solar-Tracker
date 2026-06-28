@@ -7,9 +7,12 @@ import time
 import base64
 from datetime import datetime, date, timedelta
 
-# Enterprise Database Credentials Bridge
+# ==============================================================================
+# 🔐 SECURE DATABASE CONNECTIONS BRIDGE
+# ==============================================================================
+# NOTE: Moving your credentials to st.secrets is highly recommended for production security.
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                  
 
 @st.cache_resource
 def get_supabase_client():
@@ -88,8 +91,13 @@ if st.session_state.active_site_id is None:
                         
                         new_fid = None
                         try:
+                            # Try inserting with grid limit metrics to help preserve exact sheet framing dimensions
                             farm_node = supabase.table("farms").insert({
-                                "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd
+                                "name": new_site_name, 
+                                "admin_password": init_admin_pwd, 
+                                "installer_password": init_inst_pwd,
+                                "max_rows": max_rows,
+                                "max_cols": max_cols
                             }).execute()
                             if farm_node.data: new_fid = farm_node.data[0]["id"]
                         except Exception:
@@ -198,7 +206,7 @@ else:
     current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
     
     t_over, t_peg, t_pil, t_mnt, t_mod, t_inv_str, t_inv_hub, t_trans, t_dc_cab, t_ac_cab = st.tabs([
-        "🖼️ Overview", "📌 Pegging", "🪵 Piling", "🏗️ Mounting Structure", "☀️ PV Modules", 
+        "🖼️ Overview / Zonal Split", "📌 Pegging", "🪵 Piling", "🏗️ Mounting Structure", "☀️ PV Modules", 
         "🏗️ Inverter Structure", "⚡ Inverter Hub", "🏪 Transformer Station", "🔌 DC Cabling", "⚡ AC Cabling"
     ])
 
@@ -209,6 +217,9 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
+    # ==============================================================================
+    # 🖼️ OVERVIEW & DRAG-TO-PAINT ZONE SPLITTER
+    # ==============================================================================
     with t_over:
         st.markdown("### 🖼️ Master Site Overview Infrastructure")
         img_src = current_farm_record.get("overview_image_url")
@@ -219,10 +230,15 @@ else:
             st.markdown("---")
             target_paint_zone = st.selectbox("Active Painter Palette Target Zone:", ["Zone A", "Zone B", "Zone C", "Unassigned"])
             
+            # Dynamically pull true sheet layout configurations to avoid squishing gaps or restriction buffers
+            db_max_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
+            db_max_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
+
             json_str = json.dumps(active_table_data)
             html_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px;">
-                <canvas id="zone_painter" width="1500" height="420" style="background:#020617; border-radius:8px; width:100%; cursor:crosshair;"></canvas>
+            <div style="background:#090d16; padding:12px; border-radius:12px; user-select: none;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">✨ <b>Admin Drag Tool:</b> Click and Drag a box selector directly across strings to mass-assign sections.</div>
+                <canvas id="zone_painter" width="1500" height="550" style="background:#020617; border-radius:8px; width:100%; cursor:crosshair;"></canvas>
             </div>
             <script>
                 (function() {
@@ -230,52 +246,144 @@ else:
                     const canvas = document.getElementById("zone_painter");
                     const ctx = canvas.getContext('2d');
                     const paintZone = '""" + target_paint_zone + """';
-                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                    blocks.forEach(b => {
-                        if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
-                        if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
-                    });
-                    const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                    const colMultiplier = 1.8; const rowMultiplier = 45.0;
-                    let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
-                    let offsetX = (canvas.width/2)-((gw*colMultiplier*scale)/2)-(minX*colMultiplier*scale);
-                    let offsetY = (canvas.height/2)-((gh*rowMultiplier*scale)/2)-(minY*rowMultiplier*scale);
+                    
+                    // Fixed visual proportions matching Excel grid aspects cleanly
+                    const CELL_W = 10.0; 
+                    const CELL_H = 10.0;
+
+                    const totalRows = """ + str(db_max_r) + """;
+                    const totalCols = """ + str(db_max_c) + """;
+
+                    const totalWidth = totalCols * CELL_W;
+                    const totalHeight = totalRows * CELL_H;
+
+                    let scale = Math.min((canvas.width - 40) / totalWidth, (canvas.height - 40) / totalHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
+                    let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
+
+                    let isDragging = false;
+                    let dragStart = { x: 0, y: 0 };
+                    let dragEnd = { x: 0, y: 0 };
+
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                        ctx.save(); 
+                        ctx.translate(offsetX, offsetY); 
+                        ctx.scale(scale, scale);
+
                         blocks.forEach(b => {
                             let az = b.assigned_zone || "Unassigned";
-                            if (az === 'Zone A') ctx.fillStyle = '#ff4b4b'; else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; else if (az === 'Zone C') ctx.fillStyle = '#eab308'; else ctx.fillStyle = '#334155';
-                            ctx.fillRect(b.min_c * colMultiplier, b.min_r * rowMultiplier, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
+                            if (az === 'Zone A') ctx.fillStyle = '#ff4b4b'; 
+                            else if (az === 'Zone B') ctx.fillStyle = '#00f0ff'; 
+                            else if (az === 'Zone C') ctx.fillStyle = '#eab308'; 
+                            else ctx.fillStyle = '#334155';
+
+                            let x = b.min_c * CELL_W;
+                            let y = b.min_r * CELL_H;
+                            let w = (b.max_c - b.min_c + 1) * CELL_W - 0.5;
+                            let h = (b.max_r - b.min_r + 1) * CELL_H - 0.5;
+
+                            ctx.fillRect(x, y, w, h);
+                            ctx.strokeStyle = '#0f172a';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(x, y, w, h);
                         });
+
                         ctx.restore();
+
+                        if (isDragging) {
+                            ctx.strokeStyle = 'rgba(0, 240, 255, 0.7)';
+                            ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+                            ctx.lineWidth = 2;
+                            ctx.fillRect(dragStart.x, dragStart.y, dragEnd.x - dragStart.x, dragEnd.y - dragStart.y);
+                            ctx.strokeRect(dragStart.x, dragStart.y, dragEnd.x - dragStart.x, dragEnd.y - dragStart.y);
+                        }
                     }
-                    canvas.addEventListener('click', (e) => {
+
+                    function screenToGrid(screenX, screenY) {
+                        return {
+                            x: (screenX - offsetX) / scale,
+                            y: (screenY - offsetY) / scale
+                        };
+                    }
+
+                    canvas.addEventListener('mousedown', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        const cx = (e.clientX - rect.left - offsetX) / scale / colMultiplier;
-                        const cy = (e.clientY - rect.top - offsetY) / scale / rowMultiplier;
+                        isDragging = true;
+                        dragStart.x = e.clientX - rect.left;
+                        dragStart.y = e.clientY - rect.top;
+                        dragEnd.x = dragStart.x;
+                        dragEnd.y = dragStart.y;
+                    });
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        const rect = canvas.getBoundingClientRect();
+                        dragEnd.x = e.clientX - rect.left;
+                        dragEnd.y = e.clientY - rect.top;
+                        draw();
+                    });
+
+                    window.addEventListener('mouseup', (e) => {
+                        if (!isDragging) return;
+                        isDragging = false;
+
+                        const xMin = Math.min(dragStart.x, dragEnd.x);
+                        const xMax = Math.max(dragStart.x, dragEnd.x);
+                        const yMin = Math.min(dragStart.y, dragEnd.y);
+                        const yMax = Math.max(dragStart.y, dragEnd.y);
+
+                        const gridTopLeft = screenToGrid(xMin, yMin);
+                        const gridBottomRight = screenToGrid(xMax, yMax);
+
+                        if (Math.abs(xMax - xMin) < 4 && Math.abs(yMax - yMin) < 4) {
+                            gridTopLeft.x -= 2; gridTopLeft.y -= 2;
+                            gridBottomRight.x += 2; gridBottomRight.y += 2;
+                        }
+
                         blocks.forEach(b => {
-                            if (cx >= b.min_c && cx <= b.max_c + 1 && cy >= b.min_r && cy <= b.max_r + 1) {
-                                b.assigned_zone = paintZone; draw();
+                            let bXStart = b.min_c * CELL_W;
+                            let bXEnd = (b.max_c + 1) * CELL_W;
+                            let bYStart = b.min_r * CELL_H;
+                            let bYEnd = (b.max_r + 1) * CELL_H;
+
+                            if (gridBottomRight.x >= bXStart && gridTopLeft.x <= bXEnd &&
+                                gridBottomRight.y >= bYStart && gridTopLeft.y <= bYEnd) {
+                                
+                                b.assigned_zone = paintZone;
+                                
                                 fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + b.id, {
-                                    method: "PATCH", headers: { "apikey": '""" + SUPABASE_KEY + """', "Authorization": 'Bearer """ + SUPABASE_KEY + """', "Content-Type": "application/json" },
+                                    method: "PATCH", 
+                                    headers: { 
+                                        "apikey": '""" + SUPABASE_KEY + """', 
+                                        "Authorization": 'Bearer """ + SUPABASE_KEY + """', 
+                                        "Content-Type": "application/json" 
+                                    },
                                     body: JSON.stringify({ "assigned_zone": paintZone })
                                 });
                             }
                         });
+                        draw();
                     });
+
                     draw();
                 })();
             </script>
             """
-            components.html(html_engine, height=450)
+            components.html(html_engine, height=590)
 
-    def inject_time_based_map(layer_key, data_array, selected_history_date=None):
+    # ==============================================================================
+    # 📌 CONSTRUCTIVE TIMELINE TRACKING WORKSPACES
+    # ==============================================================================
+    def inject_time_based_map(layer_key, data_array, max_r, max_c, selected_history_date=None):
         json_points = json.dumps(data_array)
         today_str = str(date.today())
         history_target = str(selected_history_date) if selected_history_date else "null"
         return """
         <div style="background:#090d16; padding:12px; border-radius:12px; touch-action:none;">
-            <canvas id="cv_""" + layer_key + """" width="1500" height="420" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
+            <canvas id="cv_""" + layer_key + """" width="1500" height="500" style="background:#020617; border-radius:8px; width:100%; cursor:grab; touch-action:none;"></canvas>
         </div>
         <script>
             (function() {
@@ -285,18 +393,23 @@ else:
                 const todayVal = '""" + today_str + """';
                 const historyDate = '""" + history_target + """' !== "null" ? '""" + history_target + """' : null;
                 const layerKey = '""" + layer_key + """';
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                blocks.forEach(b => {
-                    if (b.min_c < minX) minX = b.min_c; if (b.max_c > maxX) maxX = b.max_c;
-                    if (b.min_r < minY) minY = b.min_r; if (b.max_r > maxY) maxY = b.max_r;
-                });
-                const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-                const colMultiplier = 1.8; const rowMultiplier = 45.0;
-                let scale = Math.min((canvas.width-80)/(gw*colMultiplier), (canvas.height-80)/(gh*rowMultiplier));
-                if(scale<0.001||scale===Infinity) scale=0.3;
-                let offsetX = (canvas.width/2)-((gw*colMultiplier*scale)/2)-(minX*colMultiplier*scale);
-                let offsetY = (canvas.height/2)-((gh*rowMultiplier*scale)/2)-(minY*rowMultiplier*scale);
+
+                const CELL_W = 10.0; 
+                const CELL_H = 10.0;
+                const totalRows = """ + str(max_r) + """;
+                const totalCols = """ + str(max_c) + """;
+
+                const totalWidth = totalCols * CELL_W;
+                const totalHeight = totalRows * CELL_H;
+
+                let scale = Math.min((canvas.width - 40) / totalWidth, (canvas.height - 40) / totalHeight);
+                if(scale <= 0 || scale === Infinity) scale = 0.5;
+
+                let offsetX = (canvas.width / 2) - (totalWidth * scale / 2);
+                let offsetY = (canvas.height / 2) - (totalHeight * scale / 2);
+
                 let isDragging = false, moved = false, startX, startY;
+
                 function draw() {
                     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                     blocks.forEach(b => {
@@ -309,6 +422,7 @@ else:
                         else if(layerKey === "tran") { dCol="trans_date"; sCol="mounting_status"; }
                         else if(layerKey === "dcab") { dCol="dc_cab_date"; sCol="cabling_status"; }
                         else if(layerKey === "acab") { dCol="ac_cab_date"; sCol="cabling_status"; }
+                        
                         let isDone = b[sCol] === 'completed';
                         ctx.fillStyle = '#2563eb'; 
                         if (isDone) {
@@ -319,17 +433,24 @@ else:
                                 if (b[dCol] === todayVal) ctx.fillStyle = '#eab308'; else ctx.fillStyle = '#22c55e'; 
                             }
                         }
-                        ctx.fillRect(b.min_c * colMultiplier, b.min_r * rowMultiplier, (b.max_c-b.min_c+1)*colMultiplier-0.4, (b.max_r-b.min_r+1)*rowMultiplier-2.0);
+                        ctx.fillRect(b.min_c * CELL_W, b.min_r * CELL_H, (b.max_c - b.min_c + 1) * CELL_W - 0.5, (b.max_r - b.min_r + 1) * CELL_H - 0.5);
                     });
                     ctx.restore();
                 }
+
                 function runFieldSubmission(clientX, clientY) {
                     if(historyDate) return; 
                     const rect = canvas.getBoundingClientRect();
-                    const cx = (clientX - rect.left - offsetX) / scale / colMultiplier;
-                    const cy = (clientY - rect.top - offsetY) / scale / rowMultiplier;
+                    const cx = (clientX - rect.left - offsetX) / scale;
+                    const cy = (clientY - rect.top - offsetY) / scale;
+                    
                     blocks.forEach(b => {
-                        if (cx >= b.min_c && cx <= b.max_c + 1 && cy >= b.min_r && cy <= b.max_r + 1) {
+                        let xStart = b.min_c * CELL_W;
+                        let xEnd = (b.max_c + 1) * CELL_W;
+                        let yStart = b.min_r * CELL_H;
+                        let yEnd = (b.max_r + 1) * CELL_H;
+
+                        if (cx >= xStart && cx <= xEnd && cy >= yStart && cy <= yEnd) {
                             let targetCol = "pegging_status", dateCol = "pegging_date";
                             if(layerKey === "pil") { targetCol="piling_status"; dateCol="piling_date"; }
                             else if(layerKey === "mnt") { targetCol="mounting_status"; dateCol="mounting_date"; }
@@ -339,6 +460,7 @@ else:
                             else if(layerKey === "tran") { targetCol="mounting_status"; dateCol="trans_date"; }
                             else if(layerKey === "dcab") { targetCol="cabling_status"; dateCol="dc_cab_date"; }
                             else if(layerKey === "acab") { targetCol="cabling_status"; dateCol="ac_cab_date"; }
+                            
                             const payload = {}; payload[targetCol] = "completed"; payload[dateCol] = todayVal;
                             fetch('""" + SUPABASE_URL + """/rest/v1/structures?id=eq.' + b.id, {
                                 method: "PATCH", headers: { "apikey": '""" + SUPABASE_KEY + """', "Authorization": 'Bearer """ + SUPABASE_KEY + """', "Content-Type": "application/json", "Prefer": "return=minimal" },
@@ -347,6 +469,7 @@ else:
                         }
                     });
                 }
+
                 canvas.addEventListener('mousedown',(e)=>{ isDragging=true; moved=false; startX=e.clientX-offsetX; startY=e.clientY-offsetY; });
                 canvas.addEventListener('mousemove',(e)=>{ if(!isDragging)return; moved=true; offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); });
                 window.addEventListener('mouseup',(e)=>{ isDragging=false; if(!moved) runFieldSubmission(e.clientX, e.clientY); });
@@ -366,7 +489,12 @@ else:
                     hist_date = st.date_input("Select Target Tracking Date:", value=date.today(), key=f"hist_d_{unique_key}")
             with col_act2:
                 if st.button("🔄 Hard Reset Map Layout Caches", key=f"sync_btn_{unique_key}"): st.cache_data.clear(); st.rerun()
-            components.html(inject_time_based_map(unique_key, active_table_data, hist_date), height=440)
+            
+            # Use matching sheet dimension constraints across all tabs
+            db_max_r = current_farm_record.get("max_rows") or (max([b.get("max_r", 0) for b in active_table_data]) + 5 if active_table_data else 120)
+            db_max_c = current_farm_record.get("max_cols") or (max([b.get("max_c", 0) for b in active_table_data]) + 5 if active_table_data else 150)
+            
+            components.html(inject_time_based_map(unique_key, active_table_data, db_max_r, db_max_c, hist_date), height=520)
 
     process_standard_construction_tab(t_peg, "Pegging Stage", "peg")
     process_standard_construction_tab(t_pil, "Piling Stage", "pil")

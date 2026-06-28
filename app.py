@@ -110,7 +110,6 @@ if st.session_state.active_site_id is None:
                             table_counter = 1
                             structures_queue = []
                             
-                            # SMARTER PARSER SCANNER LAYER: Grabs elements dynamically to close gaps and holes
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
@@ -147,7 +146,6 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        # Parse layout grid cleanly into 16 sections bounded by the 5-row avenues
                                         section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                         section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                         computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -207,7 +205,6 @@ else:
         else:
             st.info("⚡ Admin Permissions Active")
             
-            # --- GLOBAL PUBLISH ACTIVATION TOGGLE ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -253,7 +250,7 @@ else:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
 
     # ==============================================================================
-    # 🚨 INTERFACE ROUTING ENGINE RULES
+    # 🚨 INTERFACE ROUTING ENGINE RULES (LOCKED SETUP CHECK SYSTEM)
     # ==============================================================================
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
@@ -286,7 +283,7 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Scroll/Pan around</b> | Mouse Wheel to <b>Zoom freely</b> | Click any block to shift its section zone.</div>
                 
-                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
@@ -300,7 +297,7 @@ else:
                     const blocks = __JSON_DATA__;
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
-                    const paintZone = 'PAINT_ZONE_VAL';
+                    const paintZone = "PAINT_ZONE_VAL";
                     const CELL = CELL_SIZE_VAL;
                     
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
@@ -324,7 +321,9 @@ else:
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.save();
+                        ctx.translate(offsetX, offsetY);
+                        ctx.scale(scale, scale);
 
                         blocks.forEach(b => {
                             let isHovered = hoverGroupBlockIds.includes(b.id); 
@@ -333,11 +332,15 @@ else:
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
                             if (isHovered) ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
                             
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            let x = b.min_c * CELL; 
+                            let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL;
+                            let h = (b.max_r - b.min_r + 1) * CELL;
                             
                             ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h);
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0;
+                            ctx.strokeRect(x, y, w, h);
+
                             if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
                         });
                         ctx.restore();
@@ -347,20 +350,25 @@ else:
                         let cluster = [];
                         let sectId = targetBlock.section_group || 0;
                         blocks.forEach(b => {
-                            if (b.section_group === sectId && sectId !== 0) { cluster.push(b.id); }
+                            if (b.section_group === sectId && sectId !== 0) { 
+                                cluster.push(b.id); 
+                            }
                         });
                         return cluster;
                     }
 
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        const mx = (e.clientX - rect.left - offsetX) / scale; const my = (e.clientY - rect.top - offsetY) / scale;
+                        const mx = (e.clientX - rect.left - offsetX) / scale; 
+                        const my = (e.clientY - rect.top - offsetY) / scale;
+
                         let found = null;
                         blocks.forEach(b => {
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
                         });
+
                         if (found) { hoverGroupBlockIds = getGroupCluster(found); } else { hoverGroupBlockIds = []; }
                         draw();
                     });
@@ -378,40 +386,70 @@ else:
                     document.getElementById("btn_yes").addEventListener('click', () => {
                         stagedBlockIds.forEach(id => {
                             let target = blocks.find(b => b.id === id); if (target) target.assigned_zone = paintZone;
-                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                            fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                 body: JSON.stringify({ "assigned_zone": paintZone })
                             });
                         });
                         stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
+
                     document.getElementById("btn_no").addEventListener('click', () => {
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                        stagedBlockIds = []; 
+                        document.getElementById("dialogue_overlay").style.display = "none"; 
+                        draw();
                     });
 
-                    canvas.addEventListener('mousedown', (e) => { isDragging = true; moved = false; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
-                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; moved = true; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    window.addEventListener('mouseup', () => { isDragging = false; canvas.style.cursor = 'grab'; });
+                    canvas.addEventListener('mousedown', (e) => {
+                        isDragging = true; moved = false;
+                        startX = e.clientX - offsetX; startY = e.clientY - offsetY;
+                        canvas.style.cursor = 'grabbing';
+                    });
+                    canvas.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        moved = true;
+                        offsetX = e.clientX - startX; offsetY = e.clientY - startY;
+                        draw();
+                    });
+                    window.addEventListener('mouseup', () => {
+                        isDragging = false; canvas.style.cursor = 'grab';
+                    });
+
                     canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        e.preventDefault();
+                        const rect = canvas.getBoundingClientRect();
+                        const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85);
+                        scale = Math.max(0.005, Math.min(scale, 30));
+
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale;
+                        draw();
                     }, { passive: false });
+
                     draw();
                 })();
             </script>
             """
-            html_zone_engine = html_zone_engine.replace("CANVAS_W", "1500").replace("CANVAS_H", "600").replace("__JSON_DATA__", json_str).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA__", json_str)\
+                                                 .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                                 .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                 .replace("MIN_C_VAL", str(min_c))\
+                                                 .replace("MAX_C_VAL", str(max_c))\
+                                                 .replace("MIN_R_VAL", str(min_r))\
+                                                 .replace("MAX_R_VAL", str(max_r))\
+                                                 .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                                 .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             components.html(html_zone_engine, height=700)
 
-        # --- STAGE 2: INVERTER SETUP VIEWS ---
+        # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
         with setup_tabs[1]:
             st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
             html_inverter_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="inv_canvas" width="CANVAS_W" height="CANVAS_H" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
@@ -422,6 +460,7 @@ else:
 
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                     if (scale <= 0 || scale === Infinity) scale = 0.5;
+
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     let isDragging = false, startX, startY;
@@ -431,7 +470,8 @@ else:
                         blocks.forEach(b => { 
                             ctx.fillStyle = '#1e293b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h); 
+                            ctx.fillRect(x, y, w, h); 
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h); 
                             if (b.structure_type === 'double_6x9') {
                                 ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
                                 ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
@@ -452,7 +492,12 @@ else:
                 })();
             </script>
             """
-            html_inverter_engine = html_inverter_engine.replace("CANVAS_W", "1500").replace("CANVAS_H", "600").replace("__JSON_DATA__", json_str).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
+            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA__", json_str)\
+                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                       .replace("MIN_C_VAL", str(min_c))\
+                                                       .replace("MAX_C_VAL", str(max_c))\
+                                                       .replace("MIN_R_VAL", str(min_r))\
+                                                       .replace("MAX_R_VAL", str(max_r))
             components.html(html_inverter_engine, height=640)
 
         # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
@@ -466,12 +511,60 @@ else:
                 """
                 components.html(html_micro_template, height=280)
 
+        # --- STAGE 4: TRANSFORMER HUB VIEWS PLACEMENT MAP ---
         with setup_tabs[3]:
             st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
+            html_transformer_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:crosshair;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() { 
+                    const blocks = __JSON_DATA__; const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isDragging = false, startX, startY;
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => { 
+                            ctx.fillStyle = '#475569'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h); 
+                        }); 
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    window.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA__", json_str)\
+                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                       .replace("MIN_C_VAL", str(min_c))\
+                                                       .replace("MAX_C_VAL", str(max_c))\
+                                                       .replace("MIN_R_VAL", str(min_r))\
+                                                       .replace("MAX_R_VAL", str(max_r))
+            components.html(html_transformer_engine, height=640)
 
     else:
         # ==============================================================================
-        # 工业现场施工应用层 (DEPLOYED OUT FOR CREW USAGE)
+        # 👷 THE OPERATION INTERFACES (DEPLOYED OUT FOR CREW USAGE)
         # ==============================================================================
         crew_tabs = st.tabs([
             "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
@@ -539,6 +632,7 @@ else:
                 })();
             </script>
             """
+            
             html_crew_map = html_crew_map.replace("__JSON_DATA__", json_points)\
                                          .replace("LAYER_KEY", str(layer_key))\
                                          .replace("MIN_C_VAL", str(min_c))\

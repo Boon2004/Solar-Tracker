@@ -30,7 +30,7 @@ if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
 
 def fetch_farms_directory():
     try:
-        res = supabase.table("farms").select("id, name, admin_password, installer_password, is_published").order("name").execute()
+        res = supabase.table("farms").select("id, name, admin_password, installer_password, is_published, background_image_url").order("name").execute()
         return res.data if res.data else []
     except Exception: return []
 
@@ -206,6 +206,7 @@ if st.session_state.active_site_id is None:
 else:
     current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
     site_is_published = current_farm_record.get("is_published", False)
+    site_bg_img = current_farm_record.get("background_image_url", "")
 
     col_h1, col_h2 = st.columns([8, 2])
     with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
@@ -237,6 +238,23 @@ else:
                     supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
                     st.rerun()
             
+            st.write("---")
+            st.subheader("🖼️ Site Layout Map Background Image")
+            uploaded_map_img = st.file_uploader("Upload Base Layout Image (PNG/JPG):", type=["png", "jpg", "jpeg"])
+            if uploaded_map_img:
+                img_bytes = uploaded_map_img.read()
+                b64_img_string = f"data:{uploaded_map_img.type};base64," + base64.b64encode(img_bytes).decode("utf-8")
+                if st.button("💾 Apply & Save Image Blueprint", type="primary"):
+                    supabase.table("farms").update({"background_image_url": b64_img_string}).eq("id", st.session_state.active_site_id).execute()
+                    st.success("Image blueprints attached into layout configuration database!")
+                    time.sleep(0.5); st.rerun()
+            
+            if site_bg_img:
+                if st.button("🗑️ Remove Current Background Image", type="secondary"):
+                    supabase.table("farms").update({"background_image_url": ""}).eq("id", st.session_state.active_site_id).execute()
+                    st.success("Background mapping reference flushed!")
+                    time.sleep(0.5); st.rerun()
+
             st.write("---")
             st.subheader("🛠️ Custom Tracker Tab Builder")
             custom_tab_name = st.text_input("Assign New Tracker Tab Label:", placeholder="e.g. Floating Cell...")
@@ -281,15 +299,16 @@ else:
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
+    # Dynamic zone parsing fleet
+    found_zones = set()
     for b in active_table_data:
         z = b.get("assigned_zone")
+        if z: found_zones.add(z)
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
-
-    if not site_is_published and not st.session_state.is_admin_mode:
-        st.write("---")
-        st.warning("🚧 **Configuration Incomplete:** This project site layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
-        st.stop()
+    
+    zone_list_for_wiping = sorted(list(found_zones))
+    if "Unassigned" in zone_list_for_wiping: zone_list_for_wiping.remove("Unassigned")
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
@@ -302,6 +321,13 @@ else:
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
+            
+            # Flexible Background Blueprint Display Module
+            if site_bg_img:
+                st.image(site_bg_img, caption="Active Site Blueprint Layout Background Reference", use_container_width=False, width=600)
+            else:
+                st.info("💡 Tip: You can upload a reference blueprint schematic map image from the left sidebar panel to lay under your tracking metrics matrix grid.")
+
             col_z1, col_z2 = st.columns([6, 4])
             with col_z1:
                 target_paint_zone = st.selectbox("Active Selector Target Zone Label Options:", st.session_state.managed_zones, index=0)
@@ -312,15 +338,26 @@ else:
                     if clean_opt not in st.session_state.managed_zones:
                         st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
                         st.rerun()
-                        
-            if st.button("🔄 Clear All Allocated Zones & Reset Assignment Fleet", type="secondary"):
-                with st.spinner("Flushing master zoning allocations..."):
-                    try:
-                        supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
-                        st.success("Fleet master assignments wiped cleanly!")
-                        time.sleep(0.5); st.rerun()
-                    except Exception as e:
-                        st.error(f"Reset dropped: {str(e)}")
+            
+            st.write("---")
+            st.subheader("🗑️ Selective Zone Reset Center")
+            col_wipe1, col_wipe2 = st.columns([6, 4])
+            with col_wipe1:
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
+            with col_wipe2:
+                st.write("<div style='height:28px;'></div>", unsafe_allowed_html=True)
+                if st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
+                    with st.spinner("Flushing target zones..."):
+                        try:
+                            if wipe_scope_selection == "ALL ZONES":
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
+                                st.success("Entire farm structural matrix zones set back to Unassigned!")
+                            else:
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
+                                st.success(f"Successfully cleared allocation indexes for {wipe_scope_selection}!")
+                            time.sleep(0.5); st.rerun()
+                        except Exception as e:
+                            st.error(f"Reset failed: {str(e)}")
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
@@ -328,7 +365,6 @@ else:
                     Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 
-                <!-- Custom Floating Tooltip for Hover Data -->
                 <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -369,15 +405,11 @@ else:
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
-                        
-                        // Deterministic HSL mapper string logic
                         let hash = 0; 
                         let cleaned = zoneName.toUpperCase().trim();
                         for (let i = 0; i < cleaned.length; i++) { 
                             hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); 
                         }
-                        
-                        // Use spread distribution multipliers for maximum visibility contrast
                         let hue = Math.abs(hash * 45) % 360; 
                         return `hsl(${hue}, 90%, 50%)`;
                     }
@@ -394,7 +426,6 @@ else:
                             ctx.fillRect(x, y, w, h);
                             ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
                             
-                            // Highlight selection with neon border ring color context
                             if (isStaged) { 
                                 ctx.strokeStyle = '#ffff00'; 
                                 ctx.lineWidth = 2.5; 
@@ -411,7 +442,6 @@ else:
                         }
                     }
 
-                    // Hover Event Intersector Tooltip Logic
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
                         const mX = e.clientX - rect.left;
@@ -431,7 +461,6 @@ else:
                             return;
                         }
 
-                        // Inverse transform matrix parameters to screen grid space
                         let worldX = (mX - offsetX) / scale;
                         let worldY = (mY - offsetY) / scale;
                         
@@ -499,7 +528,6 @@ else:
 
                             if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
                                 blocks.forEach(b => {
-                                    // ZONE LOCK: Do not allow modifications to already-assigned tracking cells
                                     if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
 
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
@@ -514,7 +542,6 @@ else:
                                 });
                             } else {
                                 blocks.forEach(b => {
-                                    // ZONE LOCK: Do not allow modifications to already-assigned tracking cells
                                     if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
 
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
@@ -728,6 +755,13 @@ else:
         # ==============================================================================
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
+        
+        # Display the uploaded layout map directly above the installer workspace tabs
+        if site_bg_img:
+            st.markdown("### 🗺️ Master Blueprint Reference Layout")
+            st.image(site_bg_img, use_container_width=False, width=700)
+            st.write("---")
+
         crew_tabs = st.tabs([
             "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
         ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
@@ -746,7 +780,6 @@ else:
                     <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
                 </div>
                 
-                <!-- Hover Metadata info layer for Crew View -->
                 <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
 
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">

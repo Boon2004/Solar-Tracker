@@ -114,17 +114,15 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    # VALUE-CENTRIC FALLBACK: Check cell value strings or properties robustly
-                                    if cell.value is not None:
-                                        val_clean = str(cell.value).strip()
-                                        if len(val_clean) > 0:
-                                            is_active_cell = True
+                                    # BULLETPROOF CELL DETECTION (Catching both standard text inputs and conditional rules)
+                                    if cell.value is not None and len(str(cell.value).strip()) > 0:
+                                        is_active_cell = True
+                                    elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                        is_active_cell = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
                                                          (cell.border.right and cell.border.right.style)): 
-                                        is_active_cell = True
-                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF": 
                                         is_active_cell = True
                                     
                                     if is_active_cell and (r, c) not in visited:
@@ -141,12 +139,12 @@ if st.session_state.active_site_id is None:
                                                     n_active = False
                                                     if n_cell.value is not None and len(str(n_cell.value).strip()) > 0:
                                                         n_active = True
+                                                    elif n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
+                                                        n_active = True
                                                     elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
                                                                          (n_cell.border.left and n_cell.border.left.style) or 
                                                                          (n_cell.border.right and n_cell.border.right.style)): 
-                                                        n_active = True
-                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": 
                                                         n_active = True
                                                         
                                                     if n_active:
@@ -264,7 +262,6 @@ else:
 
     CELL_SIZE = 14
     
-    # Safe Base64 Payload Delivery
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 

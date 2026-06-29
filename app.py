@@ -162,7 +162,7 @@ if st.session_state.active_site_id is None:
                                                 "farm_id": new_fid, 
                                                 "table_label": discovered_label if discovered_label else f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                                "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
+                                                "structure_type": f"Layout_{w_cells}x{h_cells}",
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(table_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 

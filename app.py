@@ -107,15 +107,28 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            # Bulletproof Text-Only Scanner (Ignores borders, colors, and invisible formatting variations completely)
+                            # Strict Fill-Only Grid Scanner: Completely drops borders constraint checks
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    if cell.value is not None:
-                                        cleaned_text = str(cell.value).strip()
-                                        if cleaned_text != "":
-                                            grid_matrix[r][c] = True
+                                    
+                                    # 1. Check if cell has text content label
+                                    has_value = cell.value is not None and str(cell.value).strip() != ""
+                                    
+                                    # 2. Check if cell has an explicit background highlight fill
+                                    has_fill = False
+                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                        # Filter out default blank/empty white system tints if they exist
+                                        if hasattr(cell.fill, 'start_color') and cell.fill.start_color:
+                                            color_hex = str(cell.fill.start_color.rgb)
+                                            if color_hex and "00000000" not in color_hex and "FFFFFFFF" not in color_hex:
+                                                has_fill = True
+                                        else:
+                                            has_fill = True
+                                            
+                                    if has_value or has_fill:
+                                        grid_matrix[r][c] = True
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
@@ -640,7 +653,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Group actual visual geometry sizes dynamically to display inside template configuration dropdown menu selection
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -695,7 +707,6 @@ else:
                     st.metric(label="Calculated Component Volume Distribution Density Matrix", value=f"{total_calculated_points} Points / Block")
                     
                     if st.button("💾 Apply & Replicate Structural Configuration Fleetwide", type="primary", use_container_width=True):
-                        # Commit context properties structure parameters state to session rollback undo logs
                         st.session_state[undo_stack_key].append({
                             "rows": row_pts,
                             "cols": col_pts,

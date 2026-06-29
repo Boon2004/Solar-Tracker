@@ -214,57 +214,7 @@ else:
             st.markdown("#### Create an Isolated Testing Sandbox")
             st.caption("This clones your active configuration matrix completely so you can run structural calculations safely.")
             
-            sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
-            
-            if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
-                with st.spinner("Generating sandbox footprint..."):
-                    try:
-                        parent_farm = current_farm_record
-                        sandbox_payload = {
-                            "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
-                            "admin_password": parent_farm.get("admin_password", "ok"),
-                            "installer_password": parent_farm.get("installer_password", "1234"),
-                            "max_rows": parent_farm.get("max_rows", 100),
-                            "max_cols": parent_farm.get("max_cols", 150),
-                            "is_published": False,
-                            "background_image_url": parent_farm.get("background_image_url", "")
-                        }
-                        new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
-                        
-                        if new_farm_response.data:
-                            sandbox_farm_id = new_farm_response.data[0]["id"]
-                            parent_structures = supabase.table("structures").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-                            
-                            if parent_structures:
-                                sandbox_structures = []
-                                for struct in parent_structures:
-                                    cloned_struct = {
-                                        "farm_id": sandbox_farm_id,
-                                        "table_label": struct.get("table_label"),
-                                        "min_r": struct.get("min_r"),
-                                        "max_r": struct.get("max_r"),
-                                        "min_c": struct.get("min_c"),
-                                        "max_c": struct.get("max_c"),
-                                        "structure_type": struct.get("structure_type"),
-                                        "assigned_zone": struct.get("assigned_zone", "Unassigned"),
-                                        "section_group": struct.get("section_group"),
-                                        "pegging_status": "pending",
-                                        "piling_status": "pending",
-                                        "mounting_status": "pending",
-                                        "modules_status": "pending"
-                                    }
-                                    sandbox_structures.append(cloned_struct)
-                                
-                                for idx in range(0, len(sandbox_structures), 200):
-                                    batch = sandbox_structures[idx:idx+200]
-                                    supabase.table("structures").insert(batch).execute()
-                                    
-                                st.success("🎉 Sandbox successfully forged! You can access this isolated map from the main menu portal directory link.")
-                                time.sleep(2)
-                                st.rerun()
-                    except Exception as err:
-                        st.error(f"Sandbox synthesis rejected: {str(err)}")
-    col_h1, col_h2 = st.columns([8, 2])
+            col_h1, col_h2 = st.columns([8, 2])
     with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
     with col_h2:
         if st.button("🚪 Exit Site"): st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
@@ -280,6 +230,62 @@ else:
                     else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
+            
+            st.write("---")
+            with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
+                st.markdown("#### Create an Isolated Testing Sandbox")
+                st.caption("This clones your active configuration matrix completely so you can run structural calculations safely.")
+                
+                sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
+                
+                if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
+                    with st.spinner("Generating sandbox footprint..."):
+                        try:
+                            parent_farm = current_farm_record
+                            sandbox_payload = {
+                                "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
+                                "admin_password": parent_farm.get("admin_password", "ok"),
+                                "installer_password": parent_farm.get("installer_password", "1234"),
+                                "max_rows": parent_farm.get("max_rows", 100),
+                                "max_cols": parent_farm.get("max_cols", 150),
+                                "is_published": False,
+                                "background_image_url": parent_farm.get("background_image_url", "")
+                            }
+                            new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
+                            
+                            if new_farm_response.data:
+                                sandbox_farm_id = new_farm_response.data[0]["id"]
+                                parent_structures = supabase.table("structures").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+                                
+                                if parent_structures:
+                                    sandbox_structures = []
+                                    for struct in parent_structures:
+                                        cloned_struct = {
+                                            "farm_id": sandbox_farm_id,
+                                            "table_label": struct.get("table_label"),
+                                            "min_r": struct.get("min_r"),
+                                            "max_r": struct.get("max_r"),
+                                            "min_c": struct.get("min_c"),
+                                            "max_c": struct.get("max_c"),
+                                            "structure_type": struct.get("structure_type"),
+                                            "assigned_zone": struct.get("assigned_zone", "Unassigned"),
+                                            "section_group": struct.get("section_group"),
+                                            "pegging_status": "pending",
+                                            "piling_status": "pending",
+                                            "mounting_status": "pending",
+                                            "modules_status": "pending"
+                                        }
+                                        sandbox_structures.append(cloned_struct)
+                                    
+                                    for idx in range(0, len(sandbox_structures), 200):
+                                        batch = sandbox_structures[idx:idx+200]
+                                        supabase.table("structures").insert(batch).execute()
+                                        
+                                    st.success("🎉 Sandbox successfully forged! You can access this isolated map from the main menu portal directory link.")
+                                    time.sleep(2)
+                                    st.rerun()
+                        except Exception as err:
+                            st.error(f"Sandbox synthesis rejected: {str(err)}")
             
             st.write("---")
             st.subheader("📢 Field Deployment Release")

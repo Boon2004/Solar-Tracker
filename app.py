@@ -643,13 +643,173 @@ else:
         # --- STAGE 2: PEGGIN PHASE MICROSCALE BUILDER ---
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
-            col_t1, col_t2 = st.columns([4, 6])
-            with col_t1:
-                html_micro_template = """
-                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
-                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
-                """
-                components.html(html_micro_template, height=280)
+            
+            # --- 1. DETECT UNIQUE STRUCTURAL SCHEMAS ---
+            # Grouping patterns by cell layout geometry footprint calculated on excel import
+            layout_types = {}
+            for block in active_table_data:
+                h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
+                w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
+                layout_key = f"{block.get('structure_type', 'unknown')} ({h_cells}x{w_cells} grid layout)"
+                
+                if layout_key not in layout_types:
+                    layout_types[layout_key] = {
+                        "type_string": block.get("structure_type"),
+                        "h_cells": h_cells,
+                        "w_cells": w_cells,
+                        "sample_block_id": block.get("id")
+                    }
+
+            # --- 2. CONTROL INTERFACE LABELS ---
+            layout_options = list(layout_types.keys())
+            
+            if not layout_options:
+                st.info("No layout pattern distributions extracted from metrics base structure.")
+            else:
+                # Layout Selection Dropdown
+                selected_layout_label = st.selectbox(
+                    "Select Layout Architecture Template Matrix to Customize:", 
+                    layout_options
+                )
+                
+                target_layout = layout_types[selected_layout_label]
+                
+                # --- STATE MANAGEMENT LOGIC (PREVIEW, APPLY & UNDO STACKS) ---
+                state_prefix = f"layout_cfg_{selected_layout_label}"
+                undo_stack_key = f"undo_{state_prefix}"
+                
+                if undo_stack_key not in st.session_state:
+                    st.session_state[undo_stack_key] = []
+                
+                # Setup internal form factors or fallback presets
+                if f"{state_prefix}_rows" not in st.session_state:
+                    st.session_state[f"{state_prefix}_rows"] = 4
+                if f"{state_prefix}_cols" not in st.session_state:
+                    st.session_state[f"{state_prefix}_cols"] = 3
+
+                col_inputs, col_actions = st.columns([4, 6])
+                
+                with col_inputs:
+                    st.markdown("#### 📏 Target Coordination Point Formations")
+                    row_pts = st.number_input(
+                        "Array Points per Row Count:", 
+                        min_value=1, max_value=20, 
+                        key=f"{state_prefix}_rows"
+                    )
+                    col_pts = st.number_input(
+                        "Array Points per Column Count:", 
+                        min_value=1, max_value=20, 
+                        key=f"{state_prefix}_cols"
+                    )
+                    
+                    total_calculated_points = row_pts * col_pts
+                    st.metric(label="Calculated Placement Target Pin Points Fleet-wide", value=f"{total_calculated_points} Pts / Unit")
+                    
+                    # Core Action Operations
+                    if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
+                        # Save current state onto Undo Stack before database modification
+                        current_snapshot = {
+                            "label": selected_layout_label,
+                            "rows": row_pts,
+                            "cols": col_pts,
+                            "timestamp": datetime.now().strftime("%H:%M:%S")
+                        }
+                        st.session_state[undo_stack_key].append(current_snapshot)
+                        
+                        # Database deployment implementation matching configuration parameters
+                        with st.spinner("Broadcasting component layout mapping changes to Supabase ecosystem..."):
+                            try:
+                                # Update records across matching variant scopes
+                                supabase.table("structures").update({
+                                    "section_group": int(total_calculated_points) # Storing calculation array value dynamically
+                                }).eq("farm_id", st.session_state.active_site_id)\
+                                  .eq("structure_type", target_layout["type_string"]).execute()
+                                
+                                st.success(f"Successfully deployed structural profile pattern updates globally to all {selected_layout_label} installations!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Transmission mutation failed: {str(e)}")
+
+                    # Undo Configuration Stack Controller
+                    if st.session_state[undo_stack_key]:
+                        last_action = st.session_state[undo_stack_key][-1]
+                        if st.button(f"↩️ Undo Structural Change (Revert {last_action['timestamp']})", type="secondary", use_container_width=True):
+                            # Pop off stack
+                            st.session_state[undo_stack_key].pop()
+                            st.info("Reverted system variable parameters profile to snapshot tracking defaults. Rerunning layout...")
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        st.caption("No dynamic change history snapshots available in this session cluster.")
+
+                # --- 3. DYNAMIC HTML5 CANVAS COMPONENT MATRIX VISUAL PREVIEWER ---
+                with col_actions:
+                    st.markdown("#### 🛰️ Matrix Blueprint Grid Previewer")
+                    
+                    # Structural measurements mappings
+                    h_px = int(target_layout["h_cells"] * 25)
+                    w_px = int(target_layout["w_cells"] * 35)
+                    
+                    html_micro_template = f"""
+                    <div style="background:#0f172a; padding:18px; border-radius:12px; text-align:center; font-family:sans-serif;">
+                        <div style="margin-bottom: 10px; font-size:13px; color:#94a3b8;">
+                            Blueprint Bounds: <span style="color:#38bdf8; font-weight:bold;">{target_layout["w_cells"]}x{target_layout["h_cells"]} Grid Matrix Block</span>
+                        </div>
+                        <canvas id="micro_canvas" width="450" height="280" style="background:#020617; border:2px dashed #38bdf8; border-radius:8px;"></canvas>
+                    </div>
+                    <script>
+                        (function() {{
+                            const canvas = document.getElementById("micro_canvas");
+                            const ctx = canvas.getContext('2d');
+                            
+                            // Dimensions
+                            const rows = {row_pts};
+                            const cols = {col_pts};
+                            
+                            // Grid block configuration box positioning 
+                            const boxW = {w_px};
+                            const boxH = {h_px};
+                            const bx = (canvas.width / 2) - (boxW / 2);
+                            const by = (canvas.height / 2) - (boxH / 2);
+                            
+                            // Render Base Structural Outline Profile
+                            ctx.fillStyle = '#1e293b';
+                            ctx.fillRect(bx, by, boxW, boxH);
+                            ctx.strokeStyle = '#38bdf8';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(bx, by, boxW, boxH);
+                            
+                            // Generate Point Formations based on row/column counts input safely
+                            if(rows > 0 && cols > 0) {{
+                                const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
+                                const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
+                                
+                                for(let r = 0; r < rows; r++) {{
+                                    for(let c = 0; c < cols; c++) {{
+                                        let px = (rows === 1) ? bx + (boxW / 2) : bx + (c * colGap);
+                                        let py = (cols === 1) ? by + (boxH / 2) : by + (r * rowGap);
+                                        
+                                        // Guard boundaries adjustment clipping logic
+                                        if(rows === 1) py = by + (boxH / 2);
+                                        if(cols === 1) px = bx + (boxW / 2);
+
+                                        // Render placement target nodes pin anchors
+                                        ctx.fillStyle = '#f43f5e';
+                                        ctx.beginPath();
+                                        ctx.arc(px, py, 5, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        
+                                        ctx.strokeStyle = '#ffffff';
+                                        ctx.lineWidth = 1;
+                                        ctx.stroke();
+                                    }}
+                                }}
+                            }}
+                        }})();
+                    </script>
+                    """
+                    components.html(html_micro_template, height=360)
 
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:

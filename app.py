@@ -248,68 +248,8 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # Shared background message proxy logic
-    st.html("""
-    <script>
-        window.addEventListener("message", function(e) {
-            if (e.data && e.data.type === "CANVAS_DATA_OUT") {
-                const nativeInput = window.parent.document.querySelector("input[aria-label='hidden_payload_sync_exchange']");
-                if (nativeInput) {
-                    nativeInput.value = JSON.stringify(e.data);
-                    nativeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    setTimeout(() => {
-                        const syncBtn = window.parent.document.querySelector("button[id='sync_commit_trigger_btn']");
-                        if (syncBtn) syncBtn.click();
-                    }, 50);
-                }
-            }
-        });
-    </script>
-    """)
-
-    # Standard hidden text bridge setup fields
-    exchange_container = st.container()
-    with exchange_container:
-        js_data_exchange = st.text_input("hidden_payload_sync_exchange", label_visibility="collapsed", key="exchange_payload_key")
-        submit_sync_action = st.button("Process Sync Action", key="sync_commit_trigger_btn", help="hidden")
-
-    if submit_sync_action and js_data_exchange:
-        try:
-            parsed_payload = json.loads(js_data_exchange)
-            ids_to_update = parsed_payload.get("ids", [])
-            target_field = parsed_payload.get("field")
-            updated_value = parsed_payload.get("value")
-
-            if ids_to_update and target_field:
-                if target_field == "assigned_zone":
-                    for row_id in ids_to_update:
-                        supabase.table("structures").update({"assigned_zone": updated_value}).eq("id", row_id).execute()
-                else:
-                    current_date_str = str(date.today())
-                    for row_id in ids_to_update:
-                        supabase.table("structures").update({
-                            f"{target_field}_status": "completed",
-                            f"{target_field}_date": current_date_str
-                        }).eq("id", row_id).execute()
-                st.toast(f"Synchronized updates for {len(ids_to_update)} components successfully!", icon="🚀")
-                time.sleep(0.2)
-                st.rerun()
-        except Exception as err:
-            st.error(f"Sync error: {str(err)}")
-
-    # Custom styling injection to hide input bridge fields cleanly from user view
-    st.markdown("""
-        <style>
-            div[element-type="container"] { margin-bottom: -50px; }
-            input[aria-label="hidden_payload_sync_exchange"], 
-            button[id="sync_commit_trigger_btn"] {
-                display: none !important;
-                visibility: hidden !important;
-                height: 0px !important;
-                padding: 0px !important;
-            }
-        </style>
-    """, unsafe_allowed_html=True)
+    if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
+        st.rerun()
 
     def load_site_isolated_tables(farm_id):
         all_data = []
@@ -389,6 +329,7 @@ else:
                 </div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
+                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing updates...</div>
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
@@ -539,13 +480,33 @@ else:
                         }
                     });
 
-                    document.getElementById("btn_yes").addEventListener('click', () => {
-                        window.parent.postMessage({
-                            type: "CANVAS_DATA_OUT",
-                            field: "assigned_zone",
-                            value: paintZone,
-                            ids: stagedBlockIds
-                        }, "*");
+                    document.getElementById("btn_yes").addEventListener('click', async () => {
+                        const msgBox = document.getElementById("status_message_box");
+                        msgBox.style.display = "block";
+                        msgBox.innerText = `Updating ${stagedBlockIds.length} components...`;
+                        
+                        try {
+                            for (let id of stagedBlockIds) {
+                                let target = blocks.find(b => b.id === id); 
+                                if (target) target.assigned_zone = paintZone;
+                                
+                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                    method: "PATCH", 
+                                    headers: { 
+                                        "apikey": "SUPABASE_KEY_VAL", 
+                                        "Authorization": "Bearer SUPABASE_KEY_VAL", 
+                                        "Content-Type": "application/json",
+                                        "Prefer": "return=minimal"
+                                    },
+                                    body: JSON.stringify({ "assigned_zone": paintZone })
+                                });
+                            }
+                            msgBox.innerText = "Done! Hit the reload button to refresh overview.";
+                            setTimeout(() => { msgBox.style.display = "none"; }, 4000);
+                        } catch(e) {
+                            msgBox.innerText = "Network transmission exception dropped.";
+                        }
+                        
                         stagedBlockIds = []; 
                         document.getElementById("dialogue_overlay").style.display = "none"; 
                         draw();
@@ -571,7 +532,9 @@ else:
                                              .replace("MIN_C_VAL", str(min_c))\
                                              .replace("MAX_C_VAL", str(max_c))\
                                              .replace("MIN_R_VAL", str(min_r))\
-                                             .replace("MAX_R_VAL", str(max_r))
+                                             .replace("MAX_R_VAL", str(max_r))\
+                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
@@ -723,6 +686,7 @@ else:
                     <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
                     <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
                     <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                    <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
@@ -806,7 +770,7 @@ else:
                         }
                     });
 
-                    canvas.addEventListener('mouseup', (e) => {
+                    canvas.addEventListener('mouseup', async (e) => {
                         const rect = canvas.getBoundingClientRect();
                         const mouseUpX = e.clientX - rect.left;
                         const mouseUpY = e.clientY - rect.top;
@@ -851,12 +815,35 @@ else:
                             });
                             
                             if (payloadIds.length > 0) {
-                                window.parent.postMessage({
-                                    type: "CANVAS_DATA_OUT",
-                                    field: "LAYER_KEY",
-                                    value: "completed",
-                                    ids: payloadIds
-                                }, "*");
+                                const statMsg = document.getElementById("crew_sync_status_msg");
+                                statMsg.style.display = "block";
+                                statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
+                                
+                                try {
+                                    for (let id of payloadIds) {
+                                        let target = blocks.find(b => b.id === id);
+                                        if (target) target['LAYER_KEY_status'] = 'completed';
+                                        
+                                        let updateBody = {};
+                                        updateBody['LAYER_KEY_status'] = 'completed';
+                                        updateBody['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                        
+                                        await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
+                                            method: "PATCH", 
+                                            headers: { 
+                                                "apikey": 'SUPABASE_KEY_VAL', 
+                                                "Authorization": 'Bearer SUPABASE_KEY_VAL', 
+                                                "Content-Type": "application/json",
+                                                "Prefer": "return=minimal"
+                                            },
+                                            body: JSON.stringify(updateBody)
+                                        });
+                                    }
+                                    statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
+                                    setTimeout(() => { statMsg.style.display = "none"; }, 5000);
+                                } catch (e) {
+                                    statMsg.innerText = "Database updates timed out.";
+                                }
                             }
                             setTimeout(draw, 50);
                         }
@@ -885,7 +872,10 @@ else:
                                          .replace("MIN_C_VAL", str(min_c))\
                                          .replace("MAX_C_VAL", str(max_c))\
                                          .replace("MIN_R_VAL", str(min_r))\
-                                         .replace("MAX_R_VAL", str(max_r))
+                                         .replace("MAX_R_VAL", str(max_r))\
+                                         .replace("TODAY_STR_VAL", today_str)\
+                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):

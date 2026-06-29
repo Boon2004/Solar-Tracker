@@ -326,7 +326,7 @@ else:
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    Mouse Controls: <span style="color:#38bdf8; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select whole section &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select individual trackers &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a whole cluster &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -361,13 +361,6 @@ else:
                     let startX = 0, startY = 0, currentX = 0, currentY = 0;
                     let stagedBlockIds = [];
 
-                    // ─────────────────────────────────────────────────────────────
-                    // FIX 1: Section grouping BFS — threshold changed from <= 6 to <= 5
-                    //
-                    // Why: tracker blocks separated by 1 empty col have edge distance=2 (joins ✓)
-                    //      blocks across 5-col road gap have edge distance=6 (now blocked ✓)
-                    //      <= 6 (old) accidentally bridged road gaps, merging all blocks into 1 group
-                    // ─────────────────────────────────────────────────────────────
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     for (let i = 0; i < blocks.length; i++) {
@@ -379,10 +372,8 @@ else:
                             let c = q.shift();
                             for(let j=0; j<blocks.length; j++) {
                                 if(blocks[j].computed_group !== 0) continue;
-                                // Vertical neighbour: overlapping columns, row edges within 5
                                 let vertMatch = (blocks[j].min_c <= c.max_c && blocks[j].max_c >= c.min_c) &&
                                                 Math.min(Math.abs(blocks[j].min_r - c.max_r), Math.abs(c.min_r - blocks[j].max_r)) <= 5;
-                                // Horizontal neighbour: overlapping rows, col edges within 5
                                 let horizMatch = (blocks[j].min_r <= c.max_r && blocks[j].max_r >= c.min_r) &&
                                                  Math.min(Math.abs(blocks[j].min_c - c.max_c), Math.abs(c.min_c - blocks[j].max_c)) <= 5;
                                 if (vertMatch || horizMatch) {
@@ -474,25 +465,21 @@ else:
                             stagedBlockIds = [];
 
                             if (Math.abs(endX - startX) > 10) {
-                                // Drag-select: find all groups whose centre falls in the box
+                                // DRAG SELECT: Selects ONLY the specific cells inside the box frame boundary
                                 let x1 = (Math.min(startX, endX) - offsetX) / scale;
                                 let x2 = (Math.max(startX, endX) - offsetX) / scale;
                                 let y1 = (Math.min(startY, endY) - offsetY) / scale;
                                 let y2 = (Math.max(startY, endY) - offsetY) / scale;
 
-                                let groupsInBox = new Set();
                                 blocks.forEach(b => {
                                     let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
                                     let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
                                     if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
-                                        if (b.computed_group) groupsInBox.add(b.computed_group);
+                                        stagedBlockIds.push(b.id);
                                     }
                                 });
-                                blocks.forEach(b => {
-                                    if (groupsInBox.has(b.computed_group)) stagedBlockIds.push(b.id);
-                                });
                             } else {
-                                // Single click: find which block was clicked, select its whole group
+                                // SINGLE CLICK: Falls back to selecting the entire group cluster
                                 let cx = (startX - offsetX) / scale;
                                 let cy = (startY - offsetY) / scale;
                                 let targetGroup = null;
@@ -542,6 +529,7 @@ else:
                 })();
             </script>
             """
+            
             html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
                                              .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
                                              .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
@@ -698,9 +686,9 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers &nbsp;|&nbsp; 
+                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
                     <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
-                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete whole section &nbsp;|&nbsp;
+                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
                     <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
@@ -727,10 +715,6 @@ else:
                     let dragStartRawX = 0, dragStartRawY = 0;
                     let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    // ─────────────────────────────────────────────────────────────
-                    // FIX 2: Section grouping BFS — threshold changed from <= 6 to <= 5
-                    // Same fix as zone canvas: bridges 1-cell gaps, stops at 5-cell roads
-                    // ─────────────────────────────────────────────────────────────
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     
@@ -830,24 +814,17 @@ else:
                             const totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
 
                             if (totalDragDistance > 10) {
-                                // Drag-select: mark all groups in box as completed
+                                // DRAG SELECT: Processes each cell uniquely inside bounding parameters
                                 let worldX1 = (Math.min(dragStartRawX, mouseUpX) - offsetX) / scale;
                                 let worldX2 = (Math.max(dragStartRawX, mouseUpX) - offsetX) / scale;
                                 let worldY1 = (Math.min(dragStartRawY, mouseUpY) - offsetY) / scale;
                                 let worldY2 = (Math.max(dragStartRawY, mouseUpY) - offsetY) / scale;
 
-                                let targetedGroups = new Set();
                                 blocks.forEach(b => {
                                     let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
                                     let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
                                     if (bx >= worldX1 && bx <= worldX2 && by >= worldY1 && by <= worldY2) {
-                                        if (b.computed_group) targetedGroups.add(b.computed_group);
-                                    }
-                                });
-
-                                if (targetedGroups.size > 0) {
-                                    blocks.forEach(b => {
-                                        if (targetedGroups.has(b.computed_group) && b['LAYER_KEY_status'] !== 'completed') {
+                                        if (b['LAYER_KEY_status'] !== 'completed') {
                                             b['LAYER_KEY_status'] = 'completed';
                                             const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
                                             fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
@@ -855,26 +832,18 @@ else:
                                                 body: JSON.stringify(payload)
                                             });
                                         }
-                                    });
-                                }
-                                setTimeout(draw, 50);
+                                    }
+                                });
                             } else {
-                                // Single click: mark clicked block's whole section as completed
+                                // SINGLE CLICK: Falls back to processing individual cell structure click
                                 const worldClickX = (dragStartRawX - offsetX) / scale; 
                                 const worldClickY = (dragStartRawY - offsetY) / scale;
                                 
-                                let matchedGroup = null;
                                 blocks.forEach(b => {
                                     let x = b.min_c * CELL; let y = b.min_r * CELL;
                                     let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                                     if (worldClickX >= x && worldClickX <= x + w && worldClickY >= y && worldClickY <= y + h) {
-                                        matchedGroup = b.computed_group;
-                                    }
-                                });
-
-                                if (matchedGroup !== null) {
-                                    blocks.forEach(b => {
-                                        if (b.computed_group === matchedGroup && b['LAYER_KEY_status'] !== 'completed') {
+                                        if (b['LAYER_KEY_status'] !== 'completed') {
                                             b['LAYER_KEY_status'] = 'completed';
                                             const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
                                             fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
@@ -882,10 +851,10 @@ else:
                                                 body: JSON.stringify(payload)
                                             });
                                         }
-                                    });
-                                }
-                                setTimeout(draw, 50);
+                                    }
+                                });
                             }
+                            setTimeout(draw, 50);
                         }
                     });
 
@@ -907,6 +876,7 @@ else:
                 })();
             </script>
             """
+            # Keep remainder of token configuration mapping properties unchanged below...
             html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
                                          .replace("LAYER_KEY", str(layer_key))\
                                          .replace("MIN_C_VAL", str(min_c))\

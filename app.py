@@ -380,4 +380,635 @@ else:
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold
+                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                </div>
+                
+                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
+                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing updates...</div>
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
+                    <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
+                    <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
+                </div>
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("zone_canvas");
+                    const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("canvas_hover_tooltip");
+                    const paintZone = "PAINT_ZONE_VAL";
+                    const CELL = CELL_SIZE_VAL;
+                    const isPublished = __IS_PUBLISHED_VAL__;
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL;
+                    const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+
+                    let isPanning = false;
+                    let isSelecting = false;
+                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
+                    let stagedBlockIds = [];
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function getZoneColor(zoneName) {
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
+                        let hash = 0; 
+                        let cleaned = zoneName.toUpperCase().trim();
+                        for (let i = 0; i < cleaned.length; i++) { 
+                            hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); 
+                        }
+                        let hue = Math.abs(hash * 45) % 360; 
+                        return `hsl(${hue}, 90%, 50%)`;
+                    }
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+
+                        blocks.forEach(b => {
+                            let isStaged = stagedBlockIds.includes(b.id);
+                            ctx.fillStyle = getZoneColor(b.assigned_zone);
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h);
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
+                            
+                            if (isStaged) { 
+                                ctx.strokeStyle = '#ffff00'; 
+                                ctx.lineWidth = 2.5; 
+                                ctx.strokeRect(x, y, w, h); 
+                            }
+                        });
+                        ctx.restore();
+
+                        if (isSelecting) {
+                            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+                            ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
+                            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+                        }
+                    }
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (isPanning) {
+                            offsetX = e.clientX - startX;
+                            offsetY = e.clientY - startY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        } else if (isSelecting) {
+                            currentX = mX;
+                            currentY = mY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
+                                hoveredBlock = b;
+                                break;
+                            }
+                        }
+
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
+
+                    canvas.addEventListener('mousedown', (e) => {
+                        if (isPublished) return; 
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (e.button === 2) { 
+                            isPanning = true;
+                            isSelecting = false;
+                            startX = e.clientX - offsetX;
+                            startY = e.clientY - offsetY;
+                            canvas.style.cursor = 'move';
+                        } else if (e.button === 0) { 
+                            isSelecting = true;
+                            isPanning = false;
+                            startX = mX;
+                            startY = mY;
+                            currentX = mX;
+                            currentY = mY;
+                            canvas.style.cursor = 'crosshair';
+                        }
+                        tooltip.style.display = "none";
+                    });
+
+                    canvas.addEventListener('mouseup', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const endX = e.clientX - rect.left;
+                        const endY = e.clientY - rect.top;
+
+                        if (isPanning) {
+                            isPanning = false;
+                            canvas.style.cursor = 'grab';
+                        } else if (isSelecting) {
+                            isSelecting = false;
+                            canvas.style.cursor = 'default';
+                            
+                            stagedBlockIds = [];
+
+                            let boxX1 = Math.min(startX, endX);
+                            let boxX2 = Math.max(startX, endX);
+                            let boxY1 = Math.min(startY, endY);
+                            let boxY2 = Math.max(startY, endY);
+
+                            if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
+                                blocks.forEach(b => {
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
+                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
+                                        stagedBlockIds.push(b.id);
+                                    }
+                                });
+                            } else {
+                                blocks.forEach(b => {
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
+                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
+                                        stagedBlockIds.push(b.id);
+                                    }
+                                });
+                            }
+
+                            if (stagedBlockIds.length > 0) {
+                                document.getElementById("lbl_zone").innerText = paintZone;
+                                document.getElementById("dialogue_overlay").style.display = "block";
+                            }
+                            draw();
+                        }
+                    });
+
+                    document.getElementById("btn_yes").addEventListener('click', async () => {
+                        const msgBox = document.getElementById("status_message_box");
+                        msgBox.style.display = "block";
+                        msgBox.innerText = `Updating ${stagedBlockIds.length} components...`;
+                        
+                        try {
+                            for (let id of stagedBlockIds) {
+                                let target = blocks.find(b => b.id === id); 
+                                if (target) target.assigned_zone = paintZone;
+                                
+                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                    method: "PATCH", 
+                                    headers: { 
+                                        "apikey": "SUPABASE_KEY_VAL", 
+                                        "Authorization": "Bearer SUPABASE_KEY_VAL", 
+                                        "Content-Type": "application/json",
+                                        "Prefer": "return=minimal"
+                                    },
+                                    body: JSON.stringify({ "assigned_zone": paintZone })
+                                });
+                            }
+                            msgBox.innerText = "Done! Hit the reload button to refresh overview.";
+                            setTimeout(() => { msgBox.style.display = "none"; }, 4000);
+                        } catch(e) {
+                            msgBox.innerText = "Network transmission exception dropped.";
+                        }
+                        
+                        stagedBlockIds = []; 
+                        document.getElementById("dialogue_overlay").style.display = "none"; 
+                        draw();
+                    });
+
+                    document.getElementById("btn_no").addEventListener('click', () => {
+                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                    });
+
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                             .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                             .replace("MIN_C_VAL", str(min_c))\
+                                             .replace("MAX_C_VAL", str(max_c))\
+                                             .replace("MIN_R_VAL", str(min_r))\
+                                             .replace("MAX_R_VAL", str(max_r))\
+                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                             .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
+            components.html(html_zone_engine, height=700)
+
+        # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
+        with setup_tabs[1]:
+            st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
+            html_inverter_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() { 
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isDragging = false, startX, startY;
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => { 
+                            ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                            if (b.structure_type === 'double_6x9') {
+                                ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
+                                ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
+                            }
+                        }); 
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousedown', (e) => { 
+                        const rect = canvas.getBoundingClientRect();
+                        if(e.button === 2 || e.button === 0) {
+                            isDragging = true; 
+                            startX = e.clientX - offsetX; 
+                            startY = e.clientY - offsetY; 
+                        }
+                    });
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                       .replace("MIN_C_VAL", str(min_c))\
+                                                       .replace("MAX_C_VAL", str(max_c))\
+                                                       .replace("MIN_R_VAL", str(min_r))\
+                                                       .replace("MAX_R_VAL", str(max_r))
+            components.html(html_inverter_engine, height=640)
+
+        # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
+        with setup_tabs[2]:
+            st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
+            col_t1, col_t2 = st.columns([4, 6])
+            with col_t1:
+                html_micro_template = """
+                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
+                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
+                """
+                components.html(html_micro_template, height=280)
+
+        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP ---
+        with setup_tabs[3]:
+            st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
+            html_transformer_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() { 
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isDragging = false, startX, startY;
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => { 
+                            ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                        }); 
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousedown', (e) => { if(e.button===2 || e.button===0) { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                             .replace("MIN_C_VAL", str(min_c))\
+                                                             .replace("MAX_C_VAL", str(max_c))\
+                                                             .replace("MIN_R_VAL", str(min_r))\
+                                                             .replace("MAX_R_VAL", str(max_r))
+            components.html(html_transformer_engine, height=640)
+
+    else:
+        # ==============================================================================
+        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
+        # ==============================================================================
+        if not site_is_published:
+            st.warning("⏳ **Workspace Under Construction**")
+            st.info(
+                "The site layout configuration is currently being prepared by the project administration. "
+                "Field tracking modules, zoning structures, and blueprints will become accessible here once the layout is officially published to the crew."
+            )
+        else:
+            if site_bg_img:
+                st.markdown("### 🗺️ Master Blueprint Reference Layout")
+                st.image(site_bg_img, use_container_width=False, width=700)
+                st.write("---")
+
+            crew_tabs = st.tabs([
+                "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
+            ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
+
+            def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
+                today_str = str(date.today())
+
+                html_crew_map = """
+                <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
+                    <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                        ⚙️ <b>Crew Controls:</b> 
+                        <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
+                        <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
+                        <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
+                        <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                        <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
+                    </div>
+                    
+                    <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
+                    <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                        <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    </div>
+                </div>
+                <script>
+                    (function() {
+                        const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
+                        const canvas = document.getElementById("crew_LAYER_KEY"); 
+                        const ctx = canvas.getContext('2d');
+                        const tooltip = document.getElementById("crew_hover_tooltip");
+                        const CELL = 14; 
+                        let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                        const mapWidth = (maxX - minX + 1) * CELL; 
+                        const mapHeight = (maxY - minY + 1) * CELL;
+
+                        let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                        if (scale <= 0 || scale === Infinity) scale = 0.5;
+                        let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                        let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                        
+                        let isPanning = false;
+                        let isSelecting = false;
+                        let dragStartRawX = 0, dragStartRawY = 0;
+                        let dragCurrentRawX = 0, dragCurrentRawY = 0;
+
+                        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                        function draw() {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                            ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                            
+                            blocks.forEach(b => {
+                                ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
+                                let x = b.min_c * CELL; let y = b.min_r * CELL;
+                                let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                ctx.fillRect(x, y, w, h); 
+                                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            });
+                            ctx.restore();
+
+                            if (isSelecting) {
+                                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+                                ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+                                ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                                ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                            }
+                        }
+
+                        canvas.addEventListener('mousemove', (e) => {
+                            const rect = canvas.getBoundingClientRect();
+                            const mX = e.clientX - rect.left;
+                            const mY = e.clientY - rect.top;
+                            
+                            if (isPanning) {
+                                offsetX = e.clientX - dragStartRawX;
+                                offsetY = e.clientY - dragStartRawY;
+                                draw();
+                                tooltip.style.display = "none";
+                                return;
+                            } else if (isSelecting) {
+                                dragCurrentRawX = mX;
+                                dragCurrentRawY = mY;
+                                draw();
+                                tooltip.style.display = "none";
+                                return;
+                            }
+
+                            let worldX = (mX - offsetX) / scale;
+                            let worldY = (mY - offsetY) / scale;
+                            
+                            let hoveredBlock = null;
+                            for (let b of blocks) {
+                                if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
+                            }
+
+                            if (hoveredBlock) {
+                                tooltip.style.display = "block";
+                                tooltip.style.left = (mX + 15) + "px";
+                                tooltip.style.top = (mY + 15) + "px";
+                                tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
+                            } else {
+                                tooltip.style.display = "none";
+                            }
+                        });
+
+                        canvas.addEventListener('mousedown', (e) => {
+                            const rect = canvas.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const clickY = e.clientY - rect.top;
+
+                            if (e.button === 2) { 
+                                isPanning = true;
+                                isSelecting = false;
+                                dragStartRawX = e.clientX - offsetX;
+                                dragStartRawY = e.clientY - offsetY;
+                                canvas.style.cursor = 'move';
+                            } else if (e.button === 0) { 
+                                isSelecting = true;
+                                isPanning = false;
+                                dragStartRawX = clickX;
+                                dragStartRawY = clickY;
+                                dragCurrentRawX = clickX;
+                                dragCurrentRawY = clickY;
+                                canvas.style.cursor = 'crosshair';
+                            }
+                            tooltip.style.display = "none";
+                        });
+
+                        canvas.addEventListener('mouseup', async (e) => {
+                            const rect = canvas.getBoundingClientRect();
+                            const mouseUpX = e.clientX - rect.left;
+                            const mouseUpY = e.clientY - rect.top;
+
+                            if (isPanning) {
+                                isPanning = false;
+                                canvas.style.cursor = 'grab';
+                            } else if (isSelecting) {
+                                isSelecting = false;
+                                canvas.style.cursor = 'default';
+
+                                let boxX1 = Math.min(dragStartRawX, mouseUpX);
+                                let boxX2 = Math.max(dragStartRawX, mouseUpX);
+                                let boxY1 = Math.min(dragStartRawY, mouseUpY);
+                                let boxY2 = Math.max(dragStartRawY, mouseUpY);
+
+                                let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                                let payloadIds = [];
+
+                                blocks.forEach(b => {
+                                    let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
+                                    let isMatched = (totalDragDistance > 4) ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
+                                    if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
+                                        payloadIds.push(b.id);
+                                    }
+                                });
+                                
+                                if (payloadIds.length > 0) {
+                                    const statMsg = document.getElementById("crew_sync_status_msg");
+                                    statMsg.style.display = "block";
+                                    statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
+                                    
+                                    try {
+                                        for (let id of payloadIds) {
+                                            let target = blocks.find(b => b.id === id);
+                                            if (target) target['LAYER_KEY_status'] = 'completed';
+                                            
+                                            await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
+                                                method: "PATCH", 
+                                                headers: { 
+                                                    "apikey": 'SUPABASE_KEY_VAL', 
+                                                    "Authorization": 'Bearer SUPABASE_KEY_VAL', 
+                                                    "Content-Type": "application/json",
+                                                    "Prefer": "return=minimal"
+                                                },
+                                                body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
+                                            });
+                                        }
+                                        statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
+                                        setTimeout(() => { statMsg.style.display = "none"; }, 5000);
+                                    } catch (e) {
+                                        statMsg.innerText = "Database updates timed out.";
+                                    }
+                                }
+                                setTimeout(draw, 50);
+                            }
+                        });
+
+                        canvas.addEventListener('wheel', (e) => {
+                            e.preventDefault(); 
+                            const rect = canvas.getBoundingClientRect(); 
+                            const mouseX = e.clientX - rect.left; 
+                            const mouseY = e.clientY - rect.top;
+                            const gridX = (mouseX - offsetX) / scale; 
+                            const gridY = (mouseY - offsetY) / scale;
+                            scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
+                            scale = Math.max(0.01, Math.min(scale, 15));
+                            offsetX = mouseX - gridX * scale; 
+                            offsetY = mouseY - gridY * scale; 
+                            draw();
+                        }, { passive: false });
+
+                        draw();
+                    })();
+                </script>
+                """
+                html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_json_data)\
+                                             .replace("LAYER_KEY", str(layer_key))\
+                                             .replace("MIN_C_VAL", str(min_c))\
+                                             .replace("MAX_C_VAL", str(max_c))\
+                                             .replace("MIN_R_VAL", str(min_r))\
+                                             .replace("MAX_R_VAL", str(max_r))\
+                                             .replace("TODAY_STR_VAL", today_str)\
+                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                return html_crew_map
+
+            def process_crew_tab(tab_obj, key_val):
+                with tab_obj:
+                    components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
+
+            process_crew_tab(crew_tabs[0], "pegging")
+            process_crew_tab(crew_tabs[1], "piling")
+            process_crew_tab(crew_tabs[2], "mounting")
+            process_crew_tab(crew_tabs[3], "modules")

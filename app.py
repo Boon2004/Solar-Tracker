@@ -255,7 +255,8 @@ else:
                                 "max_rows": parent_farm.get("max_rows", 100),
                                 "max_cols": parent_farm.get("max_cols", 150),
                                 "is_published": False,
-                                "background_image_url": parent_farm.get("background_image_url", "")
+                                # 🟢 CRITICAL: This copies the exact inverter, transformer, and string topology paths!
+                                "background_image_url": parent_farm.get("background_image_url", "{}")
                             }
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
                             
@@ -274,6 +275,7 @@ else:
                                             "min_c": struct.get("min_c"),
                                             "max_c": struct.get("max_c"),
                                             "structure_type": struct.get("structure_type"),
+                                            # 🟢 PRESERVES EXACT ZONE ASSIGNMENTS (Crucial for Canvas Color Mapping)
                                             "assigned_zone": struct.get("assigned_zone", "Unassigned"),
                                             "section_group": struct.get("section_group"),
                                             "pegging_status": "pending",
@@ -283,12 +285,15 @@ else:
                                         }
                                         sandbox_structures.append(cloned_struct)
                                     
+                                    # Push structures in batches
                                     for idx in range(0, len(sandbox_structures), 200):
                                         batch = sandbox_structures[idx:idx+200]
                                         supabase.table("structures").insert(batch).execute()
                                         
+                                    # 🟢 FLUSH STREAMLIT DATA CACHE IMMEDATELY SO NEW COLORS MOUNT
+                                    st.cache_data.clear()
                                     st.success("🎉 Sandbox successfully forged! Access it from the main menu portal.")
-                                    time.sleep(2)
+                                    time.sleep(1.5)
                                     st.rerun()
                         except Exception as err:
                             st.error(f"Sandbox synthesis rejected: {str(err)}")

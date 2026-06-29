@@ -28,7 +28,7 @@ if "managed_zones" not in st.session_state:
     st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
 if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
 
-@st.cache_data(ttl=2)
+# 🔥 REMOVED CACHE TO FORCE STREAMLIT TO FETCH RAW FRESH DATA
 def fetch_farms_directory():
     try:
         res = supabase.table("farms").select("id, name, admin_password, installer_password, is_published").order("name").execute()
@@ -249,7 +249,7 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    @st.cache_data(ttl=1)
+    # 🔥 REMOVED CACHE HERE TO MAKE CHANGES LIVE
     def load_site_isolated_tables(farm_id):
         all_data = []
         limit = 1000
@@ -324,7 +324,7 @@ else:
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    🖱️ <b>Control Blueprint:</b> <span style="color:#38bdf8; font-weight:bold;">Left-Click + Drag</span> to select multiple trackers | <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan around maps freely | <span style="color:#eab308; font-weight:bold;">Single-Click</span> to select a whole row section.
+                    鼠标操作: <span style="color:#38bdf8; font-weight:bold;">左键拖拽</span> 多选 | <span style="color:#38bdf8; font-weight:bold;">右键拖拽</span> 移动地图 | <span style="color:#eab308; font-weight:bold;">单击</span> 选中整排结构.
                 </div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -359,7 +359,6 @@ else:
                     let startX = 0, startY = 0, currentX = 0, currentY = 0;
                     let stagedBlockIds = [];
 
-                    // ⚡ INTERNAL PROXIMITY GENERATOR FOR WHOLE SECTIONS
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     for (let i = 0; i < blocks.length; i++) {
@@ -711,7 +710,7 @@ else:
                     let dragStartRawX = 0, dragStartRawY = 0;
                     let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    // ⚡ DYNAMIC GRID SECTION ISOLATION LAYER
+                    // ⚡ INTERNAL GRID PROXIMITY GENERATOR (5 Row Isolation Grid Rule)
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     

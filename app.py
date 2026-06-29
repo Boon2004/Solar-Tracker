@@ -107,27 +107,15 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
+                            # Pure Visual Mapping Logic - Drops broken borders constraint checks completely
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
-                                for r in range(1, max_rows + 1):
+                            for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
-                            cell = sheet.cell(row=r, column=c)
-        
-        # 1. Read by written text/label inside the cell
-                            has_value = cell.value is not None and str(cell.value).strip() != ""
-        
-        # 2. Read by background highlight color fill
-                             has_fill = False
-                            if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-            # Solid color fills or patterns count as part of the structure
-                                has_fill = True
-            
-        # If it has a value or a color fill, it's a visual cell (Borders are completely ignored)
-                            if has_value or has_fill:
-                                grid_matrix[r][c] = True
-                                    elif cell.border and ((cell.border.top and cell.border.top.style) or 
-                                                         (cell.border.bottom and cell.border.bottom.style) or 
-                                                         (cell.border.left and cell.border.left.style) or 
-                                                         (cell.border.right and cell.border.right.style)):
+                                    cell = sheet.cell(row=r, column=c)
+                                    has_value = cell.value is not None and str(cell.value).strip() != ""
+                                    has_fill = cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none'
+                                    
+                                    if has_value or has_fill:
                                         grid_matrix[r][c] = True
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
@@ -487,7 +475,7 @@ else:
                             return;
                         }
 
-                        let worldX = (mX - offsetX) / scale;
+                    let worldX = (mX - offsetX) / scale;
                         let worldY = (mY - offsetY) / scale;
                         
                         let hoveredBlock = null;
@@ -504,7 +492,7 @@ else:
                             tooltip.style.display = "block";
                             tooltip.style.left = (mX + 15) + "px";
                             tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                            tooltip.style.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
                         } else {
                             tooltip.style.display = "none";
                         }
@@ -653,44 +641,37 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # --- 1. DETECT UNIQUE STRUCTURAL SCHEMAS ---
-            # Grouping patterns by cell layout geometry footprint calculated on excel import
+            # Group true layout boundaries dynamically mapping structural matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
                 w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
-                layout_key = f"{block.get('structure_type', 'unknown')} ({h_cells}x{w_cells} grid layout)"
+                layout_key = f"Tracker Configuration Matrix Profile ({w_cells}x{h_cells} Columns/Rows)"
                 
                 if layout_key not in layout_types:
                     layout_types[layout_key] = {
                         "type_string": block.get("structure_type"),
                         "h_cells": h_cells,
-                        "w_cells": w_cells,
-                        "sample_block_id": block.get("id")
+                        "w_cells": w_cells
                     }
 
-            # --- 2. CONTROL INTERFACE LABELS ---
             layout_options = list(layout_types.keys())
             
             if not layout_options:
-                st.info("No layout pattern distributions extracted from metrics base structure.")
+                st.info("No explicit spatial profiles registered inside operational framework directory database.")
             else:
-                # Layout Selection Dropdown
                 selected_layout_label = st.selectbox(
                     "Select Layout Architecture Template Matrix to Customize:", 
                     layout_options
                 )
                 
                 target_layout = layout_types[selected_layout_label]
-                
-                # --- STATE MANAGEMENT LOGIC (PREVIEW, APPLY & UNDO STACKS) ---
-                state_prefix = f"layout_cfg_{selected_layout_label}"
+                state_prefix = f"layout_cfg_{target_layout['type_string']}"
                 undo_stack_key = f"undo_{state_prefix}"
                 
                 if undo_stack_key not in st.session_state:
                     st.session_state[undo_stack_key] = []
                 
-                # Setup internal form factors or fallback presets
                 if f"{state_prefix}_rows" not in st.session_state:
                     st.session_state[f"{state_prefix}_rows"] = 4
                 if f"{state_prefix}_cols" not in st.session_state:
@@ -701,70 +682,53 @@ else:
                 with col_inputs:
                     st.markdown("#### 📏 Target Coordination Point Formations")
                     row_pts = st.number_input(
-                        "Array Points per Row Count:", 
+                        "Array Pin Points per Row Dimension Layout:", 
                         min_value=1, max_value=20, 
                         key=f"{state_prefix}_rows"
                     )
                     col_pts = st.number_input(
-                        "Array Points per Column Count:", 
+                        "Array Pin Points per Column Dimension Layout:", 
                         min_value=1, max_value=20, 
                         key=f"{state_prefix}_cols"
                     )
                     
                     total_calculated_points = row_pts * col_pts
-                    st.metric(label="Calculated Placement Target Pin Points Fleet-wide", value=f"{total_calculated_points} Pts / Unit")
+                    st.metric(label="Calculated Component Volume Distribution Density Matrix", value=f"{total_calculated_points} Points / Block")
                     
-                    # Core Action Operations
-                    if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
-                        # Save current state onto Undo Stack before database modification
-                        current_snapshot = {
-                            "label": selected_layout_label,
+                    if st.button("💾 Apply & Replicate Structural Configuration Fleetwide", type="primary", use_container_width=True):
+                        # Commit context properties structure parameters state to session rollback undo logs
+                        st.session_state[undo_stack_key].append({
                             "rows": row_pts,
                             "cols": col_pts,
                             "timestamp": datetime.now().strftime("%H:%M:%S")
-                        }
-                        st.session_state[undo_stack_key].append(current_snapshot)
+                        })
                         
-                        # Database deployment implementation matching configuration parameters
-                        with st.spinner("Broadcasting component layout mapping changes to Supabase ecosystem..."):
+                        with st.spinner("Broadcasting visual component patterns to cloud layout..."):
                             try:
-                                # Update records across matching variant scopes
                                 supabase.table("structures").update({
-                                    "section_group": int(total_calculated_points) # Storing calculation array value dynamically
+                                    "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                st.success(f"Successfully deployed structural profile pattern updates globally to all {selected_layout_label} installations!")
-                                time.sleep(1)
-                                st.rerun()
+                                st.success("Replication batch mutations applied securely workspace fleetwide!")
+                                time.sleep(1); st.rerun()
                             except Exception as e:
-                                st.error(f"Transmission mutation failed: {str(e)}")
+                                st.error(f"Transmission mutation dropped: {str(e)}")
 
-                    # Undo Configuration Stack Controller
                     if st.session_state[undo_stack_key]:
                         last_action = st.session_state[undo_stack_key][-1]
-                        if st.button(f"↩️ Undo Structural Change (Revert {last_action['timestamp']})", type="secondary", use_container_width=True):
-                            # Pop off stack
+                        if st.button(f"↩️ Revert Layout Assignment Block (Snapshot: {last_action['timestamp']})", type="secondary", use_container_width=True):
                             st.session_state[undo_stack_key].pop()
-                            st.info("Reverted system variable parameters profile to snapshot tracking defaults. Rerunning layout...")
-                            time.sleep(0.5)
                             st.rerun()
-                    else:
-                        st.caption("No dynamic change history snapshots available in this session cluster.")
 
-                # --- 3. DYNAMIC HTML5 CANVAS COMPONENT MATRIX VISUAL PREVIEWER ---
                 with col_actions:
-                    st.markdown("#### 🛰️ Matrix Blueprint Grid Previewer")
+                    st.markdown("#### 🛰️ Structural Pin Grid Dynamic Canvas Previewer")
                     
-                    # Structural measurements mappings
                     h_px = int(target_layout["h_cells"] * 25)
                     w_px = int(target_layout["w_cells"] * 35)
                     
                     html_micro_template = f"""
-                    <div style="background:#0f172a; padding:18px; border-radius:12px; text-align:center; font-family:sans-serif;">
-                        <div style="margin-bottom: 10px; font-size:13px; color:#94a3b8;">
-                            Blueprint Bounds: <span style="color:#38bdf8; font-weight:bold;">{target_layout["w_cells"]}x{target_layout["h_cells"]} Grid Matrix Block</span>
-                        </div>
+                    <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center; font-family:sans-serif;">
                         <canvas id="micro_canvas" width="450" height="280" style="background:#020617; border:2px dashed #38bdf8; border-radius:8px;"></canvas>
                     </div>
                     <script>
@@ -772,38 +736,29 @@ else:
                             const canvas = document.getElementById("micro_canvas");
                             const ctx = canvas.getContext('2d');
                             
-                            // Dimensions
                             const rows = {row_pts};
                             const cols = {col_pts};
-                            
-                            // Grid block configuration box positioning 
                             const boxW = {w_px};
                             const boxH = {h_px};
+                            
                             const bx = (canvas.width / 2) - (boxW / 2);
                             const by = (canvas.height / 2) - (boxH / 2);
                             
-                            // Render Base Structural Outline Profile
                             ctx.fillStyle = '#1e293b';
                             ctx.fillRect(bx, by, boxW, boxH);
                             ctx.strokeStyle = '#38bdf8';
                             ctx.lineWidth = 2;
                             ctx.strokeRect(bx, by, boxW, boxH);
                             
-                            // Generate Point Formations based on row/column counts input safely
                             if(rows > 0 && cols > 0) {{
                                 const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
                                 const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
                                 
                                 for(let r = 0; r < rows; r++) {{
                                     for(let c = 0; c < cols; c++) {{
-                                        let px = (rows === 1) ? bx + (boxW / 2) : bx + (c * colGap);
-                                        let py = (cols === 1) ? by + (boxH / 2) : by + (r * rowGap);
+                                        let px = (cols === 1) ? bx + (boxW / 2) : bx + (c * colGap);
+                                        let py = (rows === 1) ? by + (boxH / 2) : by + (r * rowGap);
                                         
-                                        // Guard boundaries adjustment clipping logic
-                                        if(rows === 1) py = by + (boxH / 2);
-                                        if(cols === 1) px = bx + (boxW / 2);
-
-                                        // Render placement target nodes pin anchors
                                         ctx.fillStyle = '#f43f5e';
                                         ctx.beginPath();
                                         ctx.arc(px, py, 5, 0, Math.PI * 2);
@@ -818,7 +773,7 @@ else:
                         }})();
                     </script>
                     """
-                    components.html(html_micro_template, height=360)
+                    components.html(html_micro_template, height=340)
 
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
@@ -915,7 +870,6 @@ else:
                         return document.querySelector('input[name="topo_tool"]:checked').value;
                     }
 
-                    // UPGRADE: Discrete color assignment per exact string count (no ranges)
                     function getCapacityColor(stringCount) {
                         if (stringCount <= 0) return "#1e293b";
                         const palette = [
@@ -935,7 +889,6 @@ else:
                         ctx.translate(offsetX, offsetY);
                         ctx.scale(scale, scale);
 
-                        // 1. Flight Lines
                         gridTopo.inverters.forEach(inv => {
                             if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 let xf = gridTopo.transformers[inv.transformerId];
@@ -951,7 +904,6 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 2. Solar Strings
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -959,12 +911,11 @@ else:
                             
                             if (linkedInv) {
                                 if (isInverterPlaced(linkedInv)) {
-                                    // Change color code precisely matching exact connected volume density count
                                     ctx.fillStyle = getCapacityColor(counts[linkedInv]); 
                                     ctx.strokeStyle = getCapacityColor(counts[linkedInv]);
                                     ctx.lineWidth = 1.5;
                                 } else {
-                                    ctx.fillStyle = "#d97706"; // Amber selection uniform profile
+                                    ctx.fillStyle = "#d97706";
                                     ctx.strokeStyle = "#fbbf24";
                                     ctx.lineWidth = 2;
                                 }
@@ -986,7 +937,6 @@ else:
                             }
                         });
 
-                        // 3. Inverters
                         gridTopo.inverters.forEach(inv => {
                             let strCount = counts[inv.id] || 0;
                             let tsPrefix = "";
@@ -1021,7 +971,6 @@ else:
                             ctx.strokeRect(bx, by, badgeW, badgeH);
                         });
 
-                        // 4. Transformers
                         gridTopo.transformers.forEach((t, i) => {
                             ctx.fillStyle = "#ff1744";
                             ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
@@ -1039,7 +988,7 @@ else:
 
                         if (isSelecting && getActiveTool() === "string") {
                             ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 1.5;
-                            ctx.fillStyle = "rgba(167, 139, 250, 0.2)";
+                            ctx.fillStyle = 'rgba(167, 139, 250, 0.2)';
                             ctx.fillRect(startX, startY, currX - startX, currY - startY);
                             ctx.strokeRect(startX, startY, currX - startX, currY - startY);
                         }

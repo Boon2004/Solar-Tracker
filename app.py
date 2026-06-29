@@ -91,7 +91,8 @@ if st.session_state.active_site_id is None:
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
                     st.info("🔄 Running Fast Visual Grid Scanner...")
                     with st.spinner("Processing structural frames..."):
-                        wb = openpyxl.load_workbook(uploaded_blueprint, use_iterators=False, data_only=True)
+                        # FIXED: Changed from use_iterators=False to read_only=False
+                        wb = openpyxl.load_workbook(uploaded_blueprint, read_only=False, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
@@ -314,60 +315,45 @@ else:
     transformers_data = load_electrical_nodes("transformers", st.session_state.active_site_id)
     inverters_data = load_electrical_nodes("inverters", st.session_state.active_site_id)
 
-    if not active_table_data:
-        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet.")
-        st.stop()
-
-    min_r = min([b.get("min_r", 1) for b in active_table_data])
-    max_r = max([b.get("max_r", 100) for b in active_table_data])
-    min_c = min([b.get("min_c", 1) for b in active_table_data])
-    max_c = max([b.get("max_c", 150) for b in active_table_data])
+    min_r = min([b.get("min_r", 1) for b in active_table_data]) if active_table_data else 1
+    max_r = max([b.get("max_r", 100) for b in active_table_data]) if active_table_data else 100
+    min_c = min([b.get("min_c", 1) for b in active_table_data]) if active_table_data else 1
+    max_c = max([b.get("max_c", 150) for b in active_table_data]) if active_table_data else 150
 
     CELL_SIZE = 14
-    
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
     
     b64_transformers = base64.b64encode(json.dumps(transformers_data).encode("utf-8")).decode("utf-8")
     b64_inverters = base64.b64encode(json.dumps(inverters_data).encode("utf-8")).decode("utf-8")
 
-    found_zones = set()
     for b in active_table_data:
         z = b.get("assigned_zone")
-        if z: found_zones.add(z)
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
-    
-    zone_list_for_wiping = sorted(list(found_zones))
+            
+    zone_list_for_wiping = sorted(list(set([b["assigned_zone"] for b in active_table_data if b.get("assigned_zone")])))
     if "Unassigned" in zone_list_for_wiping: zone_list_for_wiping.remove("Unassigned")
-    
     inverter_list_for_wiping = sorted(list(set([b["inverter_id"] for b in active_table_data if b.get("inverter_id")])))
-
-    if not site_is_published and not st.session_state.is_admin_mode:
-        st.write("---")
-        st.title("🚧 Project Site Setup Phase Incomplete")
-        st.info("The layout workflow configuration parameters are currently being finalized by an authorized Engineering Administrator.")
-        if site_bg_img: st.image(site_bg_img, caption="Draft Layout Reference Sheet", width=700)
-        st.stop()
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
             "🔌 Electrical Infrastructure Workspace", 
             "📌 Pegging & Piling Customizer",
-            "🏪 Component Template Propagator"
+            "🏪 Master Blueprint Configuration Overview Nodes"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
-            if site_bg_img: st.image(site_bg_img, caption="Active Site Blueprint Layout Background Reference", width=600)
+            if site_bg_img: st.image(site_bg_img, width=600)
 
             col_z1, col_z2 = st.columns([6, 4])
             with col_z1:
-                target_paint_zone = st.selectbox("Active Selector Target Zone Label Options:", st.session_state.managed_zones, index=0)
+                target_paint_zone = st.selectbox("Active Target Zone Selector:", st.session_state.managed_zones, index=0)
             with col_z2:
-                new_zone_opt = st.text_input("➕ Extend Managed Zone List Registry:", placeholder="e.g. Zone D...")
+                new_zone_opt = st.text_input("➕ Register New managed Zone String:", placeholder="e.g. Zone D...")
                 if st.button("Register Variant Entry") and new_zone_opt:
                     clean_opt = new_zone_opt.strip()
                     if clean_opt not in st.session_state.managed_zones:
@@ -378,20 +364,16 @@ else:
             st.subheader("🛠️ Selective Zone Reset Center")
             col_wipe1, col_wipe2 = st.columns([6, 4])
             with col_wipe1:
-                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush:", ["ALL ZONES"] + zone_list_for_wiping)
             with col_wipe2:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                if site_is_published:
-                    st.error("Cannot reset zone assets on frozen, deployed frameworks.")
+                if site_is_published: st.error("Framework locked.")
                 elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
-                    with st.spinner("Flushing target zones..."):
-                        try:
-                            if wipe_scope_selection == "ALL ZONES":
-                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
-                            else:
-                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
-                            time.sleep(0.5); st.rerun()
-                        except Exception as e: st.error(f"Reset failed: {str(e)}")
+                    if wipe_scope_selection == "ALL ZONES":
+                        supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
+                    else:
+                        supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
+                    st.rerun()
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
@@ -448,14 +430,15 @@ else:
                         tooltip.style.display = "none";
                     });
                     canvas.addEventListener('mouseup', (e) => {
+                        const rect = canvas.getBoundingClientRect(); const endX = e.clientX - rect.left; const endY = e.clientY - rect.top;
                         if (isPanning) { isPanning = false; canvas.style.cursor = 'grab'; }
                         else if (isSelecting) {
                             isSelecting = false; canvas.style.cursor = 'default'; stagedBlockIds = [];
                             let boxX1 = Math.min(startX, currentX), boxX2 = Math.max(startX, currentX); let boxY1 = Math.min(startY, currentY), boxY2 = Math.max(startY, currentY);
                             blocks.forEach(b => {
                                 if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
-                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
-                                if (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) stagedBlockIds.push(b.id);
+                                let cellX = b.min_c * CELL * scale + offsetX; let cellY = b.min_r * CELL * scale + offsetY;
+                                if (cellX >= boxX1 && cellX <= boxX2 && cellY >= boxY1 && cellY <= boxY2) stagedBlockIds.push(b.id);
                             });
                             if (stagedBlockIds.length > 0) { document.getElementById("lbl_zone").innerText = paintZone; document.getElementById("dialogue_overlay").style.display = "block"; }
                             draw();
@@ -506,7 +489,7 @@ else:
                 elec_reset_scope = st.selectbox("Select Target Active Inverter Fleet to Wipe out:", ["ALL CABLING GROUPS"] + inverter_list_for_wiping)
             with col_el_w2:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                if site_is_published: st.error(" Canceled: Infrastructure cannot be modified once published live.")
+                if site_is_published: st.error("Canceled: Locked framework.")
                 elif st.button("💥 Reset Selected Infrastructure Layout Data", type="secondary", use_container_width=True):
                     with st.spinner("Wiping rows..."):
                         if elec_reset_scope == "ALL CABLING GROUPS":
@@ -518,227 +501,114 @@ else:
             html_elec_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div id="elec_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #ff007f; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-                
                 <div id="elec_dialogue_modal" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #ff007f; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
                     <div id="elec_modal_status_msg" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing database updates...</div>
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;" id="popup_query_label_txt">Execute Action?</div>
                     <button id="btn_elec_confirm" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Confirm, Save Change</button>
                     <button id="btn_elec_cancel" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">Cancel</button>
                 </div>
-
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="elec_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
                 (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    let txs = JSON.parse(atob("__TX_DATA_B64__"));
-                    let invs = JSON.parse(atob("__INV_DATA_B64__"));
-                    const canvas = document.getElementById("elec_canvas"); const ctx = canvas.getContext('2d');
-                    const tooltip = document.getElementById("elec_hover_tooltip");
-                    const modal = document.getElementById("elec_dialogue_modal");
-                    const CELL = CELL_SIZE_VAL; const currentMode = "CURRENT_MODE_VAL";
-                    const tsTag = "TS_TAG_VAL"; const parentTs = "INV_PARENT_TS_VAL"; const invNum = "INV_NUM_VAL"; const stringCode = "STR_CODE_VAL";
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); let txs = JSON.parse(atob("__TX_DATA_B64__")); let invs = JSON.parse(atob("__INV_DATA_B64__"));
+                    const canvas = document.getElementById("elec_canvas"); const ctx = canvas.getContext('2d'); const tooltip = document.getElementById("elec_hover_tooltip"); const modal = document.getElementById("elec_dialogue_modal");
+                    const CELL = CELL_SIZE_VAL; const currentMode = "CURRENT_MODE_VAL"; const tsTag = "TS_TAG_VAL"; const parentTs = "INV_PARENT_TS_VAL"; const invNum = "INV_NUM_VAL"; const stringCode = "STR_CODE_VAL";
                     const isPublished = __IS_PUBLISHED_VAL__; const activeFarmId = "__FARM_ID_VAL__";
-
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL; const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight); if (scale <= 0 || scale === Infinity) scale = 0.5;
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-
-                    let isPanning = false, isSelecting = false, startX = 0, startY = 0, currentX = 0, currentY = 0;
-                    let activeSelectedInverterNode = null;
-                    let actionPayloadQueue = null;
-
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale); let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false, isSelecting = false, startX = 0, startY = 0, currentX = 0, currentY = 0, activeSelectedInverterNode = null, actionPayloadQueue = null;
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
-
                     function getStringColor(stringName) {
                         if (!stringName) return 'transparent';
                         let hash = 0; for (let i = 0; i < stringName.length; i++) { hash = stringName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash * 45) % 360}, 95%, 50%)`;
                     }
-
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        
                         blocks.forEach(b => {
-                            ctx.fillStyle = '#1e293b';
-                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillStyle = '#1e293b'; let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                            
-                            if (b.structure_type === 'double_6x9') {
-                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; ctx.lineWidth = 0.75;
-                                ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
-                            }
-                            if (b.string_cabling_group) {
-                                ctx.strokeStyle = getStringColor(b.string_cabling_group); ctx.lineWidth = 1.75; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-                            }
+                            if (b.structure_type === 'double_6x9') { ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; ctx.lineWidth = 0.75; ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke(); }
+                            if (b.string_cabling_group) { ctx.strokeStyle = getStringColor(b.string_cabling_group); ctx.lineWidth = 1.75; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2); }
                         });
-
                         txs.forEach(t => {
                             ctx.fillStyle = '#a78bfa'; ctx.fillRect(t.grid_c * CELL - 4, t.grid_r * CELL - 4, CELL + 8, CELL + 8);
                             ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.strokeRect(t.grid_c * CELL - 4, t.grid_r * CELL - 4, CELL + 8, CELL + 8);
                             ctx.fillStyle = '#020617'; ctx.font = "bold 9px sans-serif"; ctx.fillText(t.name, t.grid_c * CELL - 2, t.grid_r * CELL + 6);
                         });
-
                         invs.forEach(i => {
                             ctx.fillStyle = (activeSelectedInverterNode && activeSelectedInverterNode.id === i.id) ? '#facc15' : '#ef4444';
-                            ctx.fillRect(i.grid_c * CELL + 2, i.grid_r * CELL + 4, CELL - 4, CELL - 8);
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(i.grid_c * CELL + 2, i.grid_r * CELL + 4, CELL - 4, CELL - 8);
+                            ctx.fillRect(i.grid_c * CELL + 2, i.grid_r * CELL + 4, CELL - 4, CELL - 8); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(i.grid_c * CELL + 2, i.grid_r * CELL + 4, CELL - 4, CELL - 8);
                         });
-
                         ctx.restore();
                         if (isSelecting && currentMode.includes("3.")) { ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255, 0, 127, 0.2)'; ctx.fillRect(startX, startY, currentX - startX, currentY - startY); }
                     }
-
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                         if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); tooltip.style.display = "none"; return; }
                         else if (isSelecting) { currentX = mX; currentY = mY; draw(); tooltip.style.display = "none"; return; }
-
-                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
-                        let gridC = Math.floor(worldX / CELL); let gridR = Math.floor(worldY / CELL);
-
+                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale; let gridC = Math.floor(worldX / CELL); let gridR = Math.floor(worldY / CELL);
                         let matchTx = txs.find(t => t.grid_c === gridC && t.grid_r === gridR);
-                        if (matchTx) {
-                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Transformer Station Node<br/>----------------------<br/>ID Label: ${matchTx.name}`; return;
-                        }
-
+                        if (matchTx) { tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px"; tooltip.innerHTML = `Transformer Station Node<br/>ID Label: ${matchTx.name}`; return; }
                         let matchInv = invs.find(i => i.grid_c === gridC && i.grid_r === gridR);
                         if (matchInv) {
-                            let targetedIdCode = `${matchInv.transformer_name}-${matchInv.inverter_num}`;
-                            let matchedCablesCount = blocks.filter(b => b.inverter_id === targetedIdCode).length;
-                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Inverter Box Node<br/>----------------------<br/>ID Code: ${targetedIdCode}<br/>Linked Wire Strings: ${matchedCablesCount}`; return;
+                            let targetedIdCode = `${matchInv.transformer_name}-${matchInv.inverter_num}`; let matchedCablesCount = blocks.filter(b => b.inverter_id === targetedIdCode).length;
+                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px"; tooltip.innerHTML = `Inverter Box Node<br/>ID Code: ${targetedIdCode}<br/>Linked Wire Strings: ${matchedCablesCount}`; return;
                         }
-
-                        let hoveredBlock = null;
-                        for (let b of blocks) {
-                            if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
-                        }
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Tracker Cell: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Transformer Feed: ${hoveredBlock.transformer_id || 'None'}<br/>Inverter Array: ${hoveredBlock.inverter_id || 'None'}<br/>DC Cabling String: ${hoveredBlock.string_cabling_group || 'None'}`;
-                        } else { tooltip.style.display = "none"; }
+                        let hoveredBlock = null; for (let b of blocks) { if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; } }
+                        if (hoveredBlock) { tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px"; tooltip.innerHTML = `Tracker Cell: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Transformer Feed: ${hoveredBlock.transformer_id || 'None'}<br/>Inverter Array: ${hoveredBlock.inverter_id || 'None'}<br/>DC Cabling String: ${hoveredBlock.string_cabling_group || 'None'}`; }
+                        else { tooltip.style.display = "none"; }
                     });
-
                     canvas.addEventListener('mousedown', async (e) => {
                         if (isPublished) return; const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
-                        let gridC = Math.floor(worldX / CELL); let gridR = Math.floor(worldY / CELL);
-
+                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale; let gridC = Math.floor(worldX / CELL); let gridR = Math.floor(worldY / CELL);
                         if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; return; }
-
-                        if (currentMode.includes("1.")) { 
+                        if (currentMode.includes("1.")) {
                             let existingTx = txs.find(t => t.grid_c === gridC && t.grid_r === gridR);
-                            if (existingTx) {
-                                actionPayloadQueue = { type: "DELETE_TX", id: existingTx.id };
-                                document.getElementById("popup_query_label_txt").innerText = `🗑️ Remove Transformer Station ${existingTx.name}?`;
-                                modal.style.display = "block";
-                            } else {
-                                if (!tsTag) return;
-                                actionPayloadQueue = { type: "CREATE_TX", body: { farm_id: activeFarmId, name: tsTag, grid_r: gridR, grid_c: gridC } };
-                                document.getElementById("popup_query_label_txt").innerText = `➕ Place Transformer Node labeled '${tsTag}' here?`;
-                                modal.style.display = "block";
-                            }
-                        } 
-                        else if (currentMode.includes("2.")) { 
+                            if (existingTx) { actionPayloadQueue = { type: "DELETE_TX", id: existingTx.id }; document.getElementById("popup_query_label_txt").innerText = `🗑️ Remove Transformer Station ${existingTx.name}?`; modal.style.display = "block"; }
+                            else { if (!tsTag) return; actionPayloadQueue = { type: "CREATE_TX", body: { farm_id: activeFarmId, name: tsTag, grid_r: gridR, grid_c: gridC } }; document.getElementById("popup_query_label_txt").innerText = `➕ Place Transformer Node labeled '${tsTag}' here?`; modal.style.display = "block"; }
+                        } else if (currentMode.includes("2.")) {
                             let existingInv = invs.find(i => i.grid_c === gridC && i.grid_r === gridR);
-                            if (existingInv) {
-                                actionPayloadQueue = { type: "DELETE_INV", id: existingInv.id };
-                                document.getElementById("popup_query_label_txt").innerText = `🗑️ Delete Inverter Node ${existingInv.transformer_name}-${existingInv.inverter_num}?`;
-                                modal.style.display = "block";
-                            } else {
-                                if (parentTs.includes("Select") || !invNum) return;
-                                actionPayloadQueue = { type: "CREATE_INV", body: { farm_id: activeFarmId, transformer_name: parentTs, inverter_num: invNum, grid_r: gridR, grid_c: gridC } };
-                                document.getElementById("popup_query_label_txt").innerText = `➕ Place Inverter Box linked to ${parentTs} here?`;
-                                modal.style.display = "block";
-                            }
-                        } 
-                        else if (currentMode.includes("3.")) { 
+                            if (existingInv) { actionPayloadQueue = { type: "DELETE_INV", id: existingInv.id }; document.getElementById("popup_query_label_txt").innerText = `🗑️ Delete Inverter Node ${existingInv.transformer_name}-${existingInv.inverter_num}?`; modal.style.display = "block"; }
+                            else { if (parentTs.includes("Select") || !invNum) return; actionPayloadQueue = { type: "CREATE_INV", body: { farm_id: activeFarmId, transformer_name: parentTs, inverter_num: invNum, grid_r: gridR, grid_c: gridC } }; document.getElementById("popup_query_label_txt").innerText = `➕ Place Inverter Box linked to ${parentTs} here?`; modal.style.display = "block"; }
+                        } else if (currentMode.includes("3.")) {
                             let existingInv = invs.find(i => i.grid_c === gridC && i.grid_r === gridR);
-                            if (existingInv) {
-                                activeSelectedInverterNode = existingInv; draw();
-                                alert(`Activated Inverter target: ${existingInv.transformer_name}-${existingInv.inverter_num}. Now Drag-select trackers to wire them.`);
-                            } else {
-                                isSelecting = true; startX = mX; startY = mY; currentX = mX; currentY = mY;
-                            }
+                            if (existingInv) { activeSelectedInverterNode = existingInv; draw(); }
+                            else { isSelecting = true; startX = mX; startY = mY; currentX = mX; currentY = mY; }
                         }
                     });
-
                     canvas.addEventListener('mouseup', async (e) => {
                         if (isPanning) { isPanning = false; }
                         else if (isSelecting && currentMode.includes("3.")) {
-                            isSelecting = false;
-                            if (!activeSelectedInverterNode) { alert("Please single-click on a red Inverter dot first to choose your selection source."); return; }
-                            
-                            let boxX1 = Math.min(startX, currentX), boxX2 = Math.max(startX, currentX);
-                            let boxY1 = Math.min(startY, currentY), boxY2 = Math.max(startY, currentY);
-                            let stagedIds = [];
-
-                            blocks.forEach(b => {
-                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
-                                if (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) stagedIds.push(b.id);
-                            });
-
-                            if (stagedIds.length > 0) {
-                                actionPayloadQueue = { type: "LINK_STRINGS", ids: stagedIds, inv: activeSelectedInverterNode };
-                                document.getElementById("popup_query_label_txt").innerText = `🔌 Route ${stagedIds.length} trackers into Inverter ${actionPayloadQueue.inv.transformer_name}-${actionPayloadQueue.inv.inverter_num}?`;
-                                modal.style.display = "block";
-                            }
+                            isSelecting = false; if (!activeSelectedInverterNode) { alert("Please click an Inverter dot first."); return; }
+                            let boxX1 = Math.min(startX, currentX), boxX2 = Math.max(startX, currentX); let boxY1 = Math.min(startY, currentY), boxY2 = Math.max(startY, currentY);
+                            let stagedIds = []; blocks.forEach(b => { let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY; if (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) stagedIds.push(b.id); });
+                            if (stagedIds.length > 0) { actionPayloadQueue = { type: "LINK_STRINGS", ids: stagedIds, inv: activeSelectedInverterNode }; document.getElementById("popup_query_label_txt").innerText = `🔌 Route ${stagedIds.length} trackers into Inverter ${actionPayloadQueue.inv.transformer_name}-${actionPayloadQueue.inv.inverter_num}?`; modal.style.display = "block"; }
                         }
                     });
-
                     document.getElementById("btn_elec_confirm").addEventListener('click', async () => {
-                        if (!actionPayloadQueue) return;
-                        const indicator = document.getElementById("elec_modal_status_msg");
-                        indicator.style.display = "block";
-
-                        if (actionPayloadQueue.type === "CREATE_TX") {
-                            await fetch("SUPABASE_URL_VAL/rest/v1/transformers", { method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify(actionPayloadQueue.body) });
-                        } else if (actionPayloadQueue.type === "DELETE_TX") {
-                            await fetch(`SUPABASE_URL_VAL/rest/v1/transformers?id=eq.${actionPayloadQueue.id}`, { method: "DELETE", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" } });
-                        } else if (actionPayloadQueue.type === "CREATE_INV") {
-                            await fetch("SUPABASE_URL_VAL/rest/v1/inverters", { method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify(actionPayloadQueue.body) });
-                        } else if (actionPayloadQueue.type === "DELETE_INV") {
-                            await fetch(`SUPABASE_URL_VAL/rest/v1/inverters?id=eq.${actionPayloadQueue.id}`, { method: "DELETE", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" } });
-                        } else if (actionPayloadQueue.type === "LINK_STRINGS") {
+                        if (!actionPayloadQueue) return; document.getElementById("elec_modal_status_msg").style.display = "block";
+                        if (actionPayloadQueue.type === "CREATE_TX") { await fetch("SUPABASE_URL_VAL/rest/v1/transformers", { method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify(actionPayloadQueue.body) }); }
+                        else if (actionPayloadQueue.type === "DELETE_TX") { await fetch(`SUPABASE_URL_VAL/rest/v1/transformers?id=eq.${actionPayloadQueue.id}`, { method: "DELETE", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" } }); }
+                        else if (actionPayloadQueue.type === "CREATE_INV") { await fetch("SUPABASE_URL_VAL/rest/v1/inverters", { method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify(actionPayloadQueue.body) }); }
+                        else if (actionPayloadQueue.type === "DELETE_INV") { await fetch(`SUPABASE_URL_VAL/rest/v1/inverters?id=eq.${actionPayloadQueue.id}`, { method: "DELETE", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" } }); }
+                        else if (actionPayloadQueue.type === "LINK_STRINGS") {
                             let code = `${actionPayloadQueue.inv.transformer_name}-${actionPayloadQueue.inv.inverter_num}`;
-                            for (let id of actionPayloadQueue.ids) {
-                                await fetch(`SUPABASE_URL_VAL/rest/v1/structures?id=eq.${id}`, { method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify({ transformer_id: actionPayloadQueue.inv.transformer_name, inverter_id: code, string_cabling_group: stringCode }) });
-                            }
+                            for (let id of actionPayloadQueue.ids) { await fetch(`SUPABASE_URL_VAL/rest/v1/structures?id=eq.${id}`, { method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" }, body: JSON.stringify({ transformer_id: actionPayloadQueue.inv.transformer_name, inverter_id: code, string_cabling_group: stringCode }) }); }
                         }
                         location.reload();
                     });
-
                     document.getElementById("btn_elec_cancel").addEventListener('click', () => { actionPayloadQueue = null; modal.style.display = "none"; draw(); });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
+                    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top; const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale; scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30)); offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw(); }, { passive: false });
                     draw();
                 })();
             </script>
             """
-            html_elec_engine = html_elec_engine.replace("__JSON_DATA_B64__", b64_json_data)\
-                                             .replace("__TX_DATA_B64__", b64_transformers)\
-                                             .replace("__INV_DATA_B64__", b64_inverters)\
-                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                             .replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c))\
-                                             .replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))\
-                                             .replace("CURRENT_MODE_VAL", str(active_elec_mode))\
-                                             .replace("TS_TAG_VAL", str(ts_prefix if "1." in active_elec_mode else ""))\
-                                             .replace("INV_PARENT_TS_VAL", str(inv_parent_ts if "2." in active_elec_mode else ""))\
-                                             .replace("INV_NUM_VAL", str(inv_num_val if "2." in active_elec_mode else ""))\
-                                             .replace("STR_CODE_VAL", str(active_string_lbl if "3." in active_elec_mode else ""))\
-                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
-                                             .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")\
-                                             .replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
+            html_elec_engine = html_elec_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TX_DATA_B64__", b64_transformers).replace("__INV_DATA_B64__", b64_inverters).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("CURRENT_MODE_VAL", str(active_elec_mode)).replace("TS_TAG_VAL", str(ts_prefix if "1." in active_elec_mode else "")).replace("INV_PARENT_TS_VAL", str(inv_parent_ts if "2." in active_elec_mode else "")).replace("INV_NUM_VAL", str(inv_num_val if "2." in active_elec_mode else "")).replace("STR_CODE_VAL", str(active_string_lbl if "3." in active_elec_mode else "")).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false").replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
             components.html(html_elec_engine, height=660)
 
         # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---

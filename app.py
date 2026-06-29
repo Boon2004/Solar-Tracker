@@ -107,19 +107,14 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            # Strict Fill-Only Grid Scanner: Completely drops borders constraint checks
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    
-                                    # 1. Check if cell has text content label
                                     has_value = cell.value is not None and str(cell.value).strip() != ""
                                     
-                                    # 2. Check if cell has an explicit background highlight fill
                                     has_fill = False
                                     if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        # Filter out default blank/empty white system tints if they exist
                                         if hasattr(cell.fill, 'start_color') and cell.fill.start_color:
                                             color_hex = str(cell.fill.start_color.rgb)
                                             if color_hex and "00000000" not in color_hex and "FFFFFFFF" not in color_hex:
@@ -225,12 +220,16 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         if not st.session_state.is_admin_mode:
-            with st.form("admin_upgrade_form", clear_on_submit=True):
-                adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
-                if st.form_submit_button("Verify Clearance"):
-                    if str(adm_pass) == str(st.session_state.admin_key_match):
-                        st.session_state.is_admin_mode = True; st.rerun()
-                    else: st.error("Incorrect Password.")
+            # Fixed form-lifecycle state assignment bypass sequence
+            adm_pass = st.text_input("Upgrade to Admin Mode:", type="password", key="sidebar_admin_pass_input")
+            if st.button("Verify Clearance", type="primary"):
+                if str(adm_pass) == str(st.session_state.admin_key_match):
+                    st.session_state.is_admin_mode = True
+                    st.success("Clearance Granted!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else: 
+                    st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
             

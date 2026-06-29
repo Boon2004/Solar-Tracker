@@ -627,52 +627,187 @@ else:
 
             html_crew_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    ⚙️ <b>Crew Controls:</b> 
+                    Left-Click + Drag to <b>Mass-Select Boxes</b> | 
+                    Right-Click + Drag to <b>Pan/Scroll Map</b> | 
+                    Mouse Wheel to <b>Zoom</b> | 
+                    Single Click to <b>Complete Whole Section</b>.
+                </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
                 (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
-                    const CELL = 14; let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
+                    const canvas = document.getElementById("crew_LAYER_KEY"); 
+                    const ctx = canvas.getContext('2d');
+                    const CELL = 14; 
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; 
+                    const mapHeight = (maxY - minY + 1) * CELL;
 
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                     if (scale <= 0 || scale === Infinity) scale = 0.5;
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    let isDragging = false, moved = false, startX, startY;
+                    
+                    let isPanning = false;
+                    let isSelecting = false;
+                    let moved = false;
+                    let startX, startY, currentX, currentY;
+
+                    // Disable standard right-click window context menu 
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                        ctx.save(); 
+                        ctx.translate(offsetX, offsetY); 
+                        ctx.scale(scale, scale);
+                        
                         blocks.forEach(b => {
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            ctx.fillRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; 
+                            ctx.lineWidth = 0.5; 
+                            ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
+
+                        if (isSelecting) {
+                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+                            ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
+                            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+                        }
                     }
-                    canvas.addEventListener('click', (e) => {
-                        if (moved) return;
-                        const rect = canvas.getBoundingClientRect(); 
-                        const cx = (e.clientX - rect.left - offsetX) / scale; const cy = (e.clientY - rect.top - offsetY) / scale;
-                        blocks.forEach(b => {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) {
-                                b['LAYER_KEY_status'] = 'completed';
-                                const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
-                                fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
-                                    method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                    body: JSON.stringify(p)
-                                }).then(() => draw());
-                            }
-                        });
+
+                    canvas.addEventListener('mousedown', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        moved = false;
+
+                        if (e.button === 2) { 
+                            // Right Click: Pan Map
+                            isPanning = true;
+                            isSelecting = false;
+                            startX = e.clientX - offsetX;
+                            startY = e.clientY - offsetY;
+                            canvas.style.cursor = 'move';
+                        } else if (e.button === 0) { 
+                            // Left Click: Stage Marquee Drag Initializer
+                            isSelecting = true;
+                            isPanning = false;
+                            startX = mX;
+                            startY = mY;
+                            currentX = mX;
+                            currentY = mY;
+                            canvas.style.cursor = 'crosshair';
+                        }
                     });
-                    canvas.addEventListener('mousedown', (e) => { isDragging = true; moved = false; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
-                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; moved = true; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    window.addEventListener('mouseup', () => { isDragging = false; });
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        moved = true;
+                        if (isPanning) {
+                            offsetX = e.clientX - startX;
+                            offsetY = e.clientY - startY;
+                            draw();
+                        } else if (isSelecting) {
+                            currentX = e.clientX - rect.left;
+                            currentY = e.clientY - rect.top;
+                            draw();
+                        }
+                    });
+
+                    window.addEventListener('mouseup', (e) => {
+                        if (isPanning) {
+                            isPanning = false;
+                            canvas.style.cursor = 'grab';
+                        } else if (isSelecting) {
+                            isSelecting = false;
+                            canvas.style.cursor = 'default';
+
+                            // If user dragged a marquee box selection frame
+                            if (Math.abs(currentX - startX) > 5 || Math.abs(currentY - startY) > 5) {
+                                let x1 = (Math.min(startX, currentX) - offsetX) / scale;
+                                let x2 = (Math.max(startX, currentX) - offsetX) / scale;
+                                let y1 = (Math.min(startY, currentY) - offsetY) / scale;
+                                let y2 = (Math.max(startY, currentY) - offsetY) / scale;
+
+                                let targetGroups = new Set();
+                                blocks.forEach(b => {
+                                    let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
+                                    let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
+                                    if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
+                                        if (b.section_group) targetGroups.add(b.section_group);
+                                    }
+                                });
+
+                                if (targetGroups.size > 0) {
+                                    blocks.forEach(b => {
+                                        if (targetGroups.has(b.section_group) && b['LAYER_KEY_status'] !== 'completed') {
+                                            b['LAYER_KEY_status'] = 'completed';
+                                            const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
+                                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                                                body: JSON.stringify(p)
+                                            });
+                                        }
+                                    });
+                                    setTimeout(draw, 100);
+                                }
+                            } else if (!moved || (Math.abs(currentX - startX) <= 5 && Math.abs(currentY - startY) <= 5)) {
+                                // Single Click Action: Auto-highlight entire section group
+                                const rect = canvas.getBoundingClientRect(); 
+                                const cx = (e.clientX - rect.left - offsetX) / scale; 
+                                const cy = (e.clientY - rect.top - offsetY) / scale;
+                                
+                                let clickedSectionGroup = null;
+                                blocks.forEach(b => {
+                                    let x = b.min_c * CELL; let y = b.min_r * CELL;
+                                    let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                    if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) {
+                                        clickedSectionGroup = b.section_group;
+                                    }
+                                });
+
+                                if (clickedSectionGroup !== null) {
+                                    blocks.forEach(b => {
+                                        if (b.section_group === clickedSectionGroup && b['LAYER_KEY_status'] !== 'completed') {
+                                            b['LAYER_KEY_status'] = 'completed';
+                                            const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
+                                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                                                body: JSON.stringify(p)
+                                            });
+                                        }
+                                    });
+                                    setTimeout(draw, 100);
+                                }
+                            }
+                        }
+                    });
+
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); 
+                        const rect = canvas.getBoundingClientRect(); 
+                        const mouseX = e.clientX - rect.left; 
+                        const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; 
+                        const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
+                        scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; 
+                        offsetY = mouseY - gridY * scale; 
+                        draw();
+                    }, { passive: false });
+
                     draw();
                 })();
             </script>

@@ -112,8 +112,25 @@ if st.session_state.active_site_id is None:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    has_value = cell.value is not None and str(cell.value).strip() != ""
-                                    has_fill = cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none'
+                                    has_value = False
+                                    if cell.value is not None:
+                                        # Clean out invisible space strings
+                                        cleaned_str = str(cell.value).strip()
+                                        if cleaned_str != "":
+                                            has_value = True
+                                    
+                                    # Strict Fill Validation Checklist (Ignores accidental white/blank backgrounds)
+                                    has_fill = False
+                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                        if hasattr(cell.fill, 'start_color') and cell.fill.start_color:
+                                            color_hex = str(cell.fill.start_color.rgb)
+                                            # Skip transparent/default systems or pure white fills (00000000, FFFFFFFF)
+                                            if "00000000" not in color_hex and "FFFFFFFF" not in color_hex:
+                                                has_fill = True
+                                    
+                                    # Capture ONLY true content cells
+                                    if has_value or has_fill:
+                                        grid_matrix[r][c] = True
                                     
                                     if has_value or has_fill:
                                         grid_matrix[r][c] = True

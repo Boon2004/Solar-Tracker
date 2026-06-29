@@ -71,6 +71,8 @@ if st.session_state.active_site_id is None:
                                 target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
                                 if target_farm:
                                     supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
+                                    supabase.table("transformers").delete().eq("farm_id", target_farm["id"]).execute()
+                                    supabase.table("inverters").delete().eq("farm_id", target_farm["id"]).execute()
                                     supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                     st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
                                     st.cache_data.clear()
@@ -91,7 +93,6 @@ if st.session_state.active_site_id is None:
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
                     st.info("🔄 Running Fast Visual Grid Scanner...")
                     with st.spinner("Processing structural frames..."):
-                        # FIXED: Swapped use_iterators=False for read_only=False
                         wb = openpyxl.load_workbook(uploaded_blueprint, read_only=False, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
@@ -167,7 +168,8 @@ if st.session_state.active_site_id is None:
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(table_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 
-                                                "mounting_status": "pending", "modules_status": "pending"
+                                                "mounting_status": "pending", "modules_status": "pending",
+                                                "transformer_id": None, "inverter_id": None, "string_cabling_group": None
                                             })
                                             table_counter += 1
 
@@ -229,7 +231,7 @@ else:
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
-                st.warning("⚠️ CRITICAL: Review zoning allocations, electrical maps, structural placement settings, and cabling routes carefully. Once published to the field crew, coordinates cannot be altered.")
+                st.warning("⚠️ CRITICAL: Once published to the field crew, coordinates and electrical maps cannot be altered.")
                 
                 if "confirm_publish_gate" not in st.session_state: st.session_state.confirm_publish_gate = False
                 
@@ -304,10 +306,19 @@ else:
             except Exception: break
         return all_data
 
+    def load_electrical_nodes(farm_id):
+        try:
+            tx_res = supabase.table("transformers").select("*").eq("farm_id", farm_id).execute().data
+            inv_res = supabase.table("inverters").select("*").eq("farm_id", farm_id).execute().data
+            return tx_res or [], inv_res or []
+        except Exception:
+            return [], []
+
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
+    transformers_data, inverters_data = load_electrical_nodes(st.session_state.active_site_id)
 
     if not active_table_data:
-        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet. Use the control configuration page above to import structural data files.")
+        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet.")
         st.stop()
 
     min_r = min([b.get("min_r", 1) for b in active_table_data])
@@ -316,33 +327,34 @@ else:
     max_c = max([b.get("max_c", 150) for b in active_table_data])
 
     CELL_SIZE = 14
-    
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
-    # Sync any zones explicitly stored in database back into session state
+    b64_tx_data = base64.b64encode(json.dumps(transformers_data).encode("utf-8")).decode("utf-8")
+    b64_inv_data = base64.b64encode(json.dumps(inverters_data).encode("utf-8")).decode("utf-8")
+
     for b in active_table_data:
         z = b.get("assigned_zone")
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
     
-    # BUILD RESET DROPDOWN LIST DIRECTLY FROM REGISTRY AND SIFT OUT UNASSIGNED OPTIONS
     clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
 
+    # ==============================================================================
+    # ⚡ ADMIN PLATFORM ROUTING
+    # ==============================================================================
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
-            "🔌 Electrical Inverter Mapping", 
-            "📌 Pegging & Piling Customizer",
-            "🏪 Transformer Drop Hubs"
+            "🔌 Unified Master Electrical Canvas", 
+            "📌 Pegging & Piling Customizer"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
-            
             if site_bg_img:
-                st.image(site_bg_img, caption="Active Site Blueprint Layout Background Reference", use_container_width=False, width=600)
+                st.image(site_bg_img, caption="Active Site Blueprint", use_container_width=False, width=600)
 
             col_z1, col_z2 = st.columns([6, 4])
             with col_z1:
@@ -359,38 +371,30 @@ else:
             st.subheader("🛠️ Selective Zone Reset Center")
             col_wipe1, col_wipe2 = st.columns([6, 4])
             with col_wipe1:
-                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + clean_wiping_dropdown_options)
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset:", ["ALL ZONES"] + clean_wiping_dropdown_options)
             with col_wipe2:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                
                 if site_is_published:
-                    st.error("Cannot reset zone assets on a frozen, deployed workspace framework.")
+                    st.error("Cannot reset zone assets on a frozen workspace framework.")
                 elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
                     with st.spinner("Flushing target zones..."):
                         try:
                             if wipe_scope_selection == "ALL ZONES":
                                 supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
-                                st.success("Entire farm structural matrix zones set back to Unassigned!")
                             else:
                                 supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
-                                st.success(f"Successfully cleared allocation indexes for {wipe_scope_selection}!")
+                            st.success("Wiped selected configurations maps safely!")
                             time.sleep(0.5); st.rerun()
-                        except Exception as e:
-                            st.error(f"Reset failed: {str(e)}")
+                        except Exception as e: st.error(f"Reset failed: {str(e)}")
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
-                </div>
-                
-                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-
-                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
-                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing updates...</div>
-                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
-                    <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
-                    <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
+                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; text-align:center;">
+                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing...</div>
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8;"></span>?</div>
+                    <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px;">Yes</button>
+                    <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer;">No</button>
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
@@ -399,384 +403,210 @@ else:
             <script>
                 (function() {
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("zone_canvas");
-                    const ctx = canvas.getContext('2d');
+                    const canvas = document.getElementById("zone_canvas"); const ctx = canvas.getContext('2d');
                     const tooltip = document.getElementById("canvas_hover_tooltip");
-                    const paintZone = "PAINT_ZONE_VAL";
-                    const CELL = CELL_SIZE_VAL;
-                    const isPublished = __IS_PUBLISHED_VAL__;
-                    
+                    const paintZone = "PAINT_ZONE_VAL"; const CELL = CELL_SIZE_VAL; const isPublished = __IS_PUBLISHED_VAL__;
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL;
-                    const mapHeight = (maxY - minY + 1) * CELL;
-
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
-
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-
-                    let isPanning = false;
-                    let isSelecting = false;
-                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
-                    let stagedBlockIds = [];
-
+                    let scale = Math.min((canvas.width - 60) / ((maxX-minX+1)*CELL), (canvas.height - 60) / ((maxY-minY+1)*CELL)) || 0.5;
+                    let offsetX = (canvas.width / 2) - (((maxX-minX+1)*CELL) * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (((maxY-minY+1)*CELL) * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false, isSelecting = false, startX = 0, startY = 0, currentX = 0, currentY = 0, stagedBlockIds = [];
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-                    function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
-                        let hash = 0; 
-                        let cleaned = zoneName.toUpperCase().trim();
-                        for (let i = 0; i < cleaned.length; i++) { 
-                            hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); 
-                        }
-                        let hue = Math.abs(hash * 45) % 360; 
-                        return `hsl(${hue}, 90%, 50%)`;
-                    }
-
+                    function getZoneColor(z) { if(!z || z.toLowerCase()==='unassigned') return '#334155'; let h=0; for(let i=0;i<z.length;i++) h=z.charCodeAt(i)+((h<<5)-h); return `hsl(${Math.abs(h*45)%360},90%,50%)`; }
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-
+                        ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.translate(offsetX,offsetY); ctx.scale(scale,scale);
                         blocks.forEach(b => {
-                            let isStaged = stagedBlockIds.includes(b.id);
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
-                            
-                            if (isStaged) { 
-                                ctx.strokeStyle = '#ffff00'; 
-                                ctx.lineWidth = 2.5; 
-                                ctx.strokeRect(x, y, w, h); 
-                            }
-                        });
-                        ctx.restore();
-
-                        if (isSelecting) {
-                            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
-                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
-                            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
-                        }
+                            let x=b.min_c*CELL, y=b.min_r*CELL, w=(b.max_c-b.min_c+1)*CELL, h=(b.max_r-b.min_r+1)*CELL;
+                            ctx.fillRect(x,y,w,h); ctx.strokeStyle='#020617'; ctx.lineWidth=0.75; ctx.strokeRect(x,y,w,h);
+                            if(stagedBlockIds.includes(b.id)) { ctx.strokeStyle='#ffff00'; ctx.lineWidth=2.5; ctx.strokeRect(x,y,w,h); }
+                        }); ctx.restore();
+                        if(isSelecting) { ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.fillStyle='rgba(56,189,248,0.25)'; ctx.fillRect(startX,startY,currentX-startX,currentY-startY); ctx.strokeRect(startX,startY,currentX-startX,currentY-startY); }
                     }
-
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-                        
-                        if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        } else if (isSelecting) {
-                            currentX = mX;
-                            currentY = mY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        }
-
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        
-                        let hoveredBlock = null;
-                        for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
-                                hoveredBlock = b;
-                                break;
-                            }
-                        }
-
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px";
-                            tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
-                        } else {
-                            tooltip.style.display = "none";
-                        }
+                    canvas.addEventListener('mousemove', e => {
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
+                        if(isPanning) { offsetX = e.clientX-startX; offsetY = e.clientY-startY; draw(); return; }
+                        if(isSelecting) { currentX = mX; currentY = mY; draw(); return; }
+                        let wX = (mX-offsetX)/scale, wY = (mY-offsetY)/scale, hb = null;
+                        for(let b of blocks) { if(wX>=b.min_c*CELL && wX<=(b.max_c+1)*CELL && wY>=b.min_r*CELL && wY<=(b.max_r+1)*CELL) { hb=b; break; }}
+                        if(hb) { tooltip.style.display="block"; tooltip.style.left=(mX+15)+"px"; tooltip.style.top=(mY+15)+"px"; tooltip.innerHTML=`Label: ${hb.table_label}<br/>Zone: ${hb.assigned_zone || 'Unassigned'}`; } else tooltip.style.display="none";
                     });
-
-                    canvas.addEventListener('mousedown', (e) => {
-                        if (isPublished) return; 
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-                        
-                        if (e.button === 2) { 
-                            isPanning = true;
-                            isSelecting = false;
-                            startX = e.clientX - offsetX;
-                            startY = e.clientY - offsetY;
-                            canvas.style.cursor = 'move';
-                        } else if (e.button === 0) { 
-                            isSelecting = true;
-                            isPanning = false;
-                            startX = mX;
-                            startY = mY;
-                            currentX = mX;
-                            currentY = mY;
-                            canvas.style.cursor = 'crosshair';
-                        }
-                        tooltip.style.display = "none";
-                    });
-
-                    canvas.addEventListener('mouseup', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const endX = e.clientX - rect.left;
-                        const endY = e.clientY - rect.top;
-
-                        if (isPanning) {
-                            isPanning = false;
-                            canvas.style.cursor = 'grab';
-                        } else if (isSelecting) {
-                            isSelecting = false;
-                            canvas.style.cursor = 'default';
-                            
-                            stagedBlockIds = [];
-
-                            let boxX1 = Math.min(startX, endX);
-                            let boxX2 = Math.max(startX, endX);
-                            let boxY1 = Math.min(startY, endY);
-                            let boxY2 = Math.max(startY, endY);
-
-                            if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
-                                blocks.forEach(b => {
-                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
-
-                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
-                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
-                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
-                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
-
-                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
-                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
-                                        stagedBlockIds.push(b.id);
-                                    }
-                                });
-                            } else {
-                                blocks.forEach(b => {
-                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
-
-                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
-                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
-                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
-                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
-
-                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
-                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
-                                        stagedBlockIds.push(b.id);
-                                    }
-                                });
-                            }
-
-                            if (stagedBlockIds.length > 0) {
-                                document.getElementById("lbl_zone").innerText = paintZone;
-                                document.getElementById("dialogue_overlay").style.display = "block";
-                            }
+                    canvas.addEventListener('mousedown', e => { if(isPublished) return; const rect=canvas.getBoundingClientRect(); if(e.button===2) { isPanning=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; } else { isSelecting=true; startX=e.clientX-rect.left; startY=e.clientY-rect.top; currentX=startX; currentY=startY; }});
+                    canvas.addEventListener('mouseup', e => {
+                        const rect=canvas.getBoundingClientRect(); if(isPanning) isPanning=false;
+                        else if(isSelecting) {
+                            isSelecting=false; stagedBlockIds=[]; let x1=Math.min(startX,e.clientX-rect.left), x2=Math.max(startX,e.clientX-rect.left), y1=Math.min(startY,e.clientY-rect.top), y2=Math.max(startY,e.clientY-rect.top);
+                            blocks.forEach(b => {
+                                if(b.assigned_zone && b.assigned_zone.toLowerCase()!=='unassigned') return;
+                                let cx1=b.min_c*CELL*scale+offsetX, cy1=b.min_r*CELL*scale+offsetY;
+                                if(cx1>=x1 && cx1<=x2 && cy1>=y1 && cy1<=y2) stagedBlockIds.push(b.id);
+                            });
+                            if(stagedBlockIds.length>0) { document.getElementById("lbl_zone").innerText=paintZone; document.getElementById("dialogue_overlay").style.display="block"; }
                             draw();
                         }
                     });
-
                     document.getElementById("btn_yes").addEventListener('click', async () => {
-                        const msgBox = document.getElementById("status_message_box");
-                        msgBox.style.display = "block";
-                        msgBox.innerText = `Updating ${stagedBlockIds.length} components...`;
-                        
-                        try {
-                            for (let id of stagedBlockIds) {
-                                let target = blocks.find(b => b.id === id); 
-                                if (target) target.assigned_zone = paintZone;
-                                
-                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                    method: "PATCH", 
-                                    headers: { 
-                                        "apikey": "SUPABASE_KEY_VAL", 
-                                        "Authorization": "Bearer SUPABASE_KEY_VAL", 
-                                        "Content-Type": "application/json",
-                                        "Prefer": "return=minimal"
-                                    },
-                                    body: JSON.stringify({ "assigned_zone": paintZone })
-                                });
-                            }
-                            msgBox.innerText = "Done! Hit the reload button to refresh overview.";
-                            setTimeout(() => { msgBox.style.display = "none"; }, 4000);
-                        } catch(e) {
-                            msgBox.innerText = "Network transmission exception dropped.";
+                        document.getElementById("status_message_box").style.display="block";
+                        for(let id of stagedBlockIds) {
+                            await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq."+id, { method:"PATCH", headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL","Content-Type":"application/json"}, body:JSON.stringify({"assigned_zone":paintZone})});
                         }
-                        
-                        stagedBlockIds = []; 
-                        document.getElementById("dialogue_overlay").style.display = "none"; 
-                        draw();
+                        location.reload();
                     });
-
-                    document.getElementById("btn_no").addEventListener('click', () => {
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
-                    });
-
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
+                    document.getElementById("btn_no").addEventListener('click', () => { stagedBlockIds=[]; document.getElementById("dialogue_overlay").style.display="none"; draw(); });
+                    canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); const mX=e.clientX-rect.left, mY=e.clientY-rect.top, gX=(mX-offsetX)/scale, gY=(mY-offsetY)/scale; scale*=(e.deltaY<0?1.15:0.85); scale=Math.max(0.05,Math.min(scale,30)); offsetX=mX-gX*scale; offsetY=mY-gY*scale; draw(); }, {passive:false});
                     draw();
                 })();
             </script>
             """
-            html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
-                                             .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
-                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                             .replace("MIN_C_VAL", str(min_c))\
-                                             .replace("MAX_C_VAL", str(max_c))\
-                                             .replace("MIN_R_VAL", str(min_r))\
-                                             .replace("MAX_R_VAL", str(max_r))\
-                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
-                                             .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("CELL_SIZE_VAL", str(CELL_SIZE)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
-        # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
+        # --- STAGE 2: UNIFIED MASTER ELECTRICAL CANVA TAB WORKFLOW ---
         with setup_tabs[1]:
-            st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
-            html_inverter_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+            st.markdown("### 🔌 Unified Master Electrical Mapping Workspace Canvas")
+            
+            mode_selector = st.radio("Select Active Electrical Canvas Operation Mode:", [
+                "Mode 1: Place Transformer Stations Hubs",
+                "Mode 2: Place Inverter System Boxes",
+                "Mode 3: String to Inverter Topology Grouping (DC Cabling)"
+            ], horizontal=True)
+
+            active_mode_id = 1 if "Mode 1" in mode_selector else (2 if "Mode 2" in mode_selector else 3)
+            chosen_parent_tx = "None"
+            
+            if active_mode_id == 2:
+                tx_names = [tx["name"] for tx in transformers_data]
+                if not tx_names:
+                    st.info("⚠️ Please drop at least one Transformer inside Mode 1 before placing child inverters.")
+                else:
+                    chosen_parent_tx = st.selectbox("Assign Parent Transformer Association Group:", tx_names)
+
+            html_electrical_master = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    Current Mode Controls: <span style="color:#eab308; font-weight:bold;">Left-Click</span> grid space to place/group nodes. <span style="color:#ef4444; font-weight:bold;">Click item twice</span> to prompt removal execution.
+                </div>
+                <div id="elec_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #a855f7; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="elec_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
-                (function() { 
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const txNodes = JSON.parse(atob("__TX_DATA_B64__"));
+                    const invNodes = JSON.parse(atob("__INV_DATA_B64__"));
+                    const mode = __ACTIVE_MODE__;
+                    const parentTxName = "__PARENT_TX__";
+                    const canvas = document.getElementById("elec_canvas"); const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("elec_tooltip");
+                    const CELL = 14; const farmId = "__FARM_ID__";
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
-
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
-
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    let isDragging = false, startX, startY;
+                    let scale = Math.min((canvas.width - 60) / ((maxX-minX+1)*CELL), (canvas.height - 60) / ((maxY-minY+1)*CELL)) || 0.5;
+                    let offsetX = (canvas.width/2)-(((maxX-minX+1)*CELL)*scale/2)-(minX*CELL*scale);
+                    let offsetY = (canvas.height/2)-(((maxY-minY+1)*CELL)*scale/2)-(minY*CELL*scale);
+                    let isPanning=false, isSelecting=false, startX=0, startY=0, currentX=0, currentY=0, activeInvSelectionId=null;
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    function getStringColor(strName) { if(!strName) return null; let h=0; for(let i=0;i<strName.length;i++) h=strName.charCodeAt(i)+((h<<5)-h); return `hsl(${Math.abs(h*75)%360}, 95%, 55%)`; }
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        blocks.forEach(b => { 
-                            ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
-                            if (b.structure_type === 'double_6x9') {
-                                ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
-                                ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
-                            }
-                        }); 
+                        ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.translate(offsetX,offsetY); ctx.scale(scale,scale);
+                        blocks.forEach(b => {
+                            ctx.fillStyle = '#1e293b';
+                            let x=b.min_c*CELL, y=b.min_r*CELL, w=(b.max_c-b.min_c+1)*CELL, h=(b.max_r-b.min_r+1)*CELL;
+                            ctx.fillRect(x,y,w,h); ctx.strokeStyle='#334155'; ctx.lineWidth=0.5; ctx.strokeRect(x,y,w,h);
+                            if(b.string_cabling_group) { ctx.strokeStyle = getStringColor(b.string_cabling_group); ctx.lineWidth = 2.5; ctx.strokeRect(x+1,y+1,w-2,h-2); }
+                        });
+                        txNodes.forEach(tx => { ctx.fillStyle='#eab308'; ctx.fillRect(tx.grid_c*CELL, tx.grid_r*CELL, CELL*2, CELL*2); ctx.fillStyle='#000'; ctx.font="10px sans-serif"; ctx.fillText(tx.name, tx.grid_c*CELL+2, tx.grid_r*CELL+11); });
+                        invNodes.forEach(inv => { ctx.fillStyle=(activeInvSelectionId===inv.id)?'#ffff00':'#ef4444'; ctx.fillRect(inv.grid_c*CELL, inv.grid_r*CELL, CELL, CELL); });
                         ctx.restore();
+                        if(isSelecting && mode===3) { ctx.strokeStyle='#22c55e'; ctx.lineWidth=1.5; ctx.strokeRect(startX,startY,currentX-startX,currentY-startY); }
                     }
-                    canvas.addEventListener('mousedown', (e) => { 
-                        const rect = canvas.getBoundingClientRect();
-                        if(e.button === 2 || e.button === 0) {
-                            isDragging = true; 
-                            startX = e.clientX - offsetX; 
-                            startY = e.clientY - offsetY; 
+
+                    canvas.addEventListener('mousemove', e => {
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX-rect.left, mY = e.clientY-rect.top;
+                        if(isPanning) { offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); return; }
+                        if(isSelecting) { currentX=mX; currentY=mY; draw(); return; }
+                        let wX=(mX-offsetX)/scale, wY=(mY-offsetY)/scale; let hb=null;
+                        for(let b of blocks) { if(wX>=b.min_c*CELL && wX<=(b.max_c+1)*CELL && wY>=b.min_r*CELL && wY<=(b.max_r+1)*CELL) { hb=b; break; }}
+                        if(hb) {
+                            tooltip.style.display="block"; tooltip.style.left=(mX+15)+"px"; tooltip.style.top=(mY+15)+"px";
+                            tooltip.innerHTML=`Cell Table: ${hb.table_label}<br/>Zone: ${hb.assigned_zone}<br/>Transformer: ${hb.transformer_id || 'Unassigned'}<br/>Inverter: ${hb.inverter_id || 'Unassigned'}<br/>String Cabling Code: ${hb.string_cabling_group || 'Unassigned'}`;
+                            return;
+                        }
+                        let hInv=null;
+                        for(let inv of invNodes) { let ix=inv.grid_c*CELL, iy=inv.grid_r*CELL; if(wX>=ix && wX<=ix+CELL && wY>=iy && wY<=iy+CELL) { hInv=inv; break; }}
+                        if(hInv) {
+                            let streamCount = blocks.filter(b => b.inverter_id === hInv.id || b.inverter_id === (hInv.transformer_name+'-'+hInv.inverter_num)).length;
+                            tooltip.style.display="block"; tooltip.style.left=(mX+15)+"px"; tooltip.style.top=(mY+15)+"px";
+                            tooltip.innerHTML=`Inverter Block ID: ${hInv.transformer_name}-${hInv.inverter_num}<br/>Parent Feed Hub: ${hInv.transformer_name}<br/>Total Connected DC Strings: ${streamCount}`;
+                            return;
+                        } tooltip.style.display="none";
+                    });
+
+                    canvas.addEventListener('mousedown', async e => {
+                        const rect=canvas.getBoundingClientRect(); const mX=e.clientX-rect.left, mY=e.clientY-rect.top;
+                        let wX=Math.floor(((mX-offsetX)/scale)/CELL), wY=Math.floor(((mY-offsetY)/scale)/CELL);
+                        if(e.button===2) { isPanning=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; return; }
+                        if(mode===1) {
+                            let existingTx = txNodes.find(tx => tx.grid_c===wX && tx.grid_r===wY);
+                            if(existingTx) { if(confirm("Remove Transformer "+existingTx.name+"?")) { await fetch("SUPABASE_URL_VAL/rest/v1/transformers?id=eq."+existingTx.id,{method:"DELETE",headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL"}}); location.reload(); }}
+                            else { let name=prompt("Assign Transformer Node Identifier Label:"); if(name) { await fetch("SUPABASE_URL_VAL/rest/v1/transformers",{method:"POST",headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL","Content-Type":"application/json"},body:JSON.stringify({farm_id:farmId,name:name,grid_r:wY,grid_c:wX})}); location.reload(); }}
+                        } else if(mode===2) {
+                            let existingInv = invNodes.find(inv => inv.grid_c===wX && inv.grid_r===wY);
+                            if(existingInv) { if(confirm("Remove Inverter Box Unit?")) { await fetch("SUPABASE_URL_VAL/rest/v1/inverters?id=eq."+existingInv.id,{method:"DELETE",headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL"}}); location.reload(); }}
+                            else { if(parentTxName==="None") return; let num=prompt("Enter Inverter Number Identifier:"); if(num) { await fetch("SUPABASE_URL_VAL/rest/v1/inverters",{method:"POST",headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL","Content-Type":"application/json"},body:JSON.stringify({farm_id:farmId,transformer_name:parentTxName,inverter_num:num,grid_r:wY,grid_c:wX})}); location.reload(); }}
+                        } else if(mode===3) {
+                            let hitInv = invNodes.find(inv => wX>=inv.grid_c && wX<=inv.grid_c+1 && wY>=inv.grid_r && wY<=inv.grid_r+1);
+                            if(hitInv) { activeInvSelectionId = hitInv.transformer_name + "-" + hitInv.inverter_num; draw(); }
+                            else if(activeInvSelectionId) { isSelecting=true; startX=mX; startY=mY; currentX=mX; currentY=mY; }
                         }
                     });
-                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    canvas.addEventListener('mouseup', () => { isDragging = false; });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
+
+                    canvas.addEventListener('mouseup', async e => {
+                        if(isPanning) isPanning=false;
+                        else if(isSelecting && mode===3 && activeInvSelectionId) {
+                            isSelecting=false; const rect=canvas.getBoundingClientRect();
+                            let x1=Math.min(startX,e.clientX-rect.left), x2=Math.max(startX,e.clientX-rect.left), y1=Math.min(startY,e.clientY-rect.top), y2=Math.max(startY,e.clientY-rect.top);
+                            let targetIds=[];
+                            blocks.forEach(b => {
+                                let cx=b.min_c*CELL*scale+offsetX, cy=b.min_r*CELL*scale+offsetY;
+                                if(cx>=x1 && cx<=x2 && cy>=y1 && cy<=y2) targetIds.push(b.id);
+                            });
+                            if(targetIds.length>0) {
+                                let stringCode=prompt("Enter DC String Cabling Group Identification Label:");
+                                if(stringCode) {
+                                    for(let id of targetIds) {
+                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq."+id,{method:"PATCH",headers:{"apikey":"SUPABASE_KEY_VAL","Authorization":"Bearer SUPABASE_KEY_VAL","Content-Type":"application/json"},body:JSON.stringify({inverter_id:activeInvSelectionId,string_cabling_group:stringCode})});
+                                    } location.reload();
+                                }
+                            } draw();
+                        }
+                    });
+                    canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); const mX=e.clientX-rect.left, mY=e.clientY-rect.top, gX=(mX-offsetX)/scale, gY=(mY-offsetY)/scale; scale*=(e.deltaY<0?1.15:0.85); scale=Math.max(0.01,Math.min(scale,15)); offsetX=mX-gX*scale; offsetY=mY-gY*scale; draw(); }, {passive:false});
                     draw();
                 })();
             </script>
-            """
-            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                       .replace("MIN_C_VAL", str(min_c))\
-                                                       .replace("MAX_C_VAL", str(max_c))\
-                                                       .replace("MIN_R_VAL", str(min_r))\
-                                                       .replace("MAX_R_VAL", str(max_r))
-            components.html(html_inverter_engine, height=640)
+            """.replace("__JSON_DATA_B64__", b64_json_data).replace("__TX_DATA_B64__", b64_tx_data).replace("__INV_DATA_B64__", b64_inv_data).replace("__ACTIVE_MODE__", str(active_mode_id)).replace("__PARENT_TX__", chosen_parent_tx).replace("__FARM_ID__", str(st.session_state.active_site_id)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            components.html(active_mode_id and html_electrical_master, height=660)
 
         # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
         with setup_tabs[2]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
-            col_t1, col_t2 = st.columns([4, 6])
-            with col_t1:
-                html_micro_template = """
-                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
-                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
-                """
-                components.html(html_micro_template, height=280)
-
-        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP ---
-        with setup_tabs[3]:
-            st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
-            html_transformer_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
-                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
-                </div>
-            </div>
-            <script>
-                (function() { 
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
-
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    let isDragging = false, startX, startY;
-
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-                    function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        blocks.forEach(b => { 
-                            ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
-                        }); 
-                        ctx.restore();
-                    }
-                    canvas.addEventListener('mousedown', (e) => { if(e.button===2 || e.button===0) { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
-                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    canvas.addEventListener('mouseup', () => { isDragging = false; });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
-                    draw();
-                })();
-            </script>
-            """
-            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                             .replace("MIN_C_VAL", str(min_c))\
-                                                             .replace("MAX_C_VAL", str(max_c))\
-                                                             .replace("MIN_R_VAL", str(min_r))\
-                                                             .replace("MAX_R_VAL", str(max_r))
-            components.html(html_transformer_engine, height=640)
+            components.html("""
+            <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Configuration Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
+            <script>const c=document.getElementById("micro_canvas"),ctx=c.getContext('2d');ctx.fillStyle='#334155';ctx.fillRect(40,30,220,140);ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;ctx.strokeRect(40,30,220,140);ctx.fillStyle='#ef4444';ctx.beginPath();ctx.arc(80,100,6,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(220,100,6,0,Math.PI*2);ctx.fill();</script>
+            """, height=280)
 
     else:
         # ==============================================================================
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
+        if not site_is_published:
+            st.info("🚜 Layout configuration is currently locked by the engineering team. Waiting for blueprint deployment release updates...")
+            st.stop()
+
         if site_bg_img:
             st.markdown("### 🗺️ Master Blueprint Reference Layout")
             st.image(site_bg_img, use_container_width=False, width=700)
@@ -788,219 +618,68 @@ else:
 
         def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
             today_str = str(date.today())
-
             html_crew_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
-                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
-                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
-                    <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
-                    <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
-                </div>
-                
-                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-
+                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
                 (function() {
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
-                    const canvas = document.getElementById("crew_LAYER_KEY"); 
-                    const ctx = canvas.getContext('2d');
+                    const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
                     const tooltip = document.getElementById("crew_hover_tooltip");
-                    const CELL = 14; 
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; 
-                    const mapHeight = (maxY - minY + 1) * CELL;
-
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    
-                    let isPanning = false;
-                    let isSelecting = false;
-                    let dragStartRawX = 0, dragStartRawY = 0;
-                    let dragCurrentRawX = 0, dragCurrentRawY = 0;
+                    const CELL = 14; let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    let scale = Math.min((canvas.width - 60) / ((maxX-minX+1)*CELL), (canvas.height - 60) / ((maxY-minY+1)*CELL)) || 0.5;
+                    let offsetX = (canvas.width / 2) - (((maxX-minX+1)*CELL) * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (((maxY-minY+1)*CELL) * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false, isSelecting = false, dragStartRawX = 0, dragStartRawY = 0, dragCurrentRawX = 0, dragCurrentRawY = 0;
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
-
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => {
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                        });
-                        ctx.restore();
-
-                        if (isSelecting) {
-                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
-                            ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
-                            ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
-                        }
+                            let x = b.min_c * CELL, y = b.min_r * CELL, w = (b.max_c - b.min_c + 1) * CELL, h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        }); ctx.restore();
+                        if (isSelecting) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(34, 197, 94, 0.25)'; ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY); }
                     }
-
                     canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-                        
-                        if (isPanning) {
-                            offsetX = e.clientX - dragStartRawX;
-                            offsetY = e.clientY - dragStartRawY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        } else if (isSelecting) {
-                            dragCurrentRawX = mX;
-                            dragCurrentRawY = mY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        }
-
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        
-                        let hoveredBlock = null;
-                        for (let b of blocks) {
-                            if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
-                        }
-
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px";
-                            tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
-                        } else {
-                            tooltip.style.display = "none";
-                        }
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
+                        if (isPanning) { offsetX = e.clientX - dragStartRawX; offsetY = e.clientY - dragStartRawY; draw(); return; }
+                        if (isSelecting) { dragCurrentRawX = mX; dragCurrentRawY = mY; draw(); return; }
+                        let worldX = (mX - offsetX) / scale, worldY = (mY - offsetY) / scale, hb = null;
+                        for (let b of blocks) { if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hb = b; break; } }
+                        if (hb) { tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px"; tooltip.innerHTML = `Label: ${hb.table_label}<br/>Zone: ${hb.assigned_zone}<br/>Status: ${hb['LAYER_KEY_status'] || 'pending'}`; } else tooltip.style.display = "none";
                     });
-
-                    canvas.addEventListener('mousedown', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const clickY = e.clientY - rect.top;
-
-                        if (e.button === 2) { 
-                            isPanning = true;
-                            isSelecting = false;
-                            dragStartRawX = e.clientX - offsetX;
-                            dragStartRawY = e.clientY - offsetY;
-                            canvas.style.cursor = 'move';
-                        } else if (e.button === 0) { 
-                            isSelecting = true;
-                            isPanning = false;
-                            dragStartRawX = clickX;
-                            dragStartRawY = clickY;
-                            dragCurrentRawX = clickX;
-                            dragCurrentRawY = clickY;
-                            canvas.style.cursor = 'crosshair';
-                        }
-                        tooltip.style.display = "none";
-                    });
-
+                    canvas.addEventListener('mousedown', (e) => { const rect = canvas.getBoundingClientRect(); if (e.button === 2) { isPanning = true; dragStartRawX = e.clientX - offsetX; dragStartRawY = e.clientY - offsetY; } else { isSelecting = true; dragStartRawX = e.clientX - rect.left; dragStartRawY = e.clientY - rect.top; dragCurrentRawX = dragStartRawX; dragCurrentRawY = dragStartRawY; } });
                     canvas.addEventListener('mouseup', async (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mouseUpX = e.clientX - rect.left;
-                        const mouseUpY = e.clientY - rect.top;
-
-                        if (isPanning) {
-                            isPanning = false;
-                            canvas.style.cursor = 'grab';
-                        } else if (isSelecting) {
-                            isSelecting = false;
-                            canvas.style.cursor = 'default';
-
-                            let boxX1 = Math.min(dragStartRawX, mouseUpX);
-                            let boxX2 = Math.max(dragStartRawX, mouseUpX);
-                            let boxY1 = Math.min(dragStartRawY, mouseUpY);
-                            let boxY2 = Math.max(dragStartRawY, mouseUpY);
-
-                            let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                        const rect = canvas.getBoundingClientRect(); if (isPanning) isPanning = false;
+                        else if (isSelecting) {
+                            isSelecting = false; let x1 = Math.min(dragStartRawX, e.clientX - rect.left), x2 = Math.max(dragStartRawX, e.clientX - rect.left), y1 = Math.min(dragStartRawY, e.clientY - rect.top), y2 = Math.max(dragStartRawY, e.clientY - rect.top);
                             let payloadIds = [];
-
                             blocks.forEach(b => {
-                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
-                                let isMatched = (totalDragDistance > 4) ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
-                                if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
-                                    payloadIds.push(b.id);
-                                }
+                                let cx = b.min_c * CELL * scale + offsetX, cy = b.min_r * CELL * scale + offsetY;
+                                if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2 && b['LAYER_KEY_status'] !== 'completed') payloadIds.push(b.id);
                             });
-                            
                             if (payloadIds.length > 0) {
-                                const statMsg = document.getElementById("crew_sync_status_msg");
-                                statMsg.style.display = "block";
-                                statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
-                                
-                                try {
-                                    for (let id of payloadIds) {
-                                        let target = blocks.find(b => b.id === id);
-                                        if (target) target['LAYER_KEY_status'] = 'completed';
-                                        
-                                        await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                            method: "PATCH", 
-                                            headers: { 
-                                                "apikey": 'SUPABASE_KEY_VAL', 
-                                                "Authorization": 'Bearer SUPABASE_KEY_VAL', 
-                                                "Content-Type": "application/json",
-                                                "Prefer": "return=minimal"
-                                            },
-                                            body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
-                                        });
-                                    }
-                                    statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
-                                    setTimeout(() => { statMsg.style.display = "none"; }, 5000);
-                                } catch (e) {
-                                    statMsg.innerText = "Database updates timed out.";
-                                }
-                            }
-                            setTimeout(draw, 50);
+                                for (let id of payloadIds) {
+                                    await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, { method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" }, body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" }) });
+                                } location.reload();
+                            } draw();
                         }
                     });
-
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); 
-                        const rect = canvas.getBoundingClientRect(); 
-                        const mouseX = e.clientX - rect.left; 
-                        const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; 
-                        const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
-                        scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; 
-                        offsetY = mouseY - gridY * scale; 
-                        draw();
-                    }, { passive: false });
-
+                    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top, gridX = (mouseX - offsetX) / scale, gridY = (mouseY - offsetY) / scale; scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15)); offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw(); }, { passive: false });
                     draw();
                 })();
             </script>
             """
-            html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
-                                         .replace("LAYER_KEY", str(layer_key))\
-                                         .replace("MIN_C_VAL", str(min_c))\
-                                         .replace("MAX_C_VAL", str(max_c))\
-                                         .replace("MIN_R_VAL", str(min_r))\
-                                         .replace("MAX_R_VAL", str(max_r))\
-                                         .replace("TODAY_STR_VAL", today_str)\
-                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
-            return html_crew_map
+            return html_crew_map.replace("__JSON_DATA_B64__", b64_data).replace("LAYER_KEY", str(layer_key)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("TODAY_STR_VAL", today_str).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
 
         def process_crew_tab(tab_obj, key_val):
-            with tab_obj:
-                components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
+            with tab_obj: components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
 
         process_crew_tab(crew_tabs[0], "pegging")
         process_crew_tab(crew_tabs[1], "piling")

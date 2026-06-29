@@ -108,13 +108,22 @@ if st.session_state.active_site_id is None:
                         
                         if new_fid:
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
-                            for r in range(1, max_rows + 1):
+                                for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
-                                    cell = sheet.cell(row=r, column=c)
-                                    if cell.value is not None and str(cell.value).strip() != "":
-                                        grid_matrix[r][c] = True
-                                    elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        grid_matrix[r][c] = True
+                            cell = sheet.cell(row=r, column=c)
+        
+        # 1. Read by written text/label inside the cell
+                            has_value = cell.value is not None and str(cell.value).strip() != ""
+        
+        # 2. Read by background highlight color fill
+                             has_fill = False
+                            if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+            # Solid color fills or patterns count as part of the structure
+                                has_fill = True
+            
+        # If it has a value or a color fill, it's a visual cell (Borders are completely ignored)
+                            if has_value or has_fill:
+                                grid_matrix[r][c] = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 

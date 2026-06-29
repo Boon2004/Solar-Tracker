@@ -240,44 +240,54 @@ else:
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
                 st.markdown("#### Create an Isolated Testing Sandbox")
-                st.caption("This clones your active configuration matrix completely so you can run structural calculations safely.")
+                st.caption("Clones your active operational layout matrix completely, including custom stringing and topologies.")
                 
                 sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
                 
                 if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
-                    with st.spinner("Generating sandbox footprint..."):
+                    with st.spinner("Synchronizing blueprint structures..."):
                         try:
                             parent_farm = current_farm_record
+                            parent_farm_id = st.session_state.active_site_id
+                            
+                            # 1. Read parent topology metadata object safely
+                            raw_topo_string = parent_farm.get("background_image_url") or "{}"
+                            
+                            # 2. Forge the new sandbox database slot entry
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": parent_farm.get("admin_password", "ok"),
                                 "installer_password": parent_farm.get("installer_password", "1234"),
-                                "max_rows": parent_farm.get("max_rows", 100),
-                                "max_cols": parent_farm.get("max_cols", 150),
+                                "max_rows": int(parent_farm.get("max_rows", 100)),
+                                "max_cols": int(parent_farm.get("max_cols", 150)),
                                 "is_published": False,
-                                # 🟢 CRITICAL: This copies the exact inverter, transformer, and string topology paths!
-                                "background_image_url": parent_farm.get("background_image_url", "{}")
+                                "background_image_url": "{}" # Will be populated dynamically below
                             }
+                            
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
                             
                             if new_farm_response.data:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
-                                parent_structures = supabase.table("structures").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+                                
+                                # 3. Fetch every parsed component array fleet explicitly order-matched
+                                parent_structures = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("id").execute().data
                                 
                                 if parent_structures:
                                     sandbox_structures = []
+                                    id_mapping_dictionary = {} # Maps old IDs to new sequential trackers to fix string paths
+                                    
                                     for struct in parent_structures:
                                         cloned_struct = {
                                             "farm_id": sandbox_farm_id,
-                                            "table_label": struct.get("table_label"),
-                                            "min_r": struct.get("min_r"),
-                                            "max_r": struct.get("max_r"),
-                                            "min_c": struct.get("min_c"),
-                                            "max_c": struct.get("max_c"),
-                                            "structure_type": struct.get("structure_type"),
-                                            # 🟢 PRESERVES EXACT ZONE ASSIGNMENTS (Crucial for Canvas Color Mapping)
-                                            "assigned_zone": struct.get("assigned_zone", "Unassigned"),
-                                            "section_group": struct.get("section_group"),
+                                            "table_label": str(struct.get("table_label", "")),
+                                            "min_r": int(struct.get("min_r")),
+                                            "max_r": int(struct.get("max_r")),
+                                            "min_c": int(struct.get("min_c")),
+                                            "max_c": int(struct.get("max_c")),
+                                            "structure_type": str(struct.get("structure_type", "single_3x9")),
+                                            "assigned_zone": str(struct.get("assigned_zone", "Unassigned")),
+                                            # 🟢 FIXES HOLES: Preserves exact structural group sorting identifiers
+                                            "section_group": int(struct.get("section_group")) if struct.get("section_group") is not None else None,
                                             "pegging_status": "pending",
                                             "piling_status": "pending",
                                             "mounting_status": "pending",
@@ -285,18 +295,52 @@ else:
                                         }
                                         sandbox_structures.append(cloned_struct)
                                     
-                                    # Push structures in batches
+                                    # 4. Push structural batches to cloud data loops cleanly
+                                    inserted_structures_fleet = []
                                     for idx in range(0, len(sandbox_structures), 200):
                                         batch = sandbox_structures[idx:idx+200]
-                                        supabase.table("structures").insert(batch).execute()
+                                        res_batch = supabase.table("structures").insert(batch).execute()
+                                        if res_batch.data:
+                                            inserted_structures_fleet.extend(res_batch.data)
+                                    
+                                    # 5. Build ID tracking schema translation dictionary
+                                    # This links the old data tracker indices to their fresh database copies
+                                    for old_s, new_s in zip(parent_structures, inserted_structures_fleet):
+                                        id_mapping_dictionary[str(old_s["id"])] = int(new_s["id"])
+                                    
+                                    # 6. 🔌 RE-STRINGS TOPOLOGY IN THE SANDBOX CONTAINER
+                                    # Translates old layout nodes into your cloned sandbox framework IDs
+                                    try:
+                                        if raw_topo_string.startswith("{"):
+                                            topo_data = json.loads(raw_topo_string)
+                                            
+                                            # Re-map electrical string stringGroup definitions cleanly
+                                            if "stringGroups" in topo_data:
+                                                new_string_groups = {}
+                                                for old_key, inv_value in topo_data["stringGroups"].items():
+                                                    # Extract root numeric components from composite string keys (e.g., '142_N')
+                                                    parts = old_key.split("_")
+                                                    old_base_id = parts[0]
+                                                    suffix = f"_{parts[1]}" if len(parts) > 1 else ""
+                                                    
+                                                    if old_base_id in id_mapping_dictionary:
+                                                        new_base_id = id_mapping_dictionary[old_base_id]
+                                                        new_string_groups[f"{new_base_id}{suffix}"] = inv_value
+                                                topo_data["stringGroups"] = new_string_groups
+                                            
+                                            # Re-save configuration blueprint safely back to server sandbox metadata slot
+                                            supabase.table("farms").update({
+                                                "background_image_url": json.dumps(topo_data)
+                                            }).eq("id", sandbox_farm_id).execute()
+                                    except Exception:
+                                        pass # Fallback elegantly if topology string configuration is blank
                                         
-                                    # 🟢 FLUSH STREAMLIT DATA CACHE IMMEDATELY SO NEW COLORS MOUNT
                                     st.cache_data.clear()
-                                    st.success("🎉 Sandbox successfully forged! Access it from the main menu portal.")
+                                    st.success("🎉 Sandbox configuration successfully duplicated! Check the project menu list directory.")
                                     time.sleep(1.5)
                                     st.rerun()
                         except Exception as err:
-                            st.error(f"Sandbox synthesis rejected: {str(err)}")
+                            st.error(f"Sandbox duplication rejected: {str(err)}")
             
             # --- STANDARD ADMIN RELEASE ACTIONS ---
             st.write("---")

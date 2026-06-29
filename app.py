@@ -87,7 +87,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Running Strict Isolated Row Matrix Scanner...")
+                    st.info("🔄 Running High-Precision Row Matrix Scanner...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -110,17 +110,24 @@ if st.session_state.active_site_id is None:
                                 start_c = None
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
+                                    
                                     has_val = cell.value is not None and str(cell.value).strip() != ""
                                     has_fill = cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none'
+                                    has_border = cell.border and (
+                                        (cell.border.top and cell.border.top.style) or
+                                        (cell.border.bottom and cell.border.bottom.style) or
+                                        (cell.border.left and cell.border.left.style) or
+                                        (cell.border.right and cell.border.right.style)
+                                    )
                                     
-                                    if has_val or has_fill:
+                                    if has_val or has_fill or has_border:
                                         if start_c is None:
                                             start_c = c
                                     else:
                                         if start_c is not None:
                                             structures_queue.append({
                                                 "farm_id": new_fid,
-                                                "table_label": f"T-{table_counter}",
+                                                "table_label": f"R{r}C{start_c}",
                                                 "min_r": int(r), "max_r": int(r),
                                                 "min_c": int(start_c), "max_c": int(c - 1),
                                                 "structure_type": "single_3x9",
@@ -131,9 +138,10 @@ if st.session_state.active_site_id is None:
                                             })
                                             table_counter += 1
                                             start_c = None
+                                            
                                 if start_c is not None:
                                     structures_queue.append({
-                                        "farm_id": new_fid, "table_label": f"T-{table_counter}",
+                                        "farm_id": new_fid, "table_label": f"R{r}C{start_c}",
                                         "min_r": int(r), "max_r": int(r), "min_c": int(start_c), "max_c": int(max_cols),
                                         "structure_type": "single_3x9", "assigned_zone": "Unassigned", "section_group": int(table_counter),
                                         "pegging_status": "pending", "piling_status": "pending", "mounting_status": "pending", "modules_status": "pending"
@@ -246,12 +254,7 @@ else:
     min_c = min([b.get("min_c", 1) for b in active_table_data])
     max_c = max([b.get("max_c", 150) for b in active_table_data])
 
-    CELL_SIZE = 14
-    json_str = json.dumps(active_table_data)
-    b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
-    b64_tx_data = base64.b64encode(json.dumps(transformers_data).encode("utf-8")).decode("utf-8")
-    b64_inv_data = base64.b64encode(json.dumps(inverters_data).encode("utf-8")).decode("utf-8")
-
+    # Dynamic color map array initialization
     for b in active_table_data:
         z = b.get("assigned_zone")
         if z and z not in st.session_state.managed_zones:
@@ -265,7 +268,7 @@ else:
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs(["🖼️ Base Overview & Zones", "🔌 Unified Master Electrical Canvas"])
         
-        # --- TAB 1: RESTORED FULL LIVE ZONE ASSIGNATION CANVA ENGINE ---
+        # --- TAB 1: FULL LIVE ZONE ASSIGNATION CANVA ENGINE ---
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             
@@ -379,7 +382,7 @@ else:
             """.replace("__JSON_DATA_B64__", b64_json_data).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("__SUB_URL__", SUPABASE_URL).replace("__SUB_KEY__", SUPABASE_KEY)
             components.html(html_zone_engine, height=700)
 
-        # --- TAB 2: DYNAMIC ELECTRICAL LAYOUT CANVAS (NO REFRESHES) ---
+        # --- TAB 2: DYNAMIC ELECTRICAL LAYOUT CANVAS ---
         with setup_tabs[1]:
             st.markdown("### 🔌 Bottom-Up Master Electrical Infrastructure Layout Setup")
             
@@ -486,7 +489,7 @@ else:
                                     fetch(subUrl+"/rest/v1/inverters?id=eq."+existingInv.id,{method:"DELETE",headers:{"apikey":subKey,"Authorization":"Bearer "+subKey}});
                                 }
                             } else {
-                                if(parentTxNameBlock==="None") return;
+                                if(parentTxName==="None") return;
                                 let num=prompt("Enter Inverter Identifier Label Number:");
                                 if(num) {
                                     let newInv = {id:Math.random().toString(), farm_id:farmId, transformer_name:parentTxName, inverter_num:num, grid_r:wY, grid_c:wX};
@@ -549,4 +552,3 @@ else:
             st.stop()
 
         crew_tabs = st.tabs(["📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"])
-        # Custom tracking logic layers here...

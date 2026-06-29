@@ -114,15 +114,17 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    # Accept any visual cell indicator (Values, Borders, or Background Fills)
+                                    # VALUE-CENTRIC FALLBACK: Check cell value strings or properties robustly
                                     if cell.value is not None:
-                                        is_active_cell = True
+                                        val_clean = str(cell.value).strip()
+                                        if len(val_clean) > 0:
+                                            is_active_cell = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
                                                          (cell.border.right and cell.border.right.style)): 
                                         is_active_cell = True
-                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF": 
+                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF": 
                                         is_active_cell = True
                                     
                                     if is_active_cell and (r, c) not in visited:
@@ -137,14 +139,14 @@ if st.session_state.active_site_id is None:
                                                 if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
                                                     n_cell = sheet.cell(row=nr, column=nc)
                                                     n_active = False
-                                                    if n_cell.value is not None:
+                                                    if n_cell.value is not None and len(str(n_cell.value).strip()) > 0:
                                                         n_active = True
                                                     elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
                                                                          (n_cell.border.left and n_cell.border.left.style) or 
                                                                          (n_cell.border.right and n_cell.border.right.style)): 
                                                         n_active = True
-                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": 
+                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": 
                                                         n_active = True
                                                         
                                                     if n_active:
@@ -170,7 +172,8 @@ if st.session_state.active_site_id is None:
                                         })
                                         table_counter += 1
                             
-                            st.write(f"Parsed {len(structures_queue)} structures. Uploading...")
+                            st.sidebar.info(f"📊 Processed {len(structures_queue)} total structural matrices inside layout.")
+                            
                             for idx in range(0, len(structures_queue), 50):
                                 try: 
                                     supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
@@ -251,7 +254,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     if not active_table_data:
-        st.info("ℹ️ No physical layout models loaded in database for this site entry yet. Please populate using the Blueprint loader panel.")
+        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet. Use the control configuration page above to import structural data files.")
         st.stop()
 
     min_r = min([b.get("min_r", 1) for b in active_table_data])

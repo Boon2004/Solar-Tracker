@@ -166,8 +166,7 @@ if st.session_state.active_site_id is None:
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(table_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 
-                                                "mounting_status": "pending", "modules_status": "pending",
-                                                "inverter_id": None, "string_cabling_group": None
+                                                "mounting_status": "pending", "modules_status": "pending"
                                             })
                                             table_counter += 1
 
@@ -320,21 +319,14 @@ else:
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
-    # Dynamic parsing scopes
-    found_zones = set()
-    found_inverters = set()
+    # Sync any zones explicitly stored in database back into session state
     for b in active_table_data:
         z = b.get("assigned_zone")
-        inv = b.get("inverter_id")
-        if z: found_zones.add(z)
-        if inv: found_inverters.add(inv)
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
     
-    zone_list_for_wiping = sorted(list(found_zones))
-    if "Unassigned" in zone_list_for_wiping: zone_list_for_wiping.remove("Unassigned")
-    
-    inverter_list_for_wiping = sorted(list(found_inverters))
+    # BUILD RESET DROPDOWN LIST DIRECTLY FROM REGISTRY AND SIFT OUT UNASSIGNED OPTIONS
+    clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
@@ -366,7 +358,7 @@ else:
             st.subheader("🛠️ Selective Zone Reset Center")
             col_wipe1, col_wipe2 = st.columns([6, 4])
             with col_wipe1:
-                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + clean_wiping_dropdown_options)
             with col_wipe2:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                 
@@ -653,66 +645,15 @@ else:
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
         with setup_tabs[1]:
             st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
-            
-            # --- THE INVERTER RESET FLUSH ENGINE ---
-            st.subheader("🗑️ Inverter Assignment Reset Center")
-            col_inv_wipe1, col_inv_wipe2 = st.columns([6, 4])
-            with col_inv_wipe1:
-                inv_wipe_selection = st.selectbox("Select Target Inverter ID to Flush & Clear:", ["ALL INVERTERS"] + inverter_list_for_wiping)
-            with col_inv_wipe2:
-                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                if site_is_published:
-                    st.error("Cannot reset electrical assets on frozen, deployed frameworks.")
-                elif st.button("💥 Reset Selected Inverter Allocation Fleet", type="secondary", use_container_width=True):
-                    with st.spinner("Flushing target electrical links..."):
-                        try:
-                            if inv_wipe_selection == "ALL INVERTERS":
-                                supabase.table("structures").update({"inverter_id": None, "string_cabling_group": None}).eq("farm_id", st.session_state.active_site_id).execute()
-                                st.success("All inverter IDs and tracking strings reset to default!")
-                            else:
-                                supabase.table("structures").update({"inverter_id": None, "string_cabling_group": None}).eq("farm_id", st.session_state.active_site_id).eq("inverter_id", inv_wipe_selection).execute()
-                                st.success(f"Successfully detached tracking records matching {inv_wipe_selection}!")
-                            time.sleep(0.5); st.rerun()
-                        except Exception as e:
-                            st.error(f"Reset failed: {str(e)}")
-            st.write("---")
-
             html_inverter_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    Inverter Mode: <span style="color:#ff007f; font-weight:bold;">Left-Click + Drag</span> to select cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Hover</span> to inspect telemetry.
-                </div>
-                
-                <div id="inv_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #ff007f; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-
-                <!-- Interactive Multi-Parameter Assignment Card popup alert layout inside canvas container framework -->
-                <div id="inv_dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #ff007f; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
-                    <div id="inv_status_message" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Saving electrical maps...</div>
-                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:8px; font-size:15px;">Link Selected Blocks to Inverter Array Setup</div>
-                    
-                    <div style="margin-bottom: 10px; text-align: left;">
-                        <label style="color: #94a3b8; font-size: 12px; display: block; margin-bottom: 4px;">Inverter ID Number:</label>
-                        <input type="text" id="popup_inv_input_field" value="INV-01" style="background: #0f172a; color: #fff; border: 1px solid #334155; padding: 6px; border-radius: 4px; width: 100%; box-sizing: border-box;" />
-                    </div>
-                    
-                    <div style="margin-bottom: 15px; text-align: left;">
-                        <label style="color: #94a3b8; font-size: 12px; display: block; margin-bottom: 4px;">DC Cabling String Code:</label>
-                        <input type="text" id="popup_str_input_field" value="STR-A" style="background: #0f172a; color: #fff; border: 1px solid #334155; padding: 6px; border-radius: 4px; width: 100%; box-sizing: border-box;" />
-                    </div>
-
-                    <button id="btn_inv_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Confirm Inverter Grouping</button>
-                    <button id="btn_inv_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">Cancel</button>
-                </div>
-
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:crosshair;"></canvas>
+                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
             </div>
             <script>
                 (function() { 
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const tooltip = document.getElementById("inv_hover_tooltip"); const CELL = CELL_SIZE_VAL;
-                    const isPublished = __IS_PUBLISHED_VAL__;
-                    
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
 
@@ -721,171 +662,40 @@ else:
 
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    
-                    let isPanning = false, isSelecting = false;
-                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
-                    let stagedInvBlockIds = [];
+                    let isDragging = false, startX, startY;
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-                    function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
-                        let hash = 0; let cleaned = zoneName.toUpperCase().trim();
-                        for (let i = 0; i < cleaned.length; i++) { hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); }
-                        let hue = Math.abs(hash * 45) % 360; 
-                        return `hsl(${hue}, 90%, 50%)`;
-                    }
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
-                            let isStaged = stagedInvBlockIds.includes(b.id);
-                            ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
-                            
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
                             if (b.structure_type === 'double_6x9') {
-                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; ctx.lineWidth = 1.0;
+                                ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
                                 ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
-                            }
-
-                            if (b.inverter_id) {
-                                ctx.fillStyle = 'rgba(255, 0, 127, 0.4)';
-                                ctx.fillRect(x, y, w, h);
-                                ctx.fillStyle = '#ffffff';
-                                ctx.font = "bold 8px sans-serif";
-                                ctx.fillText(b.inverter_id, x + 2, y + 11);
-                            }
-
-                            if (isStaged) {
-                                ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h);
                             }
                         }); 
                         ctx.restore();
-
-                        if (isSelecting) {
-                            ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(255, 0, 127, 0.2)';
-                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
-                        }
                     }
-
-                    canvas.addEventListener('mousemove', (e) => {
+                    canvas.addEventListener('mousedown', (e) => { 
                         const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-
-                        if (isPanning) {
-                            offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw();
-                            tooltip.style.display = "none"; return;
-                        } else if (isSelecting) {
-                            currentX = mX; currentY = mY; draw();
-                            tooltip.style.display = "none"; return;
-                        }
-
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        let hoveredBlock = null;
-
-                        for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
-                                hoveredBlock = b; break;
-                            }
-                        }
-
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Block: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}<br/>Inverter: ${hoveredBlock.inverter_id || 'None Linked'}<br/>String: ${hoveredBlock.string_cabling_group || 'None'}`;
-                        } else {
-                            tooltip.style.display = "none";
+                        if(e.button === 2 || e.button === 0) {
+                            isDragging = true; 
+                            startX = e.clientX - offsetX; 
+                            startY = e.clientY - offsetY; 
                         }
                     });
-
-                    canvas.addEventListener('mousedown', (e) => {
-                        if (isPublished) return;
-                        const rect = canvas.getBoundingClientRect();
-                        if (e.button === 2) {
-                            isPanning = true; isSelecting = false;
-                            startX = e.clientX - offsetX; startY = e.clientY - offsetY;
-                        } else if (e.button === 0) {
-                            isSelecting = true; isPanning = false;
-                            startX = e.clientX - rect.left; startY = e.clientY - rect.top;
-                            currentX = startX; currentY = startY;
-                        }
-                    });
-
-                    canvas.addEventListener('mouseup', (e) => {
-                        if (isPanning) { isPanning = false; }
-                        else if (isSelecting) {
-                            isSelecting = false;
-                            stagedInvBlockIds = [];
-                            
-                            let boxX1 = Math.min(startX, currentX), boxX2 = Math.max(startX, currentX);
-                            let boxY1 = Math.min(startY, currentY), boxY2 = Math.max(startY, currentY);
-
-                            blocks.forEach(b => {
-                                let cellScreenX1 = b.min_c * CELL * scale + offsetX;
-                                let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
-                                let cellScreenY1 = b.min_r * CELL * scale + offsetY;
-                                let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
-
-                                if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
-                                    cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
-                                    stagedInvBlockIds.push(b.id);
-                                }
-                            });
-
-                            if (stagedInvBlockIds.length > 0) {
-                                document.getElementById("inv_dialogue_overlay").style.display = "block";
-                            }
-                            draw();
-                        }
-                    });
-
-                    document.getElementById("btn_inv_yes").addEventListener('click', async () => {
-                        const mBox = document.getElementById("inv_status_message");
-                        const typedInv = document.getElementById("popup_inv_input_field").value.trim() || "INV-01";
-                        const typedStr = document.getElementById("popup_str_input_field").value.trim() || "STR-A";
-                        
-                        mBox.style.display = "block";
-                        mBox.innerText = `Updating ${stagedInvBlockIds.length} string elements...`;
-                        
-                        for (let id of stagedInvBlockIds) {
-                            let target = blocks.find(b => b.id === id);
-                            if (target) {
-                                target.inverter_id = typedInv;
-                                target.string_cabling_group = typedStr;
-                            }
-                            await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                method: "PATCH",
-                                headers: {
-                                    "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL",
-                                    "Content-Type": "application/json", "Prefer": "return=minimal"
-                                },
-                                body: JSON.stringify({ "inverter_id": typedInv, "string_cabling_group": typedStr })
-                            });
-                        }
-                        mBox.innerText = "Electrical mapping update saved successfully!";
-                        setTimeout(() => { mBox.style.display = "none"; document.getElementById("inv_dialogue_overlay").style.display = "none"; }, 1500);
-                        stagedInvBlockIds = []; draw();
-                    });
-
-                    document.getElementById("btn_inv_no").addEventListener('click', () => {
-                        stagedInvBlockIds = []; document.getElementById("inv_dialogue_overlay").style.display = "none"; draw();
-                    });
-
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
                     canvas.addEventListener('wheel', (e) => {
                         e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
                         offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
                     }, { passive: false });
-
                     draw();
                 })();
             </script>
@@ -895,11 +705,8 @@ else:
                                                        .replace("MIN_C_VAL", str(min_c))\
                                                        .replace("MAX_C_VAL", str(max_c))\
                                                        .replace("MIN_R_VAL", str(min_r))\
-                                                       .replace("MAX_R_VAL", str(max_r))\
-                                                       .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                                       .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
-                                                       .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
-            components.html(html_inverter_engine, height=680)
+                                                       .replace("MAX_R_VAL", str(max_r))
+            components.html(html_inverter_engine, height=640)
 
         # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION ---
         with setup_tabs[2]:

@@ -19,7 +19,6 @@ def get_supabase_client():
 
 supabase: Client = get_supabase_client()
 
-# Set Global Wide View Constraints
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
 if "active_site_id" not in st.session_state: st.session_state.active_site_id = None
@@ -113,14 +112,11 @@ if st.session_state.active_site_id is None:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    
                                     is_active_cell = False
-                                    # Discard strings that represent row indexes or simple grid labels
+                                    
+                                    # Accept any visual cell indicator (Values, Borders, or Background Fills)
                                     if cell.value is not None:
-                                        val_str = str(cell.value).strip()
-                                        if len(val_str) > 0 and not (val_str.isdigit() and int(val_str) < 200):
-                                            is_active_cell = True
-                                            
+                                        is_active_cell = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
@@ -142,9 +138,7 @@ if st.session_state.active_site_id is None:
                                                     n_cell = sheet.cell(row=nr, column=nc)
                                                     n_active = False
                                                     if n_cell.value is not None:
-                                                        n_val_str = str(n_cell.value).strip()
-                                                        if len(n_val_str) > 0 and not (n_val_str.isdigit() and int(n_val_str) < 200):
-                                                            n_active = True
+                                                        n_active = True
                                                     elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
                                                                          (n_cell.border.left and n_cell.border.left.style) or 
@@ -176,7 +170,7 @@ if st.session_state.active_site_id is None:
                                         })
                                         table_counter += 1
                             
-                            st.write(f"Parsed {len(structures_queue)} structures. Uploading to cloud database...")
+                            st.write(f"Parsed {len(structures_queue)} structures. Uploading...")
                             for idx in range(0, len(structures_queue), 50):
                                 try: 
                                     supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
@@ -256,14 +250,18 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
-    min_r = min([b.get("min_r", 1) for b in active_table_data]) if active_table_data else 1
-    max_r = max([b.get("max_r", 100) for b in active_table_data]) if active_table_data else 100
-    min_c = min([b.get("min_c", 1) for b in active_table_data]) if active_table_data else 1
-    max_c = max([b.get("max_c", 150) for b in active_table_data]) if active_table_data else 150
+    if not active_table_data:
+        st.info("ℹ️ No physical layout models loaded in database for this site entry yet. Please populate using the Blueprint loader panel.")
+        st.stop()
+
+    min_r = min([b.get("min_r", 1) for b in active_table_data])
+    max_r = max([b.get("max_r", 100) for b in active_table_data])
+    min_c = min([b.get("min_c", 1) for b in active_table_data])
+    max_c = max([b.get("max_c", 150) for b in active_table_data])
 
     CELL_SIZE = 14
     
-    # Safe Base64 Payload Encoding
+    # Safe Base64 Payload Delivery
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
@@ -272,7 +270,6 @@ else:
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
 
-    # Routing protections
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
         st.warning("🚧 **Configuration Incomplete:** This project site layout layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
@@ -335,9 +332,9 @@ else:
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#1e293b';
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#2563eb';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
+                        return `hsl(${Math.abs(hash % 360)}, 85%, 55%)`;
                     }
 
                     function draw() {
@@ -349,14 +346,14 @@ else:
                             let isStaged = stagedBlockIds.includes(b.id);
                             
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            if (isHovered) ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
+                            if (isHovered) ctx.fillStyle = 'rgba(0, 240, 255, 0.8)';
                             
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             
                             ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h);
-                            if (isStaged) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            if (isStaged) { ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h); }
                         });
                         ctx.restore();
                     }
@@ -457,10 +454,10 @@ else:
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
-                            ctx.fillStyle = '#1e293b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
                             if (b.structure_type === 'double_6x9') {
                                 ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
                                 ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
@@ -524,9 +521,9 @@ else:
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
-                            ctx.fillStyle = '#475569'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h); 
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
                         }); 
                         ctx.restore();
                     }
@@ -583,10 +580,10 @@ else:
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => {
-                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#2563eb';
+                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.0; ctx.strokeRect(x, y, w, h);
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
                     }

@@ -322,10 +322,12 @@ else:
                         st.error(f"Reset dropped: {str(e)}")
 
             html_zone_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Control Blueprint:</b> Left-Click + Drag to <b>Select Box/Marquee several items at once</b> | Right-Click + Drag to <b>Scroll/Pan around maps freely</b> | Mouse Wheel to <b>Zoom freely</b>.</div>
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    🖱️ <b>Control Blueprint:</b> <span style="color:#38bdf8; font-weight:bold;">Left-Click + Drag</span> to select multiple trackers | <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan around maps freely | <span style="color:#eab308; font-weight:bold;">Single-Click</span> to select a whole row section.
+                </div>
                 
-                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
@@ -354,10 +356,30 @@ else:
 
                     let isPanning = false;
                     let isSelecting = false;
-                    let startX, startY, currentX, currentY;
+                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
                     let stagedBlockIds = [];
 
-                    // Disable standard right-click context window menu inside the canvas block
+                    // ⚡ INTERNAL PROXIMITY GENERATOR FOR WHOLE SECTIONS
+                    let groupIdCounter = 1;
+                    blocks.forEach(b => b.computed_group = 0);
+                    for (let i = 0; i < blocks.length; i++) {
+                        if (blocks[i].computed_group !== 0) continue;
+                        let g = groupIdCounter++;
+                        let q = [blocks[i]];
+                        blocks[i].computed_group = g;
+                        while(q.length > 0) {
+                            let c = q.shift();
+                            for(let j=0; j<blocks.length; j++) {
+                                if(blocks[j].computed_group !== 0) continue;
+                                if(((blocks[j].min_c <= c.max_c && blocks[j].max_c >= c.min_c) && Math.min(Math.abs(blocks[j].min_r - c.max_r), Math.abs(c.min_r - blocks[j].max_r)) <= 6) ||
+                                   ((blocks[j].min_r <= c.max_r && blocks[j].max_r >= c.min_r) && Math.min(Math.abs(blocks[j].min_c - c.max_c), Math.abs(c.min_c - blocks[j].max_c)) <= 6)) {
+                                    blocks[j].computed_group = g;
+                                    q.push(blocks[j]);
+                                }
+                            }
+                        }
+                    }
+
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function getZoneColor(zoneName) {
@@ -373,10 +395,8 @@ else:
                         blocks.forEach(b => {
                             let isStaged = stagedBlockIds.includes(b.id);
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            
                             ctx.fillRect(x, y, w, h);
                             ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
                             if (isStaged) { ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h); }
@@ -397,14 +417,12 @@ else:
                         const mY = e.clientY - rect.top;
                         
                         if (e.button === 2) { 
-                            // Right Click sets pan action parameter offsets
                             isPanning = true;
                             isSelecting = false;
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
                             canvas.style.cursor = 'move';
                         } else if (e.button === 0) { 
-                            // Left Click triggers standard bounding marquee rectangle selection engine
                             isSelecting = true;
                             isPanning = false;
                             startX = mX;
@@ -428,7 +446,11 @@ else:
                         }
                     });
 
-                    window.addEventListener('mouseup', (e) => {
+                    canvas.addEventListener('mouseup', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const endX = e.clientX - rect.left;
+                        const endY = e.clientY - rect.top;
+
                         if (isPanning) {
                             isPanning = false;
                             canvas.style.cursor = 'grab';
@@ -436,19 +458,40 @@ else:
                             isSelecting = false;
                             canvas.style.cursor = 'default';
                             
-                            let x1 = (Math.min(startX, currentX) - offsetX) / scale;
-                            let x2 = (Math.max(startX, currentX) - offsetX) / scale;
-                            let y1 = (Math.min(startY, currentY) - offsetY) / scale;
-                            let y2 = (Math.max(startY, currentY) - offsetY) / scale;
-
                             stagedBlockIds = [];
-                            blocks.forEach(b => {
-                                let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
-                                let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
-                                if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
-                                    stagedBlockIds.push(b.id);
+
+                            if (Math.abs(endX - startX) > 10) {
+                                let x1 = (Math.min(startX, endX) - offsetX) / scale;
+                                let x2 = (Math.max(startX, endX) - offsetX) / scale;
+                                let y1 = (Math.min(startY, endY) - offsetY) / scale;
+                                let y2 = (Math.max(startY, endY) - offsetY) / scale;
+
+                                let groupsInBox = new Set();
+                                blocks.forEach(b => {
+                                    let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
+                                    let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
+                                    if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
+                                        if (b.computed_group) groupsInBox.add(b.computed_group);
+                                    }
+                                });
+                                blocks.forEach(b => {
+                                    if (groupsInBox.has(b.computed_group)) stagedBlockIds.push(b.id);
+                                });
+                            } else {
+                                let cx = (startX - offsetX) / scale;
+                                let cy = (startY - offsetY) / scale;
+                                let targetGroup = null;
+                                blocks.forEach(b => {
+                                    let x = b.min_c * CELL; let y = b.min_r * CELL;
+                                    let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                    if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) targetGroup = b.computed_group;
+                                });
+                                if (targetGroup) {
+                                    blocks.forEach(b => {
+                                        if (b.computed_group === targetGroup) stagedBlockIds.push(b.id);
+                                    });
                                 }
-                            });
+                            }
 
                             if (stagedBlockIds.length > 0) {
                                 document.getElementById("lbl_zone").innerText = paintZone;
@@ -485,14 +528,14 @@ else:
             </script>
             """
             html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                 .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
-                                                 .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                 .replace("MIN_C_VAL", str(min_c))\
-                                                 .replace("MAX_C_VAL", str(max_c))\
-                                                 .replace("MIN_R_VAL", str(min_r))\
-                                                 .replace("MAX_R_VAL", str(max_r))\
-                                                 .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                                 .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                                             .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                             .replace("MIN_C_VAL", str(min_c))\
+                                             .replace("MAX_C_VAL", str(max_c))\
+                                             .replace("MIN_R_VAL", str(min_r))\
+                                             .replace("MAX_R_VAL", str(max_r))\
+                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
@@ -517,6 +560,8 @@ else:
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     let isDragging = false, startX, startY;
 
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
@@ -531,9 +576,16 @@ else:
                         }); 
                         ctx.restore();
                     }
-                    canvas.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
+                    canvas.addEventListener('mousedown', (e) => { 
+                        const rect = canvas.getBoundingClientRect();
+                        if(e.button === 2 || e.button === 0) {
+                            isDragging = true; 
+                            startX = e.clientX - offsetX; 
+                            startY = e.clientY - offsetY; 
+                        }
+                    });
                     canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    window.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
                     canvas.addEventListener('wheel', (e) => {
                         e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
@@ -584,6 +636,8 @@ else:
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     let isDragging = false, startX, startY;
 
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
@@ -593,9 +647,9 @@ else:
                         }); 
                         ctx.restore();
                     }
-                    canvas.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
+                    canvas.addEventListener('mousedown', (e) => { if(e.button===2 || e.button===0) { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
                     canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
-                    window.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
                     canvas.addEventListener('wheel', (e) => {
                         e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
@@ -657,9 +711,9 @@ else:
                     let dragStartRawX = 0, dragStartRawY = 0;
                     let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    // ⚡ DYNAMIC GRID SECTION ISOLATION LAYER (Group tracker segments by close rows/cols proximity)
+                    // ⚡ DYNAMIC GRID SECTION ISOLATION LAYER
                     let groupIdCounter = 1;
-                    blocks.forEach(b => { if(!b.computed_group) b.computed_group = 0; });
+                    blocks.forEach(b => b.computed_group = 0);
                     
                     for (let i = 0; i < blocks.length; i++) {
                         if (blocks[i].computed_group !== 0) continue;
@@ -689,32 +743,22 @@ else:
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                        
-                        // 1. Draw World Matrix Elements (Trackers)
-                        ctx.save(); 
-                        ctx.translate(offsetX, offsetY); 
-                        ctx.scale(scale, scale);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         
                         blocks.forEach(b => {
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#ffffff'; 
-                            ctx.lineWidth = 0.5; 
-                            ctx.strokeRect(x, y, w, h);
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
 
-                        // 2. Draw Screen-Space Box Elements (Drag Marquee Selection Box)
                         if (isSelecting) {
-                            ctx.save();
-                            ctx.strokeStyle = '#22c55e'; 
-                            ctx.lineWidth = 2;
+                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
                             ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
                             ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
                             ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
-                            ctx.restore();
                         }
                     }
 
@@ -724,14 +768,12 @@ else:
                         const clickY = e.clientY - rect.top;
 
                         if (e.button === 2) { 
-                            // Right Click Context: Setup pan
                             isPanning = true;
                             isSelecting = false;
                             dragStartRawX = e.clientX - offsetX;
                             dragStartRawY = e.clientY - offsetY;
                             canvas.style.cursor = 'move';
                         } else if (e.button === 0) { 
-                            // Left Click Context: Setup selection box tracking
                             isSelecting = true;
                             isPanning = false;
                             dragStartRawX = clickX;
@@ -751,7 +793,7 @@ else:
                         } else if (isSelecting) {
                             dragCurrentRawX = e.clientX - rect.left;
                             dragCurrentRawY = e.clientY - rect.top;
-                            draw(); // Force render updates to show selection rectangle frame
+                            draw();
                         }
                     });
 
@@ -769,7 +811,6 @@ else:
 
                             const totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
 
-                            // ACTION A: Drag Box To Multi-Select
                             if (totalDragDistance > 10) {
                                 let worldX1 = (Math.min(dragStartRawX, mouseUpX) - offsetX) / scale;
                                 let worldX2 = (Math.max(dragStartRawX, mouseUpX) - offsetX) / scale;
@@ -799,7 +840,6 @@ else:
                                 }
                                 setTimeout(draw, 50);
                             } else {
-                                // ACTION B: Single Click to select/complete whole section group
                                 const worldClickX = (dragStartRawX - offsetX) / scale; 
                                 const worldClickY = (dragStartRawY - offsetY) / scale;
                                 
@@ -857,7 +897,7 @@ else:
                                          .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
                                          .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             return html_crew_map
-            
+
         def process_crew_tab(tab_obj, key_val):
             with tab_obj:
                 components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)

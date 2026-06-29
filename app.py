@@ -90,7 +90,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Running Rigid Section Grid Clustering Scanner...")
+                    st.info("🔄 Running Fast Visual Grid Scanner...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -124,7 +124,6 @@ if st.session_state.active_site_id is None:
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
-                            sect_group_counter = 1
                             table_counter = 1
                             ROAD_GAP = 3  
 
@@ -152,7 +151,6 @@ if st.session_state.active_site_id is None:
                                                             visited_matrix[nr][nc] = True
                                                             bfs_queue.append((nr, nc))
 
-                                        # FIXED: Correct reference pointers to build unified macro boxes rather than tracking down separate single cells
                                         b_rows = [pt[0] for pt in cluster_cells]
                                         b_cols = [pt[1] for pt in cluster_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
@@ -160,19 +158,18 @@ if st.session_state.active_site_id is None:
                                         h_cells = max_br - min_br + 1
                                         w_cells = max_bc - min_bc + 1
 
-                                        if h_cells >= 2 and w_cells >= 2 and h_cells < (max_rows * 0.85):
+                                        if h_cells >= 2 and w_cells >= 2 and h_cells < 45:
                                             structures_queue.append({
                                                 "farm_id": new_fid, 
                                                 "table_label": discovered_label if discovered_label else f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                                 "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
-                                                "section_group": int(sect_group_counter),
+                                                "section_group": int(table_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 
                                                 "mounting_status": "pending", "modules_status": "pending"
                                             })
                                             table_counter += 1
-                                            sect_group_counter += 1
 
                             if len(structures_queue) == 0:
                                 st.error("❌ Matrix parser rejected configuration: 0 tracker units extracted.")
@@ -326,7 +323,7 @@ else:
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag to <b>Scroll/Pan</b> | Mouse Wheel to <b>Zoom</b> | <kbd style="background:#1e293b; padding:2px 5px; border-radius:3px; color:#f1f5f9;">Shift</kbd> + Drag to <b>Box Select Sections Together</b>.</div>
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Control Blueprint:</b> Left-Click + Drag to <b>Select Box/Marquee several items at once</b> | Right-Click + Drag to <b>Scroll/Pan around maps freely</b> | Mouse Wheel to <b>Zoom freely</b>.</div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
@@ -334,7 +331,7 @@ else:
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
@@ -355,9 +352,13 @@ else:
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
 
-                    let isDragging = false, isSelecting = false;
+                    let isPanning = false;
+                    let isSelecting = false;
                     let startX, startY, currentX, currentY;
-                    let hoverSectionGroup = null; let stagedBlockIds = [];
+                    let stagedBlockIds = [];
+
+                    // Disable standard right-click context window menu inside the canvas block
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
@@ -370,11 +371,8 @@ else:
                         ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
 
                         blocks.forEach(b => {
-                            let isHovered = (hoverSectionGroup !== null && b.section_group === hoverSectionGroup); 
                             let isStaged = stagedBlockIds.includes(b.id);
-                            
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            if (isHovered) ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
                             
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
@@ -387,7 +385,7 @@ else:
 
                         if (isSelecting) {
                             ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+                            ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
                             ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
                             ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
                         }
@@ -395,25 +393,31 @@ else:
 
                     canvas.addEventListener('mousedown', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        startX = e.clientX - rect.left;
-                        startY = e.clientY - rect.top;
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
                         
-                        if (e.shiftKey) {
-                            isSelecting = true;
-                            isDragging = false;
-                            currentX = startX;
-                            currentY = startY;
-                        } else {
-                            isDragging = true;
+                        if (e.button === 2) { 
+                            // Right Click sets pan action parameter offsets
+                            isPanning = true;
                             isSelecting = false;
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
+                            canvas.style.cursor = 'move';
+                        } else if (e.button === 0) { 
+                            // Left Click triggers standard bounding marquee rectangle selection engine
+                            isSelecting = true;
+                            isPanning = false;
+                            startX = mX;
+                            startY = mY;
+                            currentX = mX;
+                            currentY = mY;
+                            canvas.style.cursor = 'crosshair';
                         }
                     });
 
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        if (isDragging) {
+                        if (isPanning) {
                             offsetX = e.clientX - startX;
                             offsetY = e.clientY - startY;
                             draw();
@@ -421,25 +425,16 @@ else:
                             currentX = e.clientX - rect.left;
                             currentY = e.clientY - rect.top;
                             draw();
-                        } else {
-                            const mx = (e.clientX - rect.left - offsetX) / scale; 
-                            const my = (e.clientY - rect.top - offsetY) / scale;
-                            let found = null;
-                            blocks.forEach(b => {
-                                let x = b.min_c * CELL; let y = b.min_r * CELL;
-                                let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
-                            });
-                            hoverSectionGroup = found ? found.section_group : null;
-                            draw();
                         }
                     });
 
                     window.addEventListener('mouseup', (e) => {
-                        if (isDragging) {
-                            isDragging = false;
+                        if (isPanning) {
+                            isPanning = false;
+                            canvas.style.cursor = 'grab';
                         } else if (isSelecting) {
                             isSelecting = false;
+                            canvas.style.cursor = 'default';
                             
                             let x1 = (Math.min(startX, currentX) - offsetX) / scale;
                             let x2 = (Math.max(startX, currentX) - offsetX) / scale;
@@ -459,16 +454,6 @@ else:
                                 document.getElementById("lbl_zone").innerText = paintZone;
                                 document.getElementById("dialogue_overlay").style.display = "block";
                             }
-                            draw();
-                        }
-                    });
-
-                    canvas.addEventListener('click', (e) => {
-                        if (e.shiftKey) return;
-                        if (hoverSectionGroup !== null) {
-                            stagedBlockIds = blocks.filter(b => b.section_group === hoverSectionGroup).map(b => b.id);
-                            document.getElementById("lbl_zone").innerText = paintZone;
-                            document.getElementById("dialogue_overlay").style.display = "block";
                             draw();
                         }
                     });
@@ -688,12 +673,6 @@ else:
                     canvas.addEventListener('mousedown', (e) => { isDragging = true; moved = false; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });
                     canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; moved = true; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
                     window.addEventListener('mouseup', () => { isDragging = false; });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
                     draw();
                 })();
             </script>

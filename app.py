@@ -38,51 +38,6 @@ all_registered_farms = fetch_farms_directory()
 farm_options = [f["name"] for f in all_registered_farms]
 
 # ==============================================================================
-# 🪟 NATIVE STREAMLIT EVENT RECEIVER (Replaces raw JS fetch calls)
-# ==============================================================================
-# Custom HTML listener block to pass background actions securely into session state
-st.html("""
-<script>
-    window.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "TRACKER_UPDATE") {
-            const params = new URLSearchParams(window.parent.location.search);
-            params.set("update_trigger", Date.now().toString());
-            params.set("payload", JSON.stringify(event.data));
-            window.parent.history.replaceState({}, "", "?" + params.toString());
-            const btn = window.parent.document.querySelector("button[kind='primary']");
-            if (btn) btn.click();
-        }
-    });
-</script>
-""")
-
-# Process staged structural matrix edits inside native Python environment
-query_params = st.query_params
-if "payload" in query_params:
-    try:
-        event_payload = json.loads(query_params["payload"])
-        target_ids = event_payload.get("ids", [])
-        field_key = event_payload.get("field")
-        target_val = event_payload.get("value")
-        
-        if target_ids and field_key:
-            with st.spinner("Synchronizing field modifications..."):
-                for t_id in target_ids:
-                    if field_key == "assigned_zone":
-                        supabase.table("structures").update({"assigned_zone": target_val}).eq("id", t_id).execute()
-                    else:
-                        today_str = str(date.today())
-                        supabase.table("structures").update({
-                            f"{field_key}_status": "completed",
-                            f"{field_key}_date": today_str
-                        }).eq("id", t_id).execute()
-            st.toast(f"Successfully processed {len(target_ids)} structure updates!", icon="✅")
-            st.query_params.clear()
-            st.rerun()
-    except Exception as error:
-        st.error(f"Synchronization runtime exception: {str(error)}")
-
-# ==============================================================================
 # 🏡 MAIN ENTRY SITE GATEWAY
 # ==============================================================================
 if st.session_state.active_site_id is None:
@@ -292,6 +247,69 @@ else:
                     time.sleep(0.4); st.rerun()
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
+
+    # Shared background message proxy logic
+    st.html("""
+    <script>
+        window.addEventListener("message", function(e) {
+            if (e.data && e.data.type === "CANVAS_DATA_OUT") {
+                const nativeInput = window.parent.document.querySelector("input[aria-label='hidden_payload_sync_exchange']");
+                if (nativeInput) {
+                    nativeInput.value = JSON.stringify(e.data);
+                    nativeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    setTimeout(() => {
+                        const syncBtn = window.parent.document.querySelector("button[id='sync_commit_trigger_btn']");
+                        if (syncBtn) syncBtn.click();
+                    }, 50);
+                }
+            }
+        });
+    </script>
+    """)
+
+    # Standard hidden text bridge setup fields
+    exchange_container = st.container()
+    with exchange_container:
+        js_data_exchange = st.text_input("hidden_payload_sync_exchange", label_visibility="collapsed", key="exchange_payload_key")
+        submit_sync_action = st.button("Process Sync Action", key="sync_commit_trigger_btn", help="hidden")
+
+    if submit_sync_action and js_data_exchange:
+        try:
+            parsed_payload = json.loads(js_data_exchange)
+            ids_to_update = parsed_payload.get("ids", [])
+            target_field = parsed_payload.get("field")
+            updated_value = parsed_payload.get("value")
+
+            if ids_to_update and target_field:
+                if target_field == "assigned_zone":
+                    for row_id in ids_to_update:
+                        supabase.table("structures").update({"assigned_zone": updated_value}).eq("id", row_id).execute()
+                else:
+                    current_date_str = str(date.today())
+                    for row_id in ids_to_update:
+                        supabase.table("structures").update({
+                            f"{target_field}_status": "completed",
+                            f"{target_field}_date": current_date_str
+                        }).eq("id", row_id).execute()
+                st.toast(f"Synchronized updates for {len(ids_to_update)} components successfully!", icon="🚀")
+                time.sleep(0.2)
+                st.rerun()
+        except Exception as err:
+            st.error(f"Sync error: {str(err)}")
+
+    # Custom styling injection to hide input bridge fields cleanly from user view
+    st.markdown("""
+        <style>
+            div[element-type="container"] { margin-bottom: -50px; }
+            input[aria-label="hidden_payload_sync_exchange"], 
+            button[id="sync_commit_trigger_btn"] {
+                display: none !important;
+                visibility: hidden !important;
+                height: 0px !important;
+                padding: 0px !important;
+            }
+        </style>
+    """, unsafe_allowed_html=True)
 
     def load_site_isolated_tables(farm_id):
         all_data = []
@@ -523,7 +541,7 @@ else:
 
                     document.getElementById("btn_yes").addEventListener('click', () => {
                         window.parent.postMessage({
-                            type: "TRACKER_UPDATE",
+                            type: "CANVAS_DATA_OUT",
                             field: "assigned_zone",
                             value: paintZone,
                             ids: stagedBlockIds
@@ -834,7 +852,7 @@ else:
                             
                             if (payloadIds.length > 0) {
                                 window.parent.postMessage({
-                                    type: "TRACKER_UPDATE",
+                                    type: "CANVAS_DATA_OUT",
                                     field: "LAYER_KEY",
                                     value: "completed",
                                     ids: payloadIds

@@ -107,33 +107,15 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            # Pure Visual Mapping Logic - Drops broken borders constraint checks completely
+                            # Bulletproof Text-Only Scanner (Ignores borders, colors, and invisible formatting variations completely)
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    has_value = False
                                     if cell.value is not None:
-                                        # Clean out invisible space strings
-                                        cleaned_str = str(cell.value).strip()
-                                        if cleaned_str != "":
-                                            has_value = True
-                                    
-                                    # Strict Fill Validation Checklist (Ignores accidental white/blank backgrounds)
-                                    has_fill = False
-                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        if hasattr(cell.fill, 'start_color') and cell.fill.start_color:
-                                            color_hex = str(cell.fill.start_color.rgb)
-                                            # Skip transparent/default systems or pure white fills (00000000, FFFFFFFF)
-                                            if "00000000" not in color_hex and "FFFFFFFF" not in color_hex:
-                                                has_fill = True
-                                    
-                                    # Capture ONLY true content cells
-                                    if has_value or has_fill:
-                                        grid_matrix[r][c] = True
-                                    
-                                    if has_value or has_fill:
-                                        grid_matrix[r][c] = True
+                                        cleaned_text = str(cell.value).strip()
+                                        if cleaned_text != "":
+                                            grid_matrix[r][c] = True
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
@@ -492,7 +474,7 @@ else:
                             return;
                         }
 
-                    let worldX = (mX - offsetX) / scale;
+                        let worldX = (mX - offsetX) / scale;
                         let worldY = (mY - offsetY) / scale;
                         
                         let hoveredBlock = null;
@@ -509,7 +491,7 @@ else:
                             tooltip.style.display = "block";
                             tooltip.style.left = (mX + 15) + "px";
                             tooltip.style.top = (mY + 15) + "px";
-                            tooltip.style.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
                         } else {
                             tooltip.style.display = "none";
                         }
@@ -654,11 +636,11 @@ else:
                                              .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
-        # --- STAGE 2: PEGGIN PHASE MICROSCALE BUILDER ---
+        # --- STAGE 2: PEGGING & PILING CUSTOMIZER ---
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Group true layout boundaries dynamically mapping structural matrix
+            # Group actual visual geometry sizes dynamically to display inside template configuration dropdown menu selection
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -675,7 +657,7 @@ else:
             layout_options = list(layout_types.keys())
             
             if not layout_options:
-                st.info("No explicit spatial profiles registered inside operational framework directory database.")
+                st.info("No active matrix layout definitions tracked in database.")
             else:
                 selected_layout_label = st.selectbox(
                     "Select Layout Architecture Template Matrix to Customize:", 

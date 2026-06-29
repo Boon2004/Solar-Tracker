@@ -328,6 +328,9 @@ else:
                     Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 
+                <!-- Custom Floating Tooltip for Hover Data -->
+                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
                     <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing updates...</div>
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
@@ -343,6 +346,7 @@ else:
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("canvas_hover_tooltip");
                     const paintZone = "PAINT_ZONE_VAL";
                     const CELL = CELL_SIZE_VAL;
                     
@@ -365,8 +369,17 @@ else:
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
-                        let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
+                        
+                        // Deterministic HSL mapper string logic
+                        let hash = 0; 
+                        let cleaned = zoneName.toUpperCase().trim();
+                        for (let i = 0; i < cleaned.length; i++) { 
+                            hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); 
+                        }
+                        
+                        // Use spread distribution multipliers for maximum visibility contrast
+                        let hue = Math.abs(hash * 45) % 360; 
+                        return `hsl(${hue}, 90%, 50%)`;
                     }
 
                     function draw() {
@@ -380,7 +393,13 @@ else:
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h);
                             ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
-                            if (isStaged) { ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h); }
+                            
+                            // Highlight selection with neon border ring color context
+                            if (isStaged) { 
+                                ctx.strokeStyle = '#ffff00'; 
+                                ctx.lineWidth = 2.5; 
+                                ctx.strokeRect(x, y, w, h); 
+                            }
                         });
                         ctx.restore();
 
@@ -391,6 +410,50 @@ else:
                             ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
                         }
                     }
+
+                    // Hover Event Intersector Tooltip Logic
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (isPanning) {
+                            offsetX = e.clientX - startX;
+                            offsetY = e.clientY - startY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        } else if (isSelecting) {
+                            currentX = mX;
+                            currentY = mY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+
+                        // Inverse transform matrix parameters to screen grid space
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
+                                hoveredBlock = b;
+                                break;
+                            }
+                        }
+
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
 
                     canvas.addEventListener('mousedown', (e) => {
                         const rect = canvas.getBoundingClientRect();
@@ -412,19 +475,7 @@ else:
                             currentY = mY;
                             canvas.style.cursor = 'crosshair';
                         }
-                    });
-
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
-                            draw();
-                        } else if (isSelecting) {
-                            currentX = e.clientX - rect.left;
-                            currentY = e.clientY - rect.top;
-                            draw();
-                        }
+                        tooltip.style.display = "none";
                     });
 
                     canvas.addEventListener('mouseup', (e) => {
@@ -448,7 +499,7 @@ else:
 
                             if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
                                 blocks.forEach(b => {
-                                    // DUMMY-PROOF CHECK: Lock cell from updates if already assigned
+                                    // ZONE LOCK: Do not allow modifications to already-assigned tracking cells
                                     if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
 
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
@@ -463,7 +514,7 @@ else:
                                 });
                             } else {
                                 blocks.forEach(b => {
-                                    // DUMMY-PROOF CHECK: Lock cell from updates if already assigned
+                                    // ZONE LOCK: Do not allow modifications to already-assigned tracking cells
                                     if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
 
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
@@ -694,6 +745,10 @@ else:
                     <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                     <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
                 </div>
+                
+                <!-- Hover Metadata info layer for Crew View -->
+                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
                 </div>
@@ -703,6 +758,7 @@ else:
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
                     const canvas = document.getElementById("crew_LAYER_KEY"); 
                     const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("crew_hover_tooltip");
                     const CELL = 14; 
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; 
@@ -741,6 +797,48 @@ else:
                         }
                     }
 
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (isPanning) {
+                            offsetX = e.clientX - dragStartRawX;
+                            offsetY = e.clientY - dragStartRawY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        } else if (isSelecting) {
+                            dragCurrentRawX = mX;
+                            dragCurrentRawY = mY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
+                                hoveredBlock = b;
+                                break;
+                            }
+                        }
+
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
+
                     canvas.addEventListener('mousedown', (e) => {
                         const rect = canvas.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
@@ -761,19 +859,7 @@ else:
                             dragCurrentRawY = clickY;
                             canvas.style.cursor = 'crosshair';
                         }
-                    });
-
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        if (isPanning) {
-                            offsetX = e.clientX - dragStartRawX;
-                            offsetY = e.clientY - dragStartRawY;
-                            draw();
-                        } else if (isSelecting) {
-                            dragCurrentRawX = e.clientX - rect.left;
-                            dragCurrentRawY = e.clientY - rect.top;
-                            draw();
-                        }
+                        tooltip.style.display = "none";
                     });
 
                     canvas.addEventListener('mouseup', async (e) => {

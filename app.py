@@ -115,12 +115,19 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     
                                     is_active_cell = False
-                                    if cell.value is not None: is_active_cell = True
+                                    # Discard strings that represent row indexes or simple grid labels
+                                    if cell.value is not None:
+                                        val_str = str(cell.value).strip()
+                                        if len(val_str) > 0 and not (val_str.isdigit() and int(val_str) < 200):
+                                            is_active_cell = True
+                                            
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
-                                                         (cell.border.right and cell.border.right.style)): is_active_cell = True
-                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF": is_active_cell = True
+                                                         (cell.border.right and cell.border.right.style)): 
+                                        is_active_cell = True
+                                    elif cell.fill and cell.fill.start_color and cell.fill.start_color.rgb != "00000000" and cell.fill.start_color.rgb != "FFFFFFFF": 
+                                        is_active_cell = True
                                     
                                     if is_active_cell and (r, c) not in visited:
                                         block_cells = []
@@ -134,12 +141,17 @@ if st.session_state.active_site_id is None:
                                                 if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
                                                     n_cell = sheet.cell(row=nr, column=nc)
                                                     n_active = False
-                                                    if n_cell.value is not None: n_active = True
+                                                    if n_cell.value is not None:
+                                                        n_val_str = str(n_cell.value).strip()
+                                                        if len(n_val_str) > 0 and not (n_val_str.isdigit() and int(n_val_str) < 200):
+                                                            n_active = True
                                                     elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
                                                                          (n_cell.border.left and n_cell.border.left.style) or 
-                                                                         (n_cell.border.right and n_cell.border.right.style)): n_active = True
-                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": n_active = True
+                                                                         (n_cell.border.right and n_cell.border.right.style)): 
+                                                        n_active = True
+                                                    elif n_cell.fill and n_cell.fill.start_color and n_cell.fill.start_color.rgb != "00000000" and n_cell.fill.start_color.rgb != "FFFFFFFF": 
+                                                        n_active = True
                                                         
                                                     if n_active:
                                                         visited.add((nr, nc))
@@ -158,16 +170,21 @@ if st.session_state.active_site_id is None:
                                             "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                             "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
                                             "assigned_zone": "Unassigned",
-                                            "section_group": int(computed_section_id)
+                                            "section_group": int(computed_section_id),
+                                            "pegging_status": "pending", "piling_status": "pending", 
+                                            "mounting_status": "pending", "modules_status": "pending"
                                         })
                                         table_counter += 1
                             
+                            st.write(f"Parsed {len(structures_queue)} structures. Uploading to cloud database...")
                             for idx in range(0, len(structures_queue), 50):
-                                try: supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
-                                except Exception: pass
+                                try: 
+                                    supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
+                                except Exception as batch_error:
+                                    st.error(f"Cloud Batch Ingestion Error: {str(batch_error)}")
                                 time.sleep(0.04)
                                 
-                            st.success("Clean framework mapped perfectly into 16 clean sections!")
+                            st.success("Clean framework mapped perfectly into cloud environments!")
                             st.cache_data.clear(); st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
@@ -245,7 +262,10 @@ else:
     max_c = max([b.get("max_c", 150) for b in active_table_data]) if active_table_data else 150
 
     CELL_SIZE = 14
+    
+    # Safe Base64 Payload Encoding
     json_str = json.dumps(active_table_data)
+    b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
     for b in active_table_data:
         z = b.get("assigned_zone")
@@ -295,7 +315,7 @@ else:
             </div>
             <script>
                 (function() {
-                    const blocks = __JSON_DATA__;
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
                     const canvas = document.getElementById("zone_canvas");
                     const ctx = canvas.getContext('2d');
                     const paintZone = "PAINT_ZONE_VAL";
@@ -401,7 +421,7 @@ else:
                 })();
             </script>
             """
-            html_zone_engine = html_zone_engine.replace("__JSON_DATA__", json_str)\
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
                                                  .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
                                                  .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
                                                  .replace("MIN_C_VAL", str(min_c))\
@@ -423,7 +443,7 @@ else:
             </div>
             <script>
                 (function() { 
-                    const blocks = __JSON_DATA__; const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
 
@@ -461,7 +481,7 @@ else:
                 })();
             </script>
             """
-            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA__", json_str)\
+            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA_B64__", b64_json_data)\
                                                        .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
                                                        .replace("MIN_C_VAL", str(min_c))\
                                                        .replace("MAX_C_VAL", str(max_c))\
@@ -491,7 +511,7 @@ else:
             </div>
             <script>
                 (function() { 
-                    const blocks = __JSON_DATA__; const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
 
@@ -523,12 +543,12 @@ else:
                 })();
             </script>
             """
-            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA__", json_str)\
-                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
-                                                       .replace("MIN_C_VAL", str(min_c))\
-                                                       .replace("MAX_C_VAL", str(max_c))\
-                                                       .replace("MIN_R_VAL", str(min_r))\
-                                                       .replace("MAX_R_VAL", str(max_r))
+            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                             .replace("MIN_C_VAL", str(min_c))\
+                                                             .replace("MAX_C_VAL", str(max_c))\
+                                                             .replace("MIN_R_VAL", str(min_r))\
+                                                             .replace("MAX_R_VAL", str(max_r))
             components.html(html_transformer_engine, height=640)
 
     else:
@@ -539,8 +559,7 @@ else:
             "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
         ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
 
-        def inject_crew_tracking_map(layer_key, data_array, min_c, max_c, min_r, max_r):
-            json_points = json.dumps(data_array)
+        def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
             today_str = str(date.today())
 
             html_crew_map = """
@@ -551,7 +570,7 @@ else:
             </div>
             <script>
                 (function() {
-                    const blocks = __JSON_DATA__; const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
                     const CELL = 14; let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
 
@@ -601,7 +620,7 @@ else:
                 })();
             </script>
             """
-            html_crew_map = html_crew_map.replace("__JSON_DATA__", json_points)\
+            html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
                                          .replace("LAYER_KEY", str(layer_key))\
                                          .replace("MIN_C_VAL", str(min_c))\
                                          .replace("MAX_C_VAL", str(max_c))\
@@ -614,7 +633,7 @@ else:
 
         def process_crew_tab(tab_obj, key_val):
             with tab_obj:
-                components.html(inject_crew_tracking_map(key_val, active_table_data, min_c, max_c, min_r, max_r), height=640)
+                components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
 
         process_crew_tab(crew_tabs[0], "pegging")
         process_crew_tab(crew_tabs[1], "piling")

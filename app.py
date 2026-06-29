@@ -629,9 +629,9 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#38bdf8; font-weight:bold;">Left-Click + Drag</span> to pull a green box over multiple rows | 
-                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan layout | 
-                    <span style="color:#22c55e; font-weight:bold;">Single-Click</span> to complete an entire section.
+                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers | 
+                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to Pan layout map | 
+                    <span style="color:#eab308; font-weight:bold;">Single-Click</span> to select/complete whole section.
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
@@ -654,46 +654,43 @@ else:
                     
                     let isPanning = false;
                     let isSelecting = false;
-                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
+                    let dragStartRawX = 0, dragStartRawY = 0;
+                    let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    // ⚡ DYNAMIC SECTION GROUPING LOGIC (5 Row/Col Empty Cell Isolation Rule)
+                    // ⚡ DYNAMIC GRID SECTION ISOLATION LAYER (Group tracker segments by close rows/cols proximity)
                     let groupIdCounter = 1;
                     blocks.forEach(b => { if(!b.computed_group) b.computed_group = 0; });
                     
-                    function calculateDynamicSections() {
-                        for (let i = 0; i < blocks.length; i++) {
-                            if (blocks[i].computed_group !== 0) continue;
-                            
-                            let currentGroup = groupIdCounter++;
-                            let queue = [blocks[i]];
-                            blocks[i].computed_group = currentGroup;
-                            
-                            while (queue.length > 0) {
-                                let curr = queue.shift();
-                                for (let j = 0; j < blocks.length; j++) {
-                                    if (blocks[j].computed_group !== 0) continue;
-                                    
-                                    // Check if blocks share alignment and are closer than 5 cells apart
-                                    let verticalMatch = (blocks[j].min_c <= curr.max_c && blocks[j].max_c >= curr.min_c) &&
-                                                        (Math.min(Math.abs(blocks[j].min_r - curr.max_r), Math.abs(curr.min_r - blocks[j].max_r)) <= 5);
-                                                        
-                                    let horizontalMatch = (blocks[j].min_r <= curr.max_r && blocks[j].max_r >= curr.min_r) &&
-                                                          (Math.min(Math.abs(blocks[j].min_c - curr.max_c), Math.abs(curr.min_c - blocks[j].max_c)) <= 5);
-                                    
-                                    if (verticalMatch || horizontalMatch) {
-                                        blocks[j].computed_group = currentGroup;
-                                        queue.push(blocks[j]);
-                                    }
+                    for (let i = 0; i < blocks.length; i++) {
+                        if (blocks[i].computed_group !== 0) continue;
+                        let currentGroup = groupIdCounter++;
+                        let queue = [blocks[i]];
+                        blocks[i].computed_group = currentGroup;
+                        
+                        while (queue.length > 0) {
+                            let curr = queue.shift();
+                            for (let j = 0; j < blocks.length; j++) {
+                                if (blocks[j].computed_group !== 0) continue;
+                                let verticalMatch = (blocks[j].min_c <= curr.max_c && blocks[j].max_c >= curr.min_c) &&
+                                                    (Math.min(Math.abs(blocks[j].min_r - curr.max_r), Math.abs(curr.min_r - blocks[j].max_r)) <= 6);
+                                                    
+                                let horizontalMatch = (blocks[j].min_r <= curr.max_r && blocks[j].max_r >= curr.min_r) &&
+                                                      (Math.min(Math.abs(blocks[j].min_c - curr.max_c), Math.abs(curr.min_c - blocks[j].max_c)) <= 6);
+                                
+                                if (verticalMatch || horizontalMatch) {
+                                    blocks[j].computed_group = currentGroup;
+                                    queue.push(blocks[j]);
                                 }
                             }
                         }
                     }
-                    calculateDynamicSections();
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                        
+                        // 1. Draw World Matrix Elements (Trackers)
                         ctx.save(); 
                         ctx.translate(offsetX, offsetY); 
                         ctx.scale(scale, scale);
@@ -709,32 +706,38 @@ else:
                         });
                         ctx.restore();
 
-                        // Force draw screen-space box outline on top of viewport transform
+                        // 2. Draw Screen-Space Box Elements (Drag Marquee Selection Box)
                         if (isSelecting) {
+                            ctx.save();
                             ctx.strokeStyle = '#22c55e'; 
                             ctx.lineWidth = 2;
                             ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
-                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
-                            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+                            ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                            ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                            ctx.restore();
                         }
                     }
 
                     canvas.addEventListener('mousedown', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        startX = e.clientX - rect.left;
-                        startY = e.clientY - rect.top;
-                        currentX = startX;
-                        currentY = startY;
+                        const clickX = e.clientX - rect.left;
+                        const clickY = e.clientY - rect.top;
 
                         if (e.button === 2) { 
+                            // Right Click Context: Setup pan
                             isPanning = true;
                             isSelecting = false;
-                            startX = e.clientX - offsetX;
-                            startY = e.clientY - offsetY;
+                            dragStartRawX = e.clientX - offsetX;
+                            dragStartRawY = e.clientY - offsetY;
                             canvas.style.cursor = 'move';
                         } else if (e.button === 0) { 
+                            // Left Click Context: Setup selection box tracking
                             isSelecting = true;
                             isPanning = false;
+                            dragStartRawX = clickX;
+                            dragStartRawY = clickY;
+                            dragCurrentRawX = clickX;
+                            dragCurrentRawY = clickY;
                             canvas.style.cursor = 'crosshair';
                         }
                     });
@@ -742,20 +745,20 @@ else:
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
                         if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
+                            offsetX = e.clientX - dragStartRawX;
+                            offsetY = e.clientY - dragStartRawY;
                             draw();
                         } else if (isSelecting) {
-                            currentX = e.clientX - rect.left;
-                            currentY = e.clientY - rect.top;
-                            draw(); // Triggers high-frequency canvas rewrites to reveal drag bounding frame box
+                            dragCurrentRawX = e.clientX - rect.left;
+                            dragCurrentRawY = e.clientY - rect.top;
+                            draw(); // Force render updates to show selection rectangle frame
                         }
                     });
 
                     canvas.addEventListener('mouseup', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        const endX = e.clientX - rect.left;
-                        const endY = e.clientY - rect.top;
+                        const mouseUpX = e.clientX - rect.left;
+                        const mouseUpY = e.clientY - rect.top;
 
                         if (isPanning) {
                             isPanning = false;
@@ -764,65 +767,81 @@ else:
                             isSelecting = false;
                             canvas.style.cursor = 'default';
 
-                            // FEATURE 2: Drag/Marquee Area Selection Complete Engine
-                            if (Math.abs(endX - startX) > 8 || Math.abs(endY - startY) > 8) {
-                                let x1 = (Math.min(startX, endX) - offsetX) / scale;
-                                let x2 = (Math.max(startX, endX) - offsetX) / scale;
-                                let y1 = (Math.min(startY, endY) - offsetY) / scale;
-                                let y2 = (Math.max(startY, endY) - offsetY) / scale;
+                            const totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
 
-                                let targetGroups = new Set();
+                            // ACTION A: Drag Box To Multi-Select
+                            if (totalDragDistance > 10) {
+                                let worldX1 = (Math.min(dragStartRawX, mouseUpX) - offsetX) / scale;
+                                let worldX2 = (Math.max(dragStartRawX, mouseUpX) - offsetX) / scale;
+                                let worldY1 = (Math.min(dragStartRawY, mouseUpY) - offsetY) / scale;
+                                let worldY2 = (Math.max(dragStartRawY, mouseUpY) - offsetY) / scale;
+
+                                let targetedGroups = new Set();
                                 blocks.forEach(b => {
                                     let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
                                     let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
-                                    if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
-                                        if (b.computed_group) targetGroups.add(b.computed_group);
+                                    if (bx >= worldX1 && bx <= worldX2 && by >= worldY1 && by <= worldY2) {
+                                        if (b.computed_group) targetedGroups.add(b.computed_group);
                                     }
                                 });
 
-                                if (targetGroups.size > 0) {
+                                if (targetedGroups.size > 0) {
                                     blocks.forEach(b => {
-                                        if (targetGroups.has(b.computed_group) && b['LAYER_KEY_status'] !== 'completed') {
+                                        if (targetedGroups.has(b.computed_group) && b['LAYER_KEY_status'] !== 'completed') {
                                             b['LAYER_KEY_status'] = 'completed';
-                                            const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                            const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
                                             fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
                                                 method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                                body: JSON.stringify(p)
+                                                body: JSON.stringify(payload)
                                             });
                                         }
                                     });
-                                    setTimeout(draw, 50);
                                 }
+                                setTimeout(draw, 50);
                             } else {
-                                // FEATURE 1: Single Click to select/complete whole section group
-                                const cx = (startX - offsetX) / scale; 
-                                const cy = (startY - offsetY) / scale;
+                                // ACTION B: Single Click to select/complete whole section group
+                                const worldClickX = (dragStartRawX - offsetX) / scale; 
+                                const worldClickY = (dragStartRawY - offsetY) / scale;
                                 
-                                let clickedGroup = null;
+                                let matchedGroup = null;
                                 blocks.forEach(b => {
                                     let x = b.min_c * CELL; let y = b.min_r * CELL;
                                     let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                    if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) {
-                                        clickedGroup = b.computed_group;
+                                    if (worldClickX >= x && worldClickX <= x + w && worldClickY >= y && worldClickY <= y + h) {
+                                        matchedGroup = b.computed_group;
                                     }
                                 });
 
-                                if (clickedGroup !== null) {
+                                if (matchedGroup !== null) {
                                     blocks.forEach(b => {
-                                        if (b.computed_group === clickedGroup && b['LAYER_KEY_status'] !== 'completed') {
+                                        if (b.computed_group === matchedGroup && b['LAYER_KEY_status'] !== 'completed') {
                                             b['LAYER_KEY_status'] = 'completed';
-                                            const p = {}; p['LAYER_KEY_status'] = 'completed'; p['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                            const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
                                             fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
                                                 method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                                body: JSON.stringify(p)
+                                                body: JSON.stringify(payload)
                                             });
                                         }
                                     });
-                                    setTimeout(draw, 50);
                                 }
+                                setTimeout(draw, 50);
                             }
                         }
                     });
+
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); 
+                        const rect = canvas.getBoundingClientRect(); 
+                        const mouseX = e.clientX - rect.left; 
+                        const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; 
+                        const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
+                        scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; 
+                        offsetY = mouseY - gridY * scale; 
+                        draw();
+                    }, { passive: false });
 
                     draw();
                 })();
@@ -838,6 +857,7 @@ else:
                                          .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
                                          .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             return html_crew_map
+            
         def process_crew_tab(tab_obj, key_val):
             with tab_obj:
                 components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)

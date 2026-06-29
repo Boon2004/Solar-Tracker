@@ -747,12 +747,15 @@ else:
                         return document.querySelector('input[name="topo_tool"]:checked').value;
                     }
 
-                    function groupFillColor(invId) {
+                    function groupColor(invId) {
                         if (!invId) return "#1e293b";
                         let num = parseInt(invId) || 0;
-                        // Yield bold, explicit blueprint colors matching requested theme loops
                         let colors = ["#00e5ff", "#d500f9", "#ffea00", "#00e676", "#ff3d00", "#ff80ab"];
                         return colors[num % colors.length];
+                    }
+
+                    function isInverterPlaced(invId) {
+                        return gridTopo.inverters.some(i => i.id === parseInt(invId));
                     }
 
                     function draw() {
@@ -774,21 +777,28 @@ else:
                             }
                         });
 
-                        // Calculate totals dynamically per loop asset reference
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 2. Draw Strings with obvious explicit coloring fills
+                        // 2. Draw Strings with Dynamic Intelligent Border Logic
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
 
                             let linkedInv = gridTopo.stringGroups[s.id];
-                            ctx.fillStyle = linkedInv ? groupFillColor(linkedInv) : "#1e293b";
+                            
+                            // Table fill color stays neutral blueprint slate grey
+                            ctx.fillStyle = "#1e293b"; 
                             ctx.fillRect(x, y, w, h);
 
-                            ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-                            ctx.lineWidth = 0.5;
+                            // BORDER COLOR RULE: Only apply color if grouped AND target inverter has been placed on the grid map
+                            if (linkedInv && isInverterPlaced(linkedInv)) {
+                                ctx.strokeStyle = groupColor(linkedInv);
+                                ctx.lineWidth = 2;
+                            } else {
+                                ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+                                ctx.lineWidth = 0.5;
+                            }
                             ctx.strokeRect(x, y, w, h);
 
                             if (linkedInv) {
@@ -819,23 +829,19 @@ else:
                             let bx = inv.x - (badgeW / 2);
                             let by = inv.y - (badgeH / 2);
 
-                            // Draw Top Half Red Header background block
                             ctx.fillStyle = "#ff0000";
                             ctx.fillRect(bx, by, badgeW, badgeH / 2);
                             
-                            // Draw Bottom Half background sub-badge block
-                            ctx.fillStyle = groupFillColor(inv.id);
+                            ctx.fillStyle = groupColor(inv.id);
                             ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
 
-                            // Text elements overlay rendering pass
                             ctx.fillStyle = "#ffffff";
                             ctx.textAlign = "center";
                             ctx.fillText(titleText, inv.x, by + 9);
                             
-                            ctx.fillStyle = (groupFillColor(inv.id) === "#ffea00" || groupFillColor(inv.id) === "#00e5ff") ? "#000000" : "#ffffff";
+                            ctx.fillStyle = (groupColor(inv.id) === "#ffea00" || groupColor(inv.id) === "#00e5ff") ? "#000000" : "#ffffff";
                             ctx.fillText(countText, inv.x, by + 21);
 
-                            // Clean outer framing outline path border loop boundary
                             ctx.strokeStyle = "#ffffff";
                             ctx.lineWidth = 1;
                             ctx.strokeRect(bx, by, badgeW, badgeH);
@@ -952,7 +958,6 @@ else:
 
                         let matchFound = false;
 
-                        // 1. Hover Diagnostics: Transformers Boxes
                         gridTopo.transformers.forEach((t, index) => {
                             if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
                                 let connectedInvs = gridTopo.inverters.filter(i => i.transformerId === index).map(i => "INV " + i.id).join(", ");
@@ -964,7 +969,6 @@ else:
                             }
                         });
 
-                        // 2. Hover Diagnostics: Inverters Badges
                         if (!matchFound) {
                             gridTopo.inverters.forEach(inv => {
                                 if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25) {
@@ -977,7 +981,6 @@ else:
                             });
                         }
 
-                        // 3. Hover Diagnostics: Independent Solar Strings Fills
                         if (!matchFound) {
                             let s = independentStrings.find(s => {
                                 let sx = s.min_c * CELL, sy = s.min_r * CELL;
@@ -997,7 +1000,7 @@ else:
                                     if (invObj && invObj.transformerId !== null) xfmrRef = "TS " + (invObj.transformerId + 1);
                                 }
 
-                                tooltip.innerHTML = `<b>☀️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
+                                tooltip.innerHTML = `<b>🛠️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
                                 matchFound = true;
                             }
                         }
@@ -1017,7 +1020,7 @@ else:
                             let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
                             
                             let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
-                            let targetInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
+                            let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
                             
                             let boxSelected = independentStrings.filter(s => {
                                 let cx = s.min_c * CELL; let cy = s.min_r * CELL;
@@ -1031,7 +1034,21 @@ else:
                             });
 
                             if (boxSelected.length > 0) {
-                                boxSelected.forEach(el => { gridTopo.stringGroups[el.id] = targetInv; });
+                                boxSelected.forEach(el => {
+                                    let currentAssign = gridTopo.stringGroups[el.id];
+                                    
+                                    // BORDER LOGIC LOCK: Lock selection out if already linked to a different inverter node setup
+                                    if (currentAssign && currentAssign !== activeInv) {
+                                        return; 
+                                    }
+
+                                    // SELECT TOGGLE LOGIC: Remove string from inverter set if clicked/dragged over a second time
+                                    if (currentAssign === activeInv) {
+                                        delete gridTopo.stringGroups[el.id]; 
+                                    } else {
+                                        gridTopo.stringGroups[el.id] = activeInv;
+                                    }
+                                });
                                 draw();
                             }
                         }
@@ -1044,7 +1061,6 @@ else:
                         offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
 
-                    // GRANULAR FLUSH SEGMENTATION CONTROL DECK
                     document.getElementById("btn_flush_routes").addEventListener("click", () => {
                         if (confirm("Disconnect layout line strings routes safely?")) {
                             gridTopo.inverters.forEach(i => i.transformerId = null); draw();
@@ -1312,13 +1328,13 @@ else:
             </script>
             """
             html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
-                                         .replace("LAYER_KEY", str(layer_key))\
-                                         .replace("MIN_C_VAL", str(min_c))\
-                                         .replace("MAX_C_VAL", str(max_c))\
-                                         .replace("MIN_R_VAL", str(min_r))\
-                                         .replace("MAX_R_VAL", str(max_r))\
-                                         .replace("TODAY_STR_VAL", today_str)\
-                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                         .replace("LAYER_KEY", str(layer_key)) \
+                                         .replace("MIN_C_VAL", str(min_c)) \
+                                         .replace("MAX_C_VAL", str(max_c)) \
+                                         .replace("MIN_R_VAL", str(min_r)) \
+                                         .replace("MAX_R_VAL", str(max_r)) \
+                                         .replace("TODAY_STR_VAL", today_str) \
+                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL) \
                                          .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             return html_crew_map
 

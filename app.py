@@ -331,10 +331,10 @@ else:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
             "📌 Pegging & Piling Customizer",
-            "⚡ Unified Layout Planner & Topology Stringing Node"  # Combined electrical mapping architecture view
+            "🛰️ Unified Layout Planner & Topology Stringing Node"
         ])
         
-        # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION (UNTOUCHED) ---
+        # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             
@@ -640,7 +640,7 @@ else:
                                              .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
-        # --- STAGE 2: PEGGIN PHASE MICROSCALE BUILDER (UNTOUCHED) ---
+        # --- STAGE 2: PEGGIN PHASE MICROSCALE BUILDER ---
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             col_t1, col_t2 = st.columns([4, 6])
@@ -651,7 +651,7 @@ else:
                 """
                 components.html(html_micro_template, height=280)
 
-        # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE (NEW FIXED VERSION) ---
+        # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
             st.markdown("### 🔌 Microscale Grid Infrastructure Topologies, Stringing & Drop Station Routing")
             
@@ -663,7 +663,7 @@ else:
                     <div style="background:#0f172a; padding:14px; border-radius:8px; border:1px solid #1e293b; font-size:13px;">
                         <h4 style="margin-top:0; margin-bottom:12px; color:#38bdf8; font-size:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;">🛠️ DESIGN DECK</h4>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="pan" checked> ✋ Pan / Navigate Map</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Lasso Group Strings</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Click / Lasso Strings</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverter ➔ Xfrmr</label>
@@ -671,7 +671,7 @@ else:
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
                         <label style="font-size:11px; color:#94a3b8;">Target Inverter ID #:</label>
-                        <input type="number" id="topo_inv_token" value="1" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
+                        <input type="number" id="topo_inv_token" value="20" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#f43f5e; font-size:11px;">⚠️ GRANULAR FAULT FLUSH</h5>
@@ -703,7 +703,7 @@ else:
                     const tooltip = document.getElementById("topo_tooltip");
                     const CELL = 14;
 
-                    // Decouple trackers into completely separate strings rows internally 
+                    // Split trackers into independent strings rows
                     let independentStrings = [];
                     databaseStructures.forEach(b => {
                         if (b.structure_type === "double_6x9") {
@@ -747,12 +747,12 @@ else:
                         return document.querySelector('input[name="topo_tool"]:checked').value;
                     }
 
-                    function groupBorderColor(count) {
-                        if (!count) return "transparent";
-                        if (count <= 4) return "#38bdf8";  
-                        if (count <= 8) return "#eab308";  
-                        if (count <= 16) return "#a78bfa"; 
-                        return "#f43f5e";                  
+                    function groupFillColor(invId) {
+                        if (!invId) return "#1e293b";
+                        let num = parseInt(invId) || 0;
+                        // Yield bold, explicit blueprint colors matching requested theme loops
+                        let colors = ["#00e5ff", "#d500f9", "#ffea00", "#00e676", "#ff3d00", "#ff80ab"];
+                        return colors[num % colors.length];
                     }
 
                     function draw() {
@@ -761,73 +761,98 @@ else:
                         ctx.translate(offsetX, offsetY);
                         ctx.scale(scale, scale);
 
-                        // 1. Draw Flight Vector Line Connectors (Inverter to Transformers)
+                        // 1. Draw Flight Line Routing Connectors
                         gridTopo.inverters.forEach(inv => {
                             if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 let xf = gridTopo.transformers[inv.transformerId];
-                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
-                                ctx.lineWidth = 2.5;
-                                ctx.setLineDash([6, 4]);
+                                ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                                ctx.lineWidth = 1.5;
                                 ctx.beginPath();
                                 ctx.moveTo(inv.x, inv.y);
                                 ctx.lineTo(xf.x, xf.y);
                                 ctx.stroke();
-                                ctx.setLineDash([]);
                             }
                         });
 
-                        // 2. Draw Uniform Dark Grid Strings Layout (Single color tracking visualization)
+                        // Calculate totals dynamically per loop asset reference
+                        let counts = {};
+                        Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
+
+                        // 2. Draw Strings with obvious explicit coloring fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
 
-                            ctx.fillStyle = "#1e293b"; // Standard easy visualization uniform slate gray color
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            ctx.fillStyle = linkedInv ? groupFillColor(linkedInv) : "#1e293b";
                             ctx.fillRect(x, y, w, h);
 
-                            ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+                            ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
                             ctx.lineWidth = 0.5;
                             ctx.strokeRect(x, y, w, h);
 
-                            let linkedInv = gridTopo.stringGroups[s.id];
                             if (linkedInv) {
-                                let counts = {};
-                                Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
-                                ctx.strokeStyle = groupBorderColor(counts[linkedInv]);
-                                ctx.lineWidth = 2.2;
-                                ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-
+                                ctx.fillStyle = "rgba(0,0,0,0.85)";
+                                ctx.fillRect(x + 2, y + 2, 35, 11);
                                 ctx.fillStyle = "#ffffff";
                                 ctx.font = "bold 7px sans-serif";
-                                ctx.fillText("INV " + linkedInv, x + 4, y + 10);
+                                ctx.fillText("I-" + linkedInv, x + 4, y + 10);
                             }
                         });
 
-                        // 3. Draw Snapped Inverter Nodes Box Markers
+                        // 3. Draw Red Header / Bright Sub-badge Blueprint Inverters
                         gridTopo.inverters.forEach(inv => {
-                            ctx.fillStyle = "#22c55e";
-                            ctx.fillRect(inv.x - 10, inv.y - 10, 20, 20);
-                            ctx.strokeStyle = "#ffffff";
-                            ctx.lineWidth = 1.2;
-                            ctx.strokeRect(inv.x - 10, inv.y - 10, 20, 20);
+                            let strCount = counts[inv.id] || 0;
+                            let tsPrefix = "";
+                            if (inv.transformerId !== null) {
+                                tsPrefix = "TS" + (inv.transformerId + 1) + "-";
+                            }
+                            let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
+                            let countText = strCount + " STRINGS";
+
+                            ctx.font = "bold 9px sans-serif";
+                            let titleW = ctx.measureText(titleText).width + 12;
+                            let countW = ctx.measureText(countText).width + 12;
+                            let badgeW = Math.max(titleW, countW, 65);
+                            let badgeH = 26;
+
+                            let bx = inv.x - (badgeW / 2);
+                            let by = inv.y - (badgeH / 2);
+
+                            // Draw Top Half Red Header background block
+                            ctx.fillStyle = "#ff0000";
+                            ctx.fillRect(bx, by, badgeW, badgeH / 2);
                             
+                            // Draw Bottom Half background sub-badge block
+                            ctx.fillStyle = groupFillColor(inv.id);
+                            ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
+
+                            // Text elements overlay rendering pass
                             ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 8px sans-serif";
                             ctx.textAlign = "center";
-                            ctx.fillText("INV " + inv.id, inv.x, inv.y + 3);
+                            ctx.fillText(titleText, inv.x, by + 9);
+                            
+                            ctx.fillStyle = (groupFillColor(inv.id) === "#ffea00" || groupFillColor(inv.id) === "#00e5ff") ? "#000000" : "#ffffff";
+                            ctx.fillText(countText, inv.x, by + 21);
+
+                            // Clean outer framing outline path border loop boundary
+                            ctx.strokeStyle = "#ffffff";
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(bx, by, badgeW, badgeH);
                         });
 
-                        // 4. Draw Freeform Transformer Station Loop Boxes
+                        // 4. Draw Freeform Transformer Hub Boxes
                         gridTopo.transformers.forEach((t, i) => {
-                            ctx.fillStyle = "#ef4444";
-                            ctx.fillRect(t.x - 15, t.y - 15, 30, 30);
+                            ctx.fillStyle = "#ff1744";
+                            ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
                             ctx.strokeStyle = "#ffffff";
-                            ctx.lineWidth = 1.5;
-                            ctx.strokeRect(t.x - 15, t.y - 15, 30, 30);
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
                             
                             ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 9px sans-serif";
+                            ctx.font = "bold 10px sans-serif";
                             ctx.textAlign = "center";
-                            ctx.fillText("XFMR " + (i + 1), t.x, t.y + 4);
+                            ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
                         });
 
                         ctx.restore();
@@ -864,7 +889,6 @@ else:
                             startX = m.x; startY = m.y;
                             currX = m.x; currY = m.y;
                         } else if (tool === "inverter") {
-                            // Find matching parent table to calculate precise absolute coordinate dimensions center point
                             let hitStruct = databaseStructures.find(b => {
                                 let sx = b.min_c * CELL, sy = b.min_r * CELL;
                                 let sw = (b.max_c - b.min_c + 1) * CELL, sh = (b.max_r - b.min_r + 1) * CELL;
@@ -872,19 +896,16 @@ else:
                             });
 
                             if (hitStruct) {
-                                let invId = parseInt(document.getElementById("topo_inv_token").value) || 1;
+                                let invId = parseInt(document.getElementById("topo_inv_token").value) || 20;
                                 gridTopo.inverters = gridTopo.inverters.filter(i => i.id !== invId);
                                 
-                                // Calculate true geometric physical center coordinate regardless if structure is single or split double layout
                                 let structW = (hitStruct.max_c - hitStruct.min_c + 1) * CELL;
                                 let structH = (hitStruct.max_r - hitStruct.min_r + 1) * CELL;
-                                let centerX = (hitStruct.min_c * CELL) + (structW / 2);
-                                let centerY = (hitStruct.min_r * CELL) + (structH / 2);
-
+                                
                                 gridTopo.inverters.push({
                                     id: invId,
-                                    x: centerX,
-                                    y: centerY,
+                                    x: (hitStruct.min_c * CELL) + (structW / 2),
+                                    y: (hitStruct.min_r * CELL) + (structH / 2),
                                     transformerId: null
                                 });
                                 draw();
@@ -900,13 +921,13 @@ else:
                                 draw();
                             }
                         } else if (tool === "route") {
-                            let invIdx = gridTopo.inverters.findIndex(i => Math.sqrt(Math.pow(world.x - i.x, 2) + Math.pow(world.y - i.y, 2)) <= 15);
+                            let invIdx = gridTopo.inverters.findIndex(i => Math.sqrt(Math.pow(world.x - i.x, 2) + Math.pow(world.y - i.y, 2)) <= 25);
                             if (invIdx !== -1) {
                                 selectedInverterIndexForRouting = invIdx;
                                 tooltip.style.display = "block";
-                                tooltip.innerHTML = "🎯 <b>Inverter Selection Staged</b>: Now select the destination Transformer Hub Box.";
+                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer box station destination node.";
                             } else if (selectedInverterIndexForRouting !== null) {
-                                let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 20);
+                                let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
                                 if (xfmrIdx !== -1) {
                                     gridTopo.inverters[selectedInverterIndexForRouting].transformerId = xfmrIdx;
                                     selectedInverterIndexForRouting = null;
@@ -931,32 +952,32 @@ else:
 
                         let matchFound = false;
 
-                        // 1. Hover Diagnostics: Transformers station boxes
+                        // 1. Hover Diagnostics: Transformers Boxes
                         gridTopo.transformers.forEach((t, index) => {
-                            if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 20) {
-                                let elementsInverters = gridTopo.inverters.filter(i => i.transformerId === index).map(i => i.id).join(", ");
+                            if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
+                                let connectedInvs = gridTopo.inverters.filter(i => i.transformerId === index).map(i => "INV " + i.id).join(", ");
                                 tooltip.style.display = "block";
                                 tooltip.style.left = (m.x + 15) + "px";
                                 tooltip.style.top = (m.y + 15) + "px";
-                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station Identifier: XFMR #${index + 1}<br>Fed by Inverters: [ ${elementsInverters || 'None Linked'} ]`;
+                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${index + 1}<br>Fed by Inverters: [ ${connectedInvs || 'None'} ]`;
                                 matchFound = true;
                             }
                         });
 
-                        // 2. Hover Diagnostics: Inverter Box Entities
+                        // 2. Hover Diagnostics: Inverters Badges
                         if (!matchFound) {
                             gridTopo.inverters.forEach(inv => {
-                                if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 15) {
+                                if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25) {
                                     tooltip.style.display = "block";
                                     tooltip.style.left = (m.x + 15) + "px";
                                     tooltip.style.top = (m.y + 15) + "px";
-                                    tooltip.innerHTML = `<b>⚡ Inverter Box Node</b><br>Inverter ID: INV #${inv.id}<br>Routed Station: ${inv.transformerId !== null ? 'XFMR ' + (inv.transformerId + 1) : 'Unassigned Route'}`;
+                                    tooltip.innerHTML = `<b>⚡ Inverter Badge</b><br>Inverter ID: INV #${inv.id}<br>Routed Station: ${inv.transformerId !== null ? 'TS ' + (inv.transformerId + 1) : 'Unassigned Route'}`;
                                     matchFound = true;
                                 }
                             });
                         }
 
-                        // 3. Hover Diagnostics: Independent Solar Strings
+                        // 3. Hover Diagnostics: Independent Solar Strings Fills
                         if (!matchFound) {
                             let s = independentStrings.find(s => {
                                 let sx = s.min_c * CELL, sy = s.min_r * CELL;
@@ -973,7 +994,7 @@ else:
                                 let xfmrRef = "None Assigned";
                                 if (invRef !== "None Assigned") {
                                     let invObj = gridTopo.inverters.find(i => i.id === parseInt(invRef));
-                                    if (invObj && invObj.transformerId !== null) xfmrRef = "XFMR " + (invObj.transformerId + 1);
+                                    if (invObj && invObj.transformerId !== null) xfmrRef = "TS " + (invObj.transformerId + 1);
                                 }
 
                                 tooltip.innerHTML = `<b>☀️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
@@ -988,19 +1009,28 @@ else:
                         if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isSelecting) {
                             isSelecting = false;
+                            const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
-                            const p2 = transformToWorldSpace(getMouseLocation(e));
+                            const p2 = transformToWorldSpace(mUp);
 
-                            let bx1 = Math.min(p1.x, p2.x), bx2 = Math.max(p1.x, p2.x);
-                            let by1 = Math.min(p1.y, p2.y), by2 = Math.max(p1.y, p2.y);
-
+                            let boxX1 = Math.min(p1.x, p2.x), boxX2 = Math.max(p1.x, p2.x);
+                            let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
+                            
+                            let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
+                            let targetInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
+                            
                             let boxSelected = independentStrings.filter(s => {
-                                let cx = s.min_c * CELL, cy = s.min_r * CELL;
-                                return cx >= bx1 && cx <= bx2 && cy >= by1 && cy <= by2;
+                                let cx = s.min_c * CELL; let cy = s.min_r * CELL;
+                                let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
+                                
+                                if (totalDragDistance <= 4) {
+                                    return (boxX1 >= cx && boxX1 <= cx + cw && boxY1 >= cy && boxY1 <= cy + ch);
+                                } else {
+                                    return (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2);
+                                }
                             });
 
                             if (boxSelected.length > 0) {
-                                let targetInv = parseInt(document.getElementById("topo_inv_token").value) || 1;
                                 boxSelected.forEach(el => { gridTopo.stringGroups[el.id] = targetInv; });
                                 draw();
                             }
@@ -1014,19 +1044,19 @@ else:
                         offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
 
-                    // GRANULAR FLUSH BUTTON LISTENERS PREVENTING COMPLETE WIPES ACCIDENTALLY
+                    // GRANULAR FLUSH SEGMENTATION CONTROL DECK
                     document.getElementById("btn_flush_routes").addEventListener("click", () => {
-                        if (confirm("Disconnect all vector routing lines? Inverters and drop hubs will remain intact.")) {
+                        if (confirm("Disconnect layout line strings routes safely?")) {
                             gridTopo.inverters.forEach(i => i.transformerId = null); draw();
                         }
                     });
                     document.getElementById("btn_flush_inverters").addEventListener("click", () => {
-                        if (confirm("Erase all custom inverter box nodes and string loop groups?")) {
+                        if (confirm("Flush custom configured inverter nodes?")) {
                             gridTopo.inverters = []; gridTopo.stringGroups = {}; draw();
                         }
                     });
                     document.getElementById("btn_flush_transformers").addEventListener("click", () => {
-                        if (confirm("Remove all transformer drop hubs from empty grid locations?")) {
+                        if (confirm("Flush transformer stations?")) {
                             gridTopo.transformers = []; gridTopo.inverters.forEach(i => i.transformerId = null); draw();
                         }
                     });

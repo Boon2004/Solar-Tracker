@@ -27,10 +27,10 @@ if "managed_zones" not in st.session_state:
     st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
 if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
 
-@st.cache_data(ttl=1)
+@st.cache_data(ttl=2)
 def fetch_farms_directory():
     try:
-        res = supabase.table("farms").select("*").order("name").execute()
+        res = supabase.table("farms").select("id, name, admin_password, installer_password, is_published").order("name").execute()
         return res.data if res.data else []
     except Exception: return []
 
@@ -107,7 +107,6 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            # 1. Linear Grid Extraction Map
                             grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
@@ -122,11 +121,10 @@ if st.session_state.active_site_id is None:
                                                          (cell.border.right and cell.border.right.style)):
                                         grid_matrix[r][c] = True
 
-                            # 2. Optimized O(N) Matrix Proximity BFS Execution Loop
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
                             table_counter = 1
-                            ROAD_GAP = 4 # Search range distance constraints matching your road gaps cleanly
+                            ROAD_GAP = 4 
 
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
@@ -144,7 +142,6 @@ if st.session_state.active_site_id is None:
                                             if v_cell and not discovered_label:
                                                 discovered_label = str(v_cell).strip()
 
-                                            # Fast localized block scanner bounds
                                             for dr in range(-ROAD_GAP, ROAD_GAP + 1):
                                                 for dc in range(-ROAD_GAP, ROAD_GAP + 1):
                                                     nr, nc = curr_r + dr, curr_c + dc
@@ -181,14 +178,15 @@ if st.session_state.active_site_id is None:
                                 st.error("❌ Matrix parser rejected configuration: 0 tracker units extracted.")
                             else:
                                 success_count = 0
-                                for idx in range(0, len(structures_queue), 50):
-                                    batch = structures_queue[idx:idx+50]
+                                # High-throughput chunk streaming (200 rows per batch)
+                                for idx in range(0, len(structures_queue), 200):
+                                    batch = structures_queue[idx:idx+200]
                                     try: 
                                         supabase.table("structures").insert(batch).execute()
                                         success_count += len(batch)
                                     except Exception: pass
                                 
-                                st.success(f"🎉 Core segments aligned perfectly! Saved {success_count} structured blocks.")
+                                st.success(f"🎉 Saved {success_count} structured blocks.")
                                 st.cache_data.clear()
                                 time.sleep(1)
                                 st.rerun()
@@ -255,10 +253,24 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
+    # Paginated loader to break network payload blocks safely
     @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
-        try: return supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").execute().data or []
-        except Exception: return []
+        all_data = []
+        limit = 1000
+        offset = 0
+        while True:
+            try:
+                res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").range(offset, offset + limit - 1).execute().data
+                if not res:
+                    break
+                all_data.extend(res)
+                if len(res) < limit:
+                    break
+                offset += limit
+            except Exception:
+                break
+        return all_data
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 

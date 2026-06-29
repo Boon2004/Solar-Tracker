@@ -208,29 +208,35 @@ else:
     site_is_published = current_farm_record.get("is_published", False)
     site_bg_img = current_farm_record.get("background_image_url", "")
 
-    with st.sidebar:
-        st.write("---")
-        with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
-            st.markdown("#### Create an Isolated Testing Sandbox")
-            st.caption("This clones your active configuration matrix completely so you can run structural calculations safely.")
-            
-            col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
+    # Clean header with exit button on the right
+    col_h1, col_h2 = st.columns([8, 2])
+    with col_h1: 
+        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
     with col_h2:
-        if st.button("🚪 Exit Site"): st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
+        if st.button("🚪 Exit Site", use_container_width=True): 
+            st.session_state.active_site_id = None
+            st.session_state.is_admin_mode = False
+            st.rerun()
             
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
+        
+        # 1. If not admin, show the password lock form
         if not st.session_state.is_admin_mode:
             with st.form("admin_upgrade_form", clear_on_submit=True):
                 adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
-                if st.form_submit_button("Verify Clearance"):
+                if st.form_submit_button("Verify Clearance", use_container_width=True):
                     if str(adm_pass) == str(st.session_state.admin_key_match):
-                        st.session_state.is_admin_mode = True; st.rerun()
-                    else: st.error("Incorrect Password.")
+                        st.session_state.is_admin_mode = True
+                        st.rerun()
+                    else: 
+                        st.error("Incorrect Password.")
+        
+        # 2. If unlocked admin, show the admin tools AND the Duplicator expansion panel
         else:
-            st.info("⚡ Admin Permissions Active")
+            st.success("⚡ Admin Permissions Active")
             
+            # --- 🧪 THE WORKSPACE DUPLICATOR PANEL (SAFE INSIDE ADMIN NEST) ---
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
                 st.markdown("#### Create an Isolated Testing Sandbox")
@@ -281,21 +287,22 @@ else:
                                         batch = sandbox_structures[idx:idx+200]
                                         supabase.table("structures").insert(batch).execute()
                                         
-                                    st.success("🎉 Sandbox successfully forged! You can access this isolated map from the main menu portal directory link.")
+                                    st.success("🎉 Sandbox successfully forged! Access it from the main menu portal.")
                                     time.sleep(2)
                                     st.rerun()
                         except Exception as err:
                             st.error(f"Sandbox synthesis rejected: {str(err)}")
             
+            # --- STANDARD ADMIN RELEASE ACTIONS ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
-                st.warning("⚠️ CRITICAL: Review zoning allocations, electrical maps, structural placement settings, and cabling routes carefully. Once published to the field crew, coordinates cannot be altered.")
+                st.warning("⚠️ CRITICAL: Review settings carefully. Once published to the field crew, coordinates cannot be altered.")
                 
                 if "confirm_publish_gate" not in st.session_state: st.session_state.confirm_publish_gate = False
                 
                 if not st.session_state.confirm_publish_gate:
-                    if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary"):
+                    if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary", use_container_width=True):
                         st.session_state.confirm_publish_gate = True
                         st.rerun()
                 else:
@@ -313,7 +320,7 @@ else:
                             st.rerun()
             else:
                 st.success("✅ Layout Workspace Status: Locked & Live to Crew")
-                if st.button("🔓 Emergency Revoke & Unfreeze Project (Admin Only)"):
+                if st.button("🔓 Emergency Revoke & Unfreeze Project (Admin Only)", use_container_width=True):
                     supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
                     st.rerun()
             
@@ -326,13 +333,13 @@ else:
                 
                 if site_is_published:
                     st.error("Cannot change image background assets on published, finalized frameworks.")
-                elif st.button("💾 Apply & Save Image Blueprint", type="primary"):
+                elif st.button("💾 Apply & Save Image Blueprint", type="primary", use_container_width=True):
                     supabase.table("farms").update({"background_image_url": b64_img_string}).eq("id", st.session_state.active_site_id).execute()
                     st.success("Image blueprints attached safely!")
                     time.sleep(0.5); st.rerun()
             
             if site_bg_img and not site_is_published:
-                if st.button("🗑️ Remove Current Background Image", type="secondary"):
+                if st.button("🗑️ Remove Current Background Image", type="secondary", use_container_width=True):
                     if not site_bg_img.startswith("{"):
                         supabase.table("farms").update({"background_image_url": ""}).eq("id", st.session_state.active_site_id).execute()
                         st.success("Background mapping reference flushed!")
@@ -341,13 +348,15 @@ else:
             st.write("---")
             st.subheader("🛠️ Custom Tracker Tab Builder")
             custom_tab_name = st.text_input("Assign New Tracker Tab Label:", placeholder="e.g. Floating Cell...")
-            if st.button("✨ Instantiate Phase Tab") and custom_tab_name:
+            if st.button("✨ Instantiate Phase Tab", use_container_width=True) and custom_tab_name:
                 if custom_tab_name not in st.session_state.custom_tabs:
                     st.session_state.custom_tabs.append(custom_tab_name)
                     st.success(f"Instantiated '{custom_tab_name}'!")
                     time.sleep(0.4); st.rerun()
                     
-            if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
+            if st.button("🔒 Revoke Admin Clearances", use_container_width=True): 
+                st.session_state.is_admin_mode = False
+                st.rerun()
 
     if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
         st.rerun()

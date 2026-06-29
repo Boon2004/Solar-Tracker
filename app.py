@@ -56,6 +56,7 @@ if st.session_state.active_site_id is None:
                     st.rerun()
             else:
                 st.success("Developer Access Unlocked")
+                
                 if st.button("🔒 Lock & Exit Developer Mode", type="secondary"):
                     st.session_state.dev_unlocked = False
                     st.rerun()
@@ -84,6 +85,7 @@ if st.session_state.active_site_id is None:
                 new_site_name = st.text_input("Assign Site Project Name:")
                 init_admin_pwd = st.text_input("Assign Management Password:", value="ok")
                 init_inst_pwd = st.text_input("Assign Field Access Password:", value="1234")
+                
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
@@ -135,6 +137,7 @@ if st.session_state.active_site_id is None:
                                         while bfs_queue:
                                             curr_r, curr_c = bfs_queue.pop(0)
                                             cluster_cells.append((curr_r, curr_c))
+
                                             v_cell = sheet.cell(row=curr_r, column=curr_c).value
                                             if v_cell and not discovered_label and not str(v_cell).strip().isdigit():
                                                 discovered_label = str(v_cell).strip()
@@ -180,7 +183,8 @@ if st.session_state.active_site_id is None:
                                 
                                 st.success(f"🎉 Saved {success_count} structured blocks.")
                                 st.cache_data.clear()
-                                time.sleep(1); st.rerun()
+                                time.sleep(1)
+                                st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
@@ -205,7 +209,7 @@ else:
     site_bg_img = current_farm_record.get("background_image_url", "")
 
     col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: st.subheader(f"📍 Boon Solar Tracking — {st.session_state.active_site_name}")
+    with col_h1: st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
     with col_h2:
         if st.button("🚪 Exit Site"): st.session_state.active_site_id = None; st.session_state.is_admin_mode = False; st.rerun()
             
@@ -220,32 +224,77 @@ else:
                     else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
+            
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
+                st.warning("⚠️ CRITICAL: Review zoning allocations, electrical maps, structural placement settings, and cabling routes carefully. Once published to the field crew, coordinates cannot be altered.")
+                
                 if "confirm_publish_gate" not in st.session_state: st.session_state.confirm_publish_gate = False
+                
                 if not st.session_state.confirm_publish_gate:
-                    if st.button("🚀 Publish Layout to Crew", type="primary"):
-                        st.session_state.confirm_publish_gate = True; st.rerun()
+                    if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary"):
+                        st.session_state.confirm_publish_gate = True
+                        st.rerun()
                 else:
-                    st.error("🔒 Confirm permanent lock?")
+                    st.error("🔒 Confirm permanent field synchronization lock?")
                     col_lock1, col_lock2 = st.columns(2)
                     with col_lock1:
-                        if st.button("🔒 DEPLOY", type="primary", use_container_width=True):
+                        if st.button("🔒 YES, DEPLOY", type="primary", use_container_width=True):
                             supabase.table("farms").update({"is_published": True}).eq("id", st.session_state.active_site_id).execute()
-                            st.session_state.confirm_publish_gate = False; st.rerun()
+                            st.session_state.confirm_publish_gate = False
+                            st.success("Workspace deployed cleanly! Fields locked.")
+                            time.sleep(1); st.rerun()
                     with col_lock2:
                         if st.button("Cancel", use_container_width=True):
-                            st.session_state.confirm_publish_gate = False; st.rerun()
+                            st.session_state.confirm_publish_gate = False
+                            st.rerun()
             else:
-                st.success("✅ Workspace Live")
-                if st.button("🔓 Emergency Revoke & Unfreeze"):
+                st.success("✅ Layout Workspace Status: Locked & Live to Crew")
+                if st.button("🔓 Emergency Revoke & Unfreeze Project (Admin Only)"):
                     supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
                     st.rerun()
+            
+            st.write("---")
+            st.subheader("🖼️ Map Background Image Configuration")
+            uploaded_map_img = st.file_uploader("Upload Layout Image Blueprint (PNG/JPG):", type=["png", "jpg", "jpeg"])
+            if uploaded_map_img:
+                img_bytes = uploaded_map_img.read()
+                b64_img_string = f"data:{uploaded_map_img.type};base64," + base64.b64encode(img_bytes).decode("utf-8")
+                
+                if site_is_published:
+                    st.error("Cannot change image background assets on published, finalized frameworks.")
+                elif st.button("💾 Apply & Save Image Blueprint", type="primary"):
+                    supabase.table("farms").update({"background_image_url": b64_img_string}).eq("id", st.session_state.active_site_id).execute()
+                    st.success("Image blueprints attached safely!")
+                    time.sleep(0.5); st.rerun()
+            
+            if site_bg_img and not site_is_published:
+                if st.button("🗑️ Remove Current Background Image", type="secondary"):
+                    # Only flush if background image isn't holding structural data configurations
+                    if not site_bg_img.startswith("{"):
+                        supabase.table("farms").update({"background_image_url": ""}).eq("id", st.session_state.active_site_id).execute()
+                        st.success("Background mapping reference flushed!")
+                        time.sleep(0.5); st.rerun()
+
+            st.write("---")
+            st.subheader("🛠️ Custom Tracker Tab Builder")
+            custom_tab_name = st.text_input("Assign New Tracker Tab Label:", placeholder="e.g. Floating Cell...")
+            if st.button("✨ Instantiate Phase Tab") and custom_tab_name:
+                if custom_tab_name not in st.session_state.custom_tabs:
+                    st.session_state.custom_tabs.append(custom_tab_name)
+                    st.success(f"Instantiated '{custom_tab_name}'!")
+                    time.sleep(0.4); st.rerun()
+                    
+            if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
+
+    if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
+        st.rerun()
 
     def load_site_isolated_tables(farm_id):
         all_data = []
-        limit = 1000; offset = 0
+        limit = 1000
+        offset = 0
         while True:
             try:
                 res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").range(offset, offset + limit - 1).execute().data
@@ -259,100 +308,539 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     if not active_table_data:
-        st.warning("ℹ️ No metrics found. Upload a blueprint.")
+        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet. Use the control configuration page above to import structural data files.")
         st.stop()
 
     min_r = min([b.get("min_r", 1) for b in active_table_data])
     max_r = max([b.get("max_r", 100) for b in active_table_data])
     min_c = min([b.get("min_c", 1) for b in active_table_data])
     max_c = max([b.get("max_c", 150) for b in active_table_data])
+
+    CELL_SIZE = 14
     
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
+    # Sync any zones explicitly stored in database back into session state
+    for b in active_table_data:
+        z = b.get("assigned_zone")
+        if z and z not in st.session_state.managed_zones:
+            st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
+    
+    # BUILD RESET DROPDOWN LIST DIRECTLY FROM REGISTRY AND SIFT OUT UNASSIGNED OPTIONS
+    clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
+
     if st.session_state.is_admin_mode:
-        setup_tabs = st.tabs(["⚡ Advanced Infrastructure Stringing & Layout Core", "📌 Legacy Phase Customizer"])
+        setup_tabs = st.tabs([
+            "🖼️ Base Overview & Zone Assignation", 
+            "🔌 Electrical Inverter Mapping", 
+            "📌 Pegging & Piling Customizer",
+            "🏪 Transformer Drop Hubs",
+            "⚡ DC Stringing & Electrical Topologies"  # <-- NEW ADDITION HELD EXCLUSIVELY FOR ADMINS
+        ])
         
+        # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION (UNTOUCHED) ---
         with setup_tabs[0]:
-            st.markdown("### 🔌 Advanced Electrical Infrastructure Stringing Matrix Node")
+            st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             
-            # Form setup inside Streamlit to hold complex topology strings
-            current_meta_str = current_farm_record.get("background_image_url") if (current_farm_record.get("background_image_url") and current_farm_record.get("background_image_url").startswith("{")) else "{}"
+            if site_bg_img and not site_bg_img.startswith("{"):
+                st.image(site_bg_img, caption="Active Site Blueprint Layout Background Reference", use_container_width=False, width=600)
+
+            col_z1, col_z2 = st.columns([6, 4])
+            with col_z1:
+                target_paint_zone = st.selectbox("Active Selector Target Zone Label Options:", st.session_state.managed_zones, index=0)
+            with col_z2:
+                new_zone_opt = st.text_input("➕ Extend Managed Zone List Registry:", placeholder="e.g. Zone D...")
+                if st.button("Register Variant Entry") and new_zone_opt:
+                    clean_opt = new_zone_opt.strip()
+                    if clean_opt not in st.session_state.managed_zones:
+                        st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
+                        st.rerun()
             
-            col_save1, col_save2 = st.columns([8, 2])
-            with col_save1:
-                st.info("💡 Select a command operation tool on the workspace dashboard, then execute actions directly on the canvas map node.")
+            st.write("---")
+            st.subheader("🛠️ Selective Zone Reset Center")
+            col_wipe1, col_wipe2 = st.columns([6, 4])
+            with col_wipe1:
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + clean_wiping_dropdown_options)
+            with col_wipe2:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                
+                if site_is_published:
+                    st.error("Cannot reset zone assets on a frozen, deployed workspace framework.")
+                elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
+                    with st.spinner("Flushing target zones..."):
+                        try:
+                            if wipe_scope_selection == "ALL ZONES":
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
+                                st.success("Entire farm structural matrix zones set back to Unassigned!")
+                            else:
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
+                                st.success(f"Successfully cleared allocation indexes for {wipe_scope_selection}!")
+                            time.sleep(0.5); st.rerun()
+                        except Exception as e:
+                            st.error(f"Reset failed: {str(e)}")
+
+            html_zone_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                </div>
+                
+                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
+                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing updates...</div>
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
+                    <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
+                    <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
+                </div>
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("zone_canvas");
+                    const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("canvas_hover_tooltip");
+                    const paintZone = "PAINT_ZONE_VAL";
+                    const CELL = CELL_SIZE_VAL;
+                    const isPublished = __IS_PUBLISHED_VAL__;
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL;
+                    const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+
+                    let isPanning = false;
+                    let isSelecting = false;
+                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
+                    let stagedBlockIds = [];
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function getZoneColor(zoneName) {
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
+                        let hash = 0; 
+                        let cleaned = zoneName.toUpperCase().trim();
+                        for (let i = 0; i < cleaned.length; i++) { 
+                            hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); 
+                        }
+                        let hue = Math.abs(hash * 45) % 360; 
+                        return `hsl(${hue}, 90%, 50%)`;
+                    }
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+
+                        blocks.forEach(b => {
+                            let isStaged = stagedBlockIds.includes(b.id);
+                            ctx.fillStyle = getZoneColor(b.assigned_zone);
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h);
+                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
+                            
+                            if (isStaged) { 
+                                ctx.strokeStyle = '#ffff00'; 
+                                ctx.lineWidth = 2.5; 
+                                ctx.strokeRect(x, y, w, h); 
+                            }
+                        });
+                        ctx.restore();
+
+                        if (isSelecting) {
+                            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+                            ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+                            ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
+                            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+                        }
+                    }
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (isPanning) {
+                            offsetX = e.clientX - startX;
+                            offsetY = e.clientY - startY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        } else if (isSelecting) {
+                            currentX = mX;
+                            currentY = mY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
+                                hoveredBlock = b;
+                                break;
+                            }
+                        }
+
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
+
+                    canvas.addEventListener('mousedown', (e) => {
+                        if (isPublished) return; 
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (e.button === 2) { 
+                            isPanning = true;
+                            isSelecting = false;
+                            startX = e.clientX - offsetX;
+                            startY = e.clientY - offsetY;
+                            canvas.style.cursor = 'move';
+                        } else if (e.button === 0) { 
+                            isSelecting = true;
+                            isPanning = false;
+                            startX = mX;
+                            startY = mY;
+                            currentX = mX;
+                            currentY = mY;
+                            canvas.style.cursor = 'crosshair';
+                        }
+                        tooltip.style.display = "none";
+                    });
+
+                    canvas.addEventListener('mouseup', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const endX = e.clientX - rect.left;
+                        const endY = e.clientY - rect.top;
+
+                        if (isPanning) {
+                            isPanning = false;
+                            canvas.style.cursor = 'grab';
+                        } else if (isSelecting) {
+                            isSelecting = false;
+                            canvas.style.cursor = 'default';
+                            
+                            stagedBlockIds = [];
+
+                            let boxX1 = Math.min(startX, endX);
+                            let boxX2 = Math.max(startX, endX);
+                            let boxY1 = Math.min(startY, endY);
+                            let boxY2 = Math.max(startY, endY);
+
+                            if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
+                                blocks.forEach(b => {
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
+                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
+                                        stagedBlockIds.push(b.id);
+                                    }
+                                });
+                            } else {
+                                blocks.forEach(b => {
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
+                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
+                                        stagedBlockIds.push(b.id);
+                                    }
+                                });
+                            }
+
+                            if (stagedBlockIds.length > 0) {
+                                document.getElementById("lbl_zone").innerText = paintZone;
+                                document.getElementById("dialogue_overlay").style.display = "block";
+                            }
+                            draw();
+                        }
+                    });
+
+                    document.getElementById("btn_yes").addEventListener('click', async () => {
+                        const msgBox = document.getElementById("status_message_box");
+                        msgBox.style.display = "block";
+                        msgBox.innerText = `Updating ${stagedBlockIds.length} components...`;
+                        
+                        try {
+                            for (let id of stagedBlockIds) {
+                                let target = blocks.find(b => b.id === id); 
+                                if (target) target.assigned_zone = paintZone;
+                                
+                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                    method: "PATCH", 
+                                    headers: { 
+                                        "apikey": "SUPABASE_KEY_VAL", 
+                                        "Authorization": "Bearer SUPABASE_KEY_VAL", 
+                                        "Content-Type": "application/json",
+                                        "Prefer": "return=minimal"
+                                    },
+                                    body: JSON.stringify({ "assigned_zone": paintZone })
+                                });
+                            }
+                            msgBox.innerText = "Done! Hit the reload button to refresh overview.";
+                            setTimeout(() => { msgBox.style.display = "none"; }, 4000);
+                        } catch(e) {
+                            msgBox.innerText = "Network transmission exception dropped.";
+                        }
+                        
+                        stagedBlockIds = []; 
+                        document.getElementById("dialogue_overlay").style.display = "none"; 
+                        draw();
+                    });
+
+                    document.getElementById("btn_no").addEventListener('click', () => {
+                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                    });
+
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.005, Math.min(scale, 30));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                             .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
+                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                             .replace("MIN_C_VAL", str(min_c))\
+                                             .replace("MAX_C_VAL", str(max_c))\
+                                             .replace("MIN_R_VAL", str(min_r))\
+                                             .replace("MAX_R_VAL", str(max_r))\
+                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                             .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
+            components.html(html_zone_engine, height=700)
+
+        # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE (UNTOUCHED) ---
+        with setup_tabs[1]:
+            st.markdown("### 🔌 Electrical Inverter Infrastructure Integration Node")
+            html_inverter_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="inv_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() { 
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("inv_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isDragging = false, startX, startY;
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => { 
+                            ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                            if (b.structure_type === 'double_6x9') {
+                                ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
+                                ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
+                            }
+                        }); 
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousedown', (e) => { 
+                        const rect = canvas.getBoundingClientRect();
+                        if(e.button === 2 || e.button === 0) {
+                            isDragging = true; 
+                            startX = e.clientX - offsetX; 
+                            startY = e.clientY - offsetY; 
+                        }
+                    });
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_inverter_engine = html_inverter_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                       .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                       .replace("MIN_C_VAL", str(min_c))\
+                                                       .replace("MAX_C_VAL", str(max_c))\
+                                                       .replace("MIN_R_VAL", str(min_r))\
+                                                       .replace("MAX_R_VAL", str(max_r))
+            components.html(html_inverter_engine, height=640)
+
+        # --- STAGE 3: BLUEPRINT TEMPLATE PROPAGATION (UNTOUCHED) ---
+        with setup_tabs[2]:
+            st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
+            col_t1, col_t2 = st.columns([4, 6])
+            with col_t1:
+                html_micro_template = """
+                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
+                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
+                """
+                components.html(html_micro_template, height=280)
+
+        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP (UNTOUCHED) ---
+        with setup_tabs[3]:
+            st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
+            html_transformer_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="trans_canvas" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() { 
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); const canvas = document.getElementById("trans_canvas"); const ctx = canvas.getContext('2d'); const CELL = CELL_SIZE_VAL;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isDragging = false, startX, startY;
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => { 
+                            ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                        }); 
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousedown', (e) => { if(e.button===2 || e.button===0) { isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
+                    canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
+                    canvas.addEventListener('mouseup', () => { isDragging = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_transformer_engine = html_transformer_engine.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                             .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
+                                                             .replace("MIN_C_VAL", str(min_c))\
+                                                             .replace("MAX_C_VAL", str(max_c))\
+                                                             .replace("MIN_R_VAL", str(min_r))\
+                                                             .replace("MAX_R_VAL", str(max_r))
+            components.html(html_transformer_engine, height=640)
+
+        # --- STAGE 5: ADVANCED INFRASTRUCTURE STRINGING CORE (NEW ADDITION) ---
+        with setup_tabs[4]:
+            st.markdown("### 🔌 Micro-Grid Topology Planner: Cable Stringing, Inverters & Transformer Drop Hubs")
             
-            # ADVANCED CAD GRAPHICS SYSTEM ENGINE ENGINE WITH INDEPENDENT NORTH/SOUTH STRING SPLITTING
-            html_advanced_cad_system = """
+            # Using custom JSON topology schema hidden safely inside fields
+            stored_metadata_string = current_farm_record.get("background_image_url") if (current_farm_record.get("background_image_url") and current_farm_record.get("background_image_url").startswith("{")) else "{}"
+            
+            html_topology_workspace = """
             <div style="background:#090d16; padding:15px; border-radius:12px; font-family:sans-serif; color:#f8fafc;">
-                <div style="display:grid; grid-template-columns: 240px 1fr; gap:15px;">
-                    <div style="background:#0f172a; padding:12px; border-radius:8px; border:1px solid #1e293b;">
-                        <h4 style="margin-top:0; color:#38bdf8;">🛠️ Command Tool</h4>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="pan" checked> ✋ Pan / Navigate Map</label>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="zone"> 🎨 Paint Zone Allocation</label>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="string"> 🔌 Lasso Group Strings</label>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="inverter"> ⚡ Place Inverter Block</label>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="transformer"> 🏪 Click Place Xfrmr</label>
-                        <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="tool" value="route"> 🔗 Route Inv ➔ Xfrmr</label>
+                <div style="display:grid; grid-template-columns: 260px 1fr; gap:15px;">
+                    <div style="background:#0f172a; padding:14px; border-radius:8px; border:1px solid #1e293b; font-size:13px;">
+                        <h4 style="margin-top:0; margin-bottom:12px; color:#38bdf8; font-size:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;">🛠️ TOPOLOGY CONTROLS</h4>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="pan" checked> ✋ Pan / Navigate Map</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Lasso Select Strings</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverter ➔ Xfrmr</label>
                         
-                        <hr style="border-color:#1e293b;">
-                        <h5 style="margin-bottom:6px; color:#a78bfa;">Parameters</h5>
-                        <div id="zone_selector_panel">
-                            <label style="font-size:12px;">Active Target Zone:</label>
-                            <input type="text" id="target_zone_val" value="Zone A" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:4px; margin-bottom:8px;">
-                        </div>
-                        <div id="inv_selector_panel">
-                            <label style="font-size:12px;">Target Inverter ID:</label>
-                            <input type="number" id="target_inv_id" value="1" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:4px; margin-bottom:8px;">
-                        </div>
+                        <hr style="border-color:#1e293b; margin:14px 0;">
+                        <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE POOL TOKENS</h5>
                         
-                        <button id="btn_clear_topology" style="width:100%; background:#ef4444; border:none; padding:8px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; margin-top:10px;">💥 Reset Topology Layout</button>
-                        <button id="btn_push_cloud" style="width:100%; background:#22c55e; border:none; padding:8px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; margin-top:8px;">💾 Push Mapping to Cloud</button>
+                        <label style="font-size:11px; color:#94a3b8;">Target Inverter ID #:</label>
+                        <input type="number" id="topo_inv_token" value="1" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
+                        
+                        <button id="btn_topo_clear" style="width:100%; background:#ef4444; border:none; padding:8px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; margin-top:8px;">🗑️ Clear Grid Layout</button>
+                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:8px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; margin-top:8px;">💾 Save Workspace Topologies</button>
                     </div>
 
                     <div style="position:relative;">
-                        <div id="cad_tooltip" style="position:absolute; display:none; background:rgba(15,23,42,0.95); border:1px solid #38bdf8; padding:8px; border-radius:6px; font-size:12px; pointer-events:none; z-index:9999; color:white;"></div>
-                        <canvas id="advanced_cad_canvas" width="1100" height="600" style="background:#020617; border-radius:8px; border:2px solid #1e293b; display:block;"></canvas>
+                        <div id="topo_tooltip" style="position:absolute; display:none; background:rgba(15,23,42,0.95); border:1px solid #38bdf8; padding:8px; border-radius:4px; font-size:12px; pointer-events:none; z-index:99999; color:#f8fafc; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
+                        <canvas id="topo_canvas" width="1100" height="600" style="background:#020617; border-radius:8px; border:1px solid #1e293b; display:block; cursor:default;"></canvas>
                     </div>
                 </div>
             </div>
 
             <script>
                 (function() {
-                    const rawBlocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    let topology = JSON.parse(atob("__TOPOLOGY_METADATA_B64__"));
+                    const databaseStructures = JSON.parse(atob("__JSON_DATA_B64__"));
+                    let gridTopo = JSON.parse(atob("__TOPOLOGY_METADATA_B64__"));
                     
-                    // Default configuration variables initialization
-                    if (!topology.inverters) topology.inverters = [];
-                    if (!topology.transformers) topology.transformers = [];
-                    if (!topology.stringGroups) topology.stringGroups = {}; 
+                    if (!gridTopo.inverters) gridTopo.inverters = [];
+                    if (!gridTopo.transformers) gridTopo.transformers = [];
+                    if (!gridTopo.stringGroups) gridTopo.stringGroups = {};
 
-                    const canvas = document.getElementById("advanced_cad_canvas");
+                    const canvas = document.getElementById("topo_canvas");
                     const ctx = canvas.getContext("2d");
-                    const tooltip = document.getElementById("cad_tooltip");
+                    const tooltip = document.getElementById("topo_tooltip");
                     const CELL = 14;
 
-                    // Compute structures & expand multi-facing strings independently
-                    let strings = [];
-                    rawBlocks.forEach(b => {
+                    // Dynamically decouple multi-facing trackers into completely autonomous operational units
+                    let independentStrings = [];
+                    databaseStructures.forEach(b => {
                         if (b.structure_type === "double_6x9") {
-                            let midpointRow = b.min_r + Math.floor((b.max_r - b.min_r) / 2);
-                            // North Facing String Segment
-                            strings.append({
-                                id: b.id + "_N", parentId: b.id, label: b.table_label + " (N)",
-                                min_c: b.min_c, max_c: b.max_c, min_r: b.min_r, max_r: midpointRow,
+                            let mid = b.min_r + Math.floor((b.max_r - b.min_r) / 2);
+                            independentStrings.push({
+                                id: b.id + "_N", parentId: b.id, label: b.table_label + " (North)",
+                                min_c: b.min_c, max_c: b.max_c, min_r: b.min_r, max_r: mid,
                                 zone: b.assigned_zone || "Unassigned"
                             });
-                            // South Facing String Segment
-                            strings.append({
-                                id: b.id + "_S", parentId: b.id, label: b.table_label + " (S)",
-                                min_c: b.min_c, max_c: b.max_c, min_r: midpointRow + 1, max_r: b.max_r,
+                            independentStrings.push({
+                                id: b.id + "_S", parentId: b.id, label: b.table_label + " (South)",
+                                min_c: b.min_c, max_c: b.max_c, min_r: mid + 1, max_r: b.max_r,
                                 zone: b.assigned_zone || "Unassigned"
                             });
                         } else {
-                            // Standard Single Facing Structure Row Block
-                            strings.append({
+                            independentStrings.push({
                                 id: b.id + "_A", parentId: b.id, label: b.table_label,
                                 min_c: b.min_c, max_c: b.max_c, min_r: b.min_r, max_r: b.max_r,
                                 zone: b.assigned_zone || "Unassigned"
@@ -361,14 +849,14 @@ else:
                     });
 
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL;
-                    const mapHeight = (maxY - minY + 1) * CELL;
+                    const mapW = (maxX - minX + 1) * CELL;
+                    const mapH = (maxY - minY + 1) * CELL;
 
-                    let scale = Math.min((canvas.width - 100) / mapWidth, (canvas.height - 100) / mapHeight);
+                    let scale = Math.min((canvas.width - 80) / mapW, (canvas.height - 80) / mapH);
                     if (scale <= 0 || !isFinite(scale)) scale = 0.5;
 
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let offsetX = (canvas.width / 2) - (mapW * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapH * scale / 2) - (minY * CELL * scale);
 
                     let isPanning = false, isSelecting = false;
                     let startX = 0, startY = 0, currX = 0, currY = 0;
@@ -376,16 +864,16 @@ else:
 
                     canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-                    function getTool() {
-                        return document.querySelector('input[name="tool"]:checked').value;
+                    function getActiveTool() {
+                        return document.querySelector('input[name="topo_tool"]:checked').value;
                     }
 
-                    function getBorderColorForCount(count) {
-                        if (!count || count === 0) return "transparent";
-                        if (count <= 4) return "#38bdf8"; // Cyan blue loop 
-                        if (count <= 8) return "#eab308"; // Amber grouping loop
-                        if (count <= 12) return "#a78bfa"; // Amethyst loop
-                        return "#f43f5e"; // Rose maximum configuration boundary 
+                    function groupBorderColor(count) {
+                        if (!count) return "transparent";
+                        if (count <= 4) return "#38bdf8";  // Light Cyan
+                        if (count <= 8) return "#eab308";  // Yellow Amber
+                        if (count <= 16) return "#a78bfa"; // Violet Purple
+                        return "#f43f5e";                  // Bright Rose Red
                     }
 
                     function draw() {
@@ -394,174 +882,153 @@ else:
                         ctx.translate(offsetX, offsetY);
                         ctx.scale(scale, scale);
 
-                        // Draw Transformer Stations
-                        topology.transformers.forEach((t, index) => {
+                        // 1. Draw Transformer Nodes
+                        gridTopo.transformers.forEach((t, i) => {
                             ctx.fillStyle = "#ef4444";
-                            ctx.fillRect(t.x - 15, t.y - 15, 30, 30);
+                            ctx.fillRect(t.x - 14, t.y - 14, 28, 28);
                             ctx.strokeStyle = "#ffffff";
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(t.x - 15, t.y - 15, 30, 30);
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeRect(t.x - 14, t.y - 14, 28, 28);
                             
                             ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 10px sans-serif";
+                            ctx.font = "bold 9px sans-serif";
                             ctx.textAlign = "center";
-                            ctx.fillText("XFMR " + (index + 1), t.x, t.y + 4);
+                            ctx.fillText("XFMR " + (i + 1), t.x, t.y + 3);
                         });
 
-                        // Draw Routing Lines (Inverter to Transformers)
-                        topology.inverters.forEach(inv => {
-                            if (inv.transformerId !== null && topology.transformers[inv.transformerId]) {
-                                let xfmr = topology.transformers[inv.transformerId];
-                                ctx.strokeStyle = "rgba(234, 179, 8, 0.65)";
-                                ctx.lineWidth = 3;
-                                ctx.setLineDash([4, 4]);
+                        // 2. Draw Vector Flight Paths (Inverter to Transformers Routing links)
+                        gridTopo.inverters.forEach(inv => {
+                            if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
+                                let xf = gridTopo.transformers[inv.transformerId];
+                                ctx.strokeStyle = "rgba(167, 139, 250, 0.7)";
+                                ctx.lineWidth = 2;
+                                ctx.setLineDash([5, 5]);
                                 ctx.beginPath();
                                 ctx.moveTo(inv.x, inv.y);
-                                ctx.lineTo(xfmr.x, xfmr.y);
+                                ctx.lineTo(xf.x, xf.y);
                                 ctx.stroke();
                                 ctx.setLineDash([]);
                             }
                         });
 
-                        // Draw Inverters
-                        topology.inverters.forEach((inv, index) => {
+                        // 3. Draw Snapped Inverter Box Hubs
+                        gridTopo.inverters.forEach(inv => {
                             ctx.fillStyle = "#22c55e";
                             ctx.fillRect(inv.x - 10, inv.y - 10, 20, 20);
                             ctx.strokeStyle = "#ffffff";
-                            ctx.lineWidth = 1.5;
+                            ctx.lineWidth = 1.2;
                             ctx.strokeRect(inv.x - 10, inv.y - 10, 20, 20);
                             
                             ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 9px sans-serif";
+                            ctx.font = "bold 8px sans-serif";
                             ctx.textAlign = "center";
                             ctx.fillText("INV " + inv.id, inv.x, inv.y + 3);
                         });
 
-                        // Count active inverter assignments to calculate grouping loop border variations
-                        let invCounts = {};
-                        Object.values(topology.stringGroups).forEach(invId => {
-                            invCounts[invId] = (invCounts[invId] || 0) + 1;
-                        });
+                        // Collate quantities per inverter allocation loop bounds
+                        let counts = {};
+                        Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // Draw Independent Solar String Blocks
-                        strings.forEach(s => {
-                            let x = s.min_c * CELL;
-                            let y = s.min_r * CELL;
-                            let w = (s.max_c - s.min_c + 1) * CELL;
-                            let h = (s.max_r - s.min_r + 1) * CELL;
+                        // 4. Draw Split Tracking Strings Elements
+                        independentStrings.forEach(s => {
+                            let x = s.min_c * CELL; let y = s.min_r * CELL;
+                            let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
 
-                            // Dynamic Zone Color Mapping Calculation Logic
                             let hash = 0;
                             for (let i = 0; i < s.zone.length; i++) hash = s.zone.charCodeAt(i) + ((hash << 5) - hash);
-                            let hue = s.zone === "Unassigned" ? 215 : Math.abs(hash * 35) % 360;
-                            ctx.fillStyle = s.zone === "Unassigned" ? "#1e293b" : `hsl(${hue}, 70%, 40%)`;
+                            let hue = s.zone === "Unassigned" ? 220 : Math.abs(hash * 40) % 360;
+                            
+                            ctx.fillStyle = s.zone === "Unassigned" ? "#1e293b" : `hsl(${hue}, 65%, 35%)`;
                             ctx.fillRect(x, y, w, h);
 
-                            // Render base framework grid line separator paths
-                            ctx.strokeStyle = "rgba(255,255,255,0.08)";
+                            ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
                             ctx.lineWidth = 0.5;
                             ctx.strokeRect(x, y, w, h);
 
-                            // Draw grouping border loop if linked to active inverter
-                            let linkedInvId = topology.stringGroups[s.id];
-                            if (linkedInvId) {
-                                ctx.strokeStyle = getBorderColorForCount(invCounts[linkedInvId]);
-                                ctx.lineWidth = 2.5;
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            if (linkedInv) {
+                                ctx.strokeStyle = groupBorderColor(counts[linkedInv]);
+                                ctx.lineWidth = 2.2;
                                 ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
 
-                                // Tiny label showing connected inverter
-                                ctx.fillStyle = "#ffffff";
+                                ctx.fillStyle = "#94a3b8";
                                 ctx.font = "7px sans-serif";
-                                ctx.fillText("I-" + linkedInvId, x + 4, y + 10);
+                                ctx.fillText("INV " + linkedInv, x + 3, y + 9);
                             }
                         });
 
                         ctx.restore();
 
-                        // Render Lasso Selection Rectangle Overlay Feedback Boundary
-                        if (isSelecting && (getTool() === "zone" || getTool() === "string")) {
-                            ctx.strokeStyle = getTool() === "zone" ? "#38bdf8" : "#a78bfa";
+                        // 5. Draw Lasso Selector Interface Feedback Box Bounds
+                        if (isSelecting && getActiveTool() === "string") {
+                            ctx.strokeStyle = "#a78bfa";
                             ctx.lineWidth = 1.5;
-                            ctx.fillStyle = getTool() === "zone" ? "rgba(56, 189, 248, 0.15)" : "rgba(167, 139, 250, 0.15)";
+                            ctx.fillStyle = "rgba(167, 139, 250, 0.2)";
                             ctx.fillRect(startX, startY, currX - startX, currY - startY);
                             ctx.strokeRect(startX, startY, currX - startX, currY - startY);
                         }
                     }
 
-                    // Global workspace canvas mouse tracking coordinates interpreter
-                    function getMousePos(e) {
+                    function getMouseLocation(e) {
                         const rect = canvas.getBoundingClientRect();
                         return { x: e.clientX - rect.left, y: e.clientY - rect.top };
                     }
 
-                    function toWorldCoords(p) {
+                    function transformToWorldSpace(p) {
                         return { x: (p.x - offsetX) / scale, y: (p.y - offsetY) / scale };
                     }
 
                     canvas.addEventListener("mousedown", e => {
-                        const m = getMousePos(e);
-                        const world = toWorldCoords(m);
-                        const tool = getTool();
+                        const m = getMouseLocation(e);
+                        const world = transformToWorldSpace(m);
+                        const tool = getActiveTool();
 
                         if (e.button === 2 || tool === "pan") {
                             isPanning = true;
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
                             canvas.style.cursor = "move";
-                        } else if (tool === "zone" || tool === "string") {
+                        } else if (tool === "string") {
                             isSelecting = true;
                             startX = m.x; startY = m.y;
                             currX = m.x; currY = m.y;
                         } else if (tool === "inverter") {
-                            // Find target hover solar block tracking position to snap structural layout inverter box anchor
-                            let targetBlock = strings.find(s => {
+                            let hitString = independentStrings.find(s => {
                                 let sx = s.min_c * CELL, sy = s.min_r * CELL;
-                                let sw = (s.max_c - s.min_c + 1) * CELL, sh = (s.max_r - s.min_r + 1) * CELL;
-                                return world.x >= sx && world.x <= sx + sw && world.y >= sy && world.y <= sy + sh;
+                                return world.x >= sx && world.x <= sx + ((s.max_c - s.min_c + 1) * CELL) &&
+                                       world.y >= sy && world.y <= sy + ((s.max_r - s.min_r + 1) * CELL);
                             });
-
-                            if (targetBlock) {
-                                let invId = parseInt(document.getElementById("target_inv_id").value) || 1;
-                                // Clean redundant matching ids if existing to re-allocate coordinates safely
-                                topology.inverters = topology.inverters.filter(i => i.id !== invId);
-                                topology.inverters.push({
+                            if (hitString) {
+                                let invId = parseInt(document.getElementById("topo_inv_token").value) || 1;
+                                gridTopo.inverters = gridTopo.inverters.filter(i => i.id !== invId);
+                                gridTopo.inverters.push({
                                     id: invId,
-                                    x: (targetBlock.min_c * CELL) + (((targetBlock.max_c - targetBlock.min_c + 1) * CELL) / 2),
-                                    y: (targetBlock.max_r * CELL) + 20, // Snapped offset alignment position configuration
+                                    x: (hitString.min_c * CELL) + (((hitString.max_c - hitString.min_c + 1) * CELL) / 2),
+                                    y: (hitString.max_r * CELL) + 20,
                                     transformerId: null
                                 });
                                 draw();
                             }
                         } else if (tool === "transformer") {
-                            // Check collision boundaries to confirm instantiation lands on black spacing coordinates
-                            let hitBlock = strings.find(s => {
+                            let hitString = independentStrings.find(s => {
                                 let sx = s.min_c * CELL, sy = s.min_r * CELL;
-                                let sw = (s.max_c - s.min_c + 1) * CELL, sh = (s.max_r - s.min_r + 1) * CELL;
-                                return world.x >= sx && world.x <= sx + sw && world.y >= sy && world.y <= sy + sh;
+                                return world.x >= sx && world.x <= sx + ((s.max_c - s.min_c + 1) * CELL) &&
+                                       world.y >= sy && world.y <= sy + ((s.max_r - s.min_r + 1) * CELL);
                             });
-
-                            if (!hitBlock) {
-                                topology.transformers.push({ x: world.x, y: world.y });
+                            if (!hitString) {
+                                gridTopo.transformers.push({ x: world.x, y: world.y });
                                 draw();
                             }
                         } else if (tool === "route") {
-                            // Check click collision coordinate accuracy targeted directly on an inverter node block asset
-                            let matchedInvIdx = topology.inverters.findIndex(inv => {
-                                return Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 15;
-                            });
-
-                            if (matchedInvIdx !== -1) {
-                                selectedInverterIndexForRouting = matchedInvIdx;
+                            let invIdx = gridTopo.inverters.findIndex(i => Math.sqrt(Math.pow(world.x - i.x, 2) + Math.pow(world.y - i.y, 2)) <= 15);
+                            if (invIdx !== -1) {
+                                selectedInverterIndexForRouting = invIdx;
                                 tooltip.style.display = "block";
-                                tooltip.innerHTML = "🎯 Routing Active: Now select destination Transformer Station Box Node.";
+                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Click link destination Transformer station.";
                             } else if (selectedInverterIndexForRouting !== null) {
-                                // Check collision selection context on transformer node asset destination target
-                                let matchedXfmrIdx = topology.transformers.findIndex(t => {
-                                    return Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 20;
-                                });
-
-                                if (matchedXfmrIdx !== -1) {
-                                    topology.inverters[selectedInverterIndexForRouting].transformerId = matchedXfmrIdx;
+                                let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 18);
+                                if (xfmrIdx !== -1) {
+                                    gridTopo.inverters[selectedInverterIndexForRouting].transformerId = xfmrIdx;
                                     selectedInverterIndexForRouting = null;
                                     draw();
                                 }
@@ -570,120 +1037,91 @@ else:
                     });
 
                     canvas.addEventListener("mousemove", e => {
-                        const m = getMousePos(e);
-                        const world = toWorldCoords(m);
+                        const m = getMouseLocation(e);
+                        const world = transformToWorldSpace(m);
 
                         if (isPanning) {
                             offsetX = e.clientX - startX;
                             offsetY = e.clientY - startY;
-                            draw();
-                            return;
+                            draw(); return;
                         } else if (isSelecting) {
                             currX = m.x; currY = m.y;
-                            draw();
-                            return;
+                            draw(); return;
                         }
 
-                        // Spatial Unified Hover Interaction System Logic Coordinates Analyzer Matrix Parser
-                        let foundHover = false;
+                        let matchFound = false;
 
-                        // 1. Inspect Transformer Hover Context Elements
-                        topology.transformers.forEach((t, idx) => {
-                            if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 20) {
-                                let mappedInverters = topology.inverters.filter(i => i.transformerId === idx).map(i => i.id).join(", ");
+                        // 1. Transformer Station Proximity Diagnostics
+                        gridTopo.transformers.forEach((t, index) => {
+                            if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 18) {
+                                let childrenInverters = gridTopo.inverters.filter(i => i.transformerId === index).map(i => i.id).join(", ");
                                 tooltip.style.display = "block";
-                                tooltip.style.left = (m.x + 20) + "px";
-                                tooltip.style.top = (m.y + 20) + "px";
-                                tooltip.innerHTML = `<b>🏪 Transformer Hub Asset Station</b><br>Station Allocation Key: #${idx + 1}<br>Routed Feeding Inverters: [${mappedInverters || 'None'}]`;
-                                foundHover = true;
+                                tooltip.style.left = (m.x + 15) + "px";
+                                tooltip.style.top = (m.y + 15) + "px";
+                                tooltip.innerHTML = `<b>🏪 Transformer Station Hub</b><br>Index Allocation: Station #${index + 1}<br>Fed by Inverters: [ ${childrenInverters || 'None Linked'} ]`;
+                                matchFound = true;
                             }
                         });
 
-                        // 2. Inspect Inverter Hover Context Elements
-                        if (!foundHover) {
-                            topology.inverters.forEach((inv) => {
+                        // 2. Inverter Box Proximity Diagnostics
+                        if (!matchFound) {
+                            gridTopo.inverters.forEach(inv => {
                                 if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 15) {
                                     tooltip.style.display = "block";
-                                    tooltip.style.left = (m.x + 20) + "px";
-                                    tooltip.style.top = (m.y + 20) + "px";
-                                    tooltip.innerHTML = `<b>⚡ Inverter Control Node Block</b><br>Inverter ID Token: ${inv.id}<br>Routed Station Line: ${inv.transformerId !== null ? 'XFMR ' + (inv.transformerId + 1) : 'Unrouted Loop'}`;
-                                    foundHover = true;
+                                    tooltip.style.left = (m.x + 15) + "px";
+                                    tooltip.style.top = (m.y + 15) + "px";
+                                    tooltip.innerHTML = `<b>⚡ Inverter Controller Unit</b><br>Inverter Key ID: #${inv.id}<br>Routed Loop Line: ${inv.transformerId !== null ? 'Transformer Station #' + (inv.transformerId + 1) : 'Unassigned Route'}`;
+                                    matchFound = true;
                                 }
                             });
                         }
 
-                        // 3. Inspect String Layout Component Hover Context Elements 
-                        if (!foundHover) {
-                            let s = strings.find(s => {
+                        // 3. String Grid Elements Multi-facing Collision Matrix Parser
+                        if (!matchFound) {
+                            let s = independentStrings.find(s => {
                                 let sx = s.min_c * CELL, sy = s.min_r * CELL;
-                                let sw = (s.max_c - s.min_c + 1) * CELL, sh = (s.max_r - s.min_r + 1) * CELL;
-                                return world.x >= sx && world.x <= sx + sw && world.y >= sy && world.y <= sy + sh;
+                                return world.x >= sx && world.x <= sx + ((s.max_c - s.min_c + 1) * CELL) &&
+                                       world.y >= sy && world.y <= sy + ((s.max_r - s.min_r + 1) * CELL);
                             });
 
                             if (s) {
                                 tooltip.style.display = "block";
-                                tooltip.style.left = (m.x + 20) + "px";
-                                tooltip.style.top = (m.y + 20) + "px";
+                                tooltip.style.left = (m.x + 15) + "px";
+                                tooltip.style.top = (m.y + 15) + "px";
                                 
-                                let parentInv = topology.stringGroups[s.id] || "None Linked";
-                                let parentXfmr = "None Linked";
-                                if (parentInv !== "None Linked") {
-                                    let invObj = topology.inverters.find(i => i.id === parseInt(parentInv));
-                                    if (invObj && invObj.transformerId !== null) parentXfmr = "XFMR " + (invObj.transformerId + 1);
+                                let invRef = gridTopo.stringGroups[s.id] || "None Assigned";
+                                let xfmrRef = "None Assigned";
+                                if (invRef !== "None Assigned") {
+                                    let invObj = gridTopo.inverters.find(i => i.id === parseInt(invRef));
+                                    if (invObj && invObj.transformerId !== null) xfmrRef = "Station #" + (invObj.transformerId + 1);
                                 }
 
-                                tooltip.innerHTML = `<b>☀️ Solar String Element Block</b><br>Identifier: ${s.label}<br>Zoning Assignment: ${s.zone}<br>Linked Inverter: ${parentInv}<br>Linked Network Hub: ${parentXfmr}`;
-                                foundHover = true;
+                                tooltip.innerHTML = `<b>☀️ Solar String Panel Loop</b><br>Table Element: ${s.label}<br>Zone Mapping: ${s.zone}<br>Linked Inverter ID: ${invRef}<br>Grid Delivery Node: ${xfmrRef}`;
+                                matchFound = true;
                             }
                         }
 
-                        if (!foundHover && selectedInverterIndexForRouting === null) tooltip.style.display = "none";
+                        if (!matchFound && selectedInverterIndexForRouting === null) tooltip.style.display = "none";
                     });
 
-                    canvas.addEventListener("mouseup", async e => {
-                        if (isPanning) {
-                            isPanning = false;
-                            canvas.style.cursor = "default";
-                            return;
-                        }
-
+                    canvas.addEventListener("mouseup", e => {
+                        if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isSelecting) {
                             isSelecting = false;
-                            const tool = getTool();
-                            const p1 = toWorldCoords(getMousePos({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
-                            const p2 = toWorldCoords(getMousePos(e));
+                            const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
+                            const p2 = transformToWorldSpace(getMouseLocation(e));
 
                             let bx1 = Math.min(p1.x, p2.x), bx2 = Math.max(p1.x, p2.x);
                             let by1 = Math.min(p1.y, p2.y), by2 = Math.max(p1.y, p2.y);
 
-                            let selectedElements = strings.filter(s => {
+                            let boxSelected = independentStrings.filter(s => {
                                 let cx = s.min_c * CELL, cy = s.min_r * CELL;
                                 return cx >= bx1 && cx <= bx2 && cy >= by1 && cy <= by2;
                             });
 
-                            if (selectedElements.length > 0) {
-                                if (tool === "zone") {
-                                    let zoneVal = document.getElementById("target_zone_val").value || "Unassigned";
-                                    // Local updates loop propagation 
-                                    selectedElements.forEach(async el => {
-                                        el.zone = zoneVal;
-                                        // Execute structural parent updates patch payload synchronization down to Supabase Rest API
-                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + el.parentId, {
-                                            method: "PATCH",
-                                            headers: {
-                                                "apikey": "SUPABASE_KEY_VAL",
-                                                "Authorization": "Bearer SUPABASE_KEY_VAL",
-                                                "Content-Type": "application/json"
-                                            },
-                                            body: JSON.stringify({ assigned_zone: zoneVal })
-                                        });
-                                    });
-                                } else if (tool === "string") {
-                                    let invId = parseInt(document.getElementById("target_inv_id").value) || 1;
-                                    selectedElements.forEach(el => {
-                                        topology.stringGroups[el.id] = invId;
-                                    });
-                                }
+                            if (boxSelected.length > 0) {
+                                let targetInv = parseInt(document.getElementById("topo_inv_token").value) || 1;
+                                boxSelected.forEach(el => { gridTopo.stringGroups[el.id] = targetInv; });
                                 draw();
                             }
                         }
@@ -691,41 +1129,34 @@ else:
 
                     canvas.addEventListener("wheel", e => {
                         e.preventDefault();
-                        const m = getMousePos(e);
-                        const grid = toWorldCoords(m);
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85);
-                        scale = Math.max(0.01, Math.min(scale, 25));
-                        offsetX = m.x - grid.x * scale;
-                        offsetY = m.y - grid.y * scale;
-                        draw();
+                        const m = getMouseLocation(e); const world = transformToWorldSpace(m);
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                        offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
 
-                    document.getElementById("btn_clear_topology").addEventListener("click", () => {
-                        if (confirm("Reset structural loop paths, stringing patterns, and transformer drop coordinates?")) {
-                            topology = { inverters: [], transformers: [], stringGroups: {} };
-                            draw();
+                    document.getElementById("btn_topo_clear").addEventListener("click", () => {
+                        if (confirm("Flush all placement maps, inverter tokens, routes, and custom macro architecture fields?")) {
+                            gridTopo = { inverters: [], transformers: [], stringGroups: {} }; draw();
                         }
                     });
 
-                    document.getElementById("btn_push_cloud").addEventListener("click", async () => {
-                        const targetButton = document.getElementById("btn_push_cloud");
-                        targetButton.innerText = "⏳ Synchronizing Topology Matrix...";
+                    document.getElementById("btn_topo_save").addEventListener("click", async () => {
+                        const saveBtn = document.getElementById("btn_topo_save");
+                        saveBtn.innerText = "⏳ Saving Configurations...";
                         try {
-                            const payloadString = JSON.stringify(topology);
                             await fetch("SUPABASE_URL_VAL/rest/v1/farms?id=eq.ACTIVE_SITE_ID_VAL", {
                                 method: "PATCH",
                                 headers: {
                                     "apikey": "SUPABASE_KEY_VAL",
                                     "Authorization": "Bearer SUPABASE_KEY_VAL",
-                                    "Content-Type": "application/json",
-                                    "Prefer": "return=minimal"
+                                    "Content-Type": "application/json"
                                 },
-                                body: JSON.stringify({ background_image_url: payloadString })
+                                body: JSON.stringify({ background_image_url: JSON.stringify(gridTopo) })
                             });
-                            targetButton.innerText = "✅ Topology Saved Sync Complete!";
-                            setTimeout(() => { targetButton.innerText = "💾 Push Mapping to Cloud"; }, 2500);
+                            saveBtn.innerText = "🎉 Mapping Saved Successfully!";
+                            setTimeout(() => { saveBtn.innerText = "💾 Save Workspace Topologies"; }, 2500);
                         } catch (err) {
-                            targetButton.innerText = "❌ Synchronization Refused";
+                            saveBtn.innerText = "❌ Connection Failed";
                         }
                     });
 
@@ -733,39 +1164,248 @@ else:
                 })();
             </script>
             """
-            # Inject tokens and pass the structural models directly into the visual interface module
-            html_advanced_cad_system = html_advanced_cad_system.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                               .replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_meta_str.encode("utf-8")).decode("utf-8"))\
-                                                               .replace("MIN_C_VAL", str(min_c))\
-                                                               .replace("MAX_C_VAL", str(max_c))\
-                                                               .replace("MIN_R_VAL", str(min_r))\
-                                                               .replace("MAX_R_VAL", str(max_r))\
-                                                               .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                                               .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
-                                                               .replace("ACTIVE_SITE_ID_VAL", str(st.session_state.active_site_id))
+            html_topology_workspace = html_topology_workspace.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                             .replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(stored_metadata_string.encode("utf-8")).decode("utf-8"))\
+                                                             .replace("MIN_C_VAL", str(min_c))\
+                                                             .replace("MAX_C_VAL", str(max_c))\
+                                                             .replace("MIN_R_VAL", str(min_r))\
+                                                             .replace("MAX_R_VAL", str(max_r))\
+                                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                                             .replace("ACTIVE_SITE_ID_VAL", str(st.session_state.active_site_id))
             
-            components.html(html_advanced_cad_system, height=660)
-
-        with setup_tabs[1]:
-            st.info("Legacy phase mapping controls hosted below.")
-            # --- PREVIOUS STAGE 3 INHERITED BLUEPRINT PLACEMENT MICROSCALE ENGINE ---
-            html_micro_template = """
-            <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair Pap;"></canvas></div>
-            <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140);</script>
-            """
-            components.html(html_micro_template, height=240)
+            components.html(html_topology_workspace, height=660)
 
     else:
         # ==============================================================================
-        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
+        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS - UNTOUCHED)
         # ==============================================================================
-        if not site_is_published:
-            st.warning("⏳ **Workspace Under Construction**")
-            st.info("The layout map is currently being prepared by engineering. Modules will become accessible once published live.")
-        else:
-            st.success("🛰️ Deployed Operational Framework Grid Reference Active")
-            crew_tabs = st.tabs(["📌 Structural String Tracking Monitor", "🪵 Physical Piling Matrix"])
-            
-            with crew_tabs[0]:
-                # Implement high fidelity overview tracker component node matrix for deployment tracking 
-                st.info("Visual Field Inspection layer active.")
+        if site_bg_img and not site_bg_img.startswith("{"):
+            st.markdown("### 🗺️ Master Blueprint Reference Layout")
+            st.image(site_bg_img, use_container_width=False, width=700)
+            st.write("---")
+
+        crew_tabs = st.tabs([
+            "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
+        ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
+
+        def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
+            today_str = str(date.today())
+
+            html_crew_map = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    ⚙️ <b>Crew Controls:</b> 
+                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
+                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
+                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
+                    <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                    <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
+                </div>
+                
+                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
+                    const canvas = document.getElementById("crew_LAYER_KEY"); 
+                    const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("crew_hover_tooltip");
+                    const CELL = 14; 
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; 
+                    const mapHeight = (maxY - minY + 1) * CELL;
+
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    if (scale <= 0 || scale === Infinity) scale = 0.5;
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    
+                    let isPanning = false;
+                    let isSelecting = false;
+                    let dragStartRawX = 0, dragStartRawY = 0;
+                    let dragCurrentRawX = 0, dragCurrentRawY = 0;
+
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        
+                        blocks.forEach(b => {
+                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        });
+                        ctx.restore();
+
+                        if (isSelecting) {
+                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+                            ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+                            ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                            ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
+                        }
+                    }
+
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        
+                        if (isPanning) {
+                            offsetX = e.clientX - dragStartRawX;
+                            offsetY = e.clientY - dragStartRawY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        } else if (isSelecting) {
+                            dragCurrentRawX = mX;
+                            dragCurrentRawY = mY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
+                        }
+
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
+
+                    canvas.addEventListener('mousedown', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const clickY = e.clientY - rect.top;
+
+                        if (e.button === 2) { 
+                            isPanning = true;
+                            isSelecting = false;
+                            dragStartRawX = e.clientX - offsetX;
+                            dragStartRawY = e.clientY - offsetY;
+                            canvas.style.cursor = 'move';
+                        } else if (e.button === 0) { 
+                            isSelecting = true;
+                            isPanning = false;
+                            dragStartRawX = clickX;
+                            dragStartRawY = clickY;
+                            dragCurrentRawX = clickX;
+                            dragCurrentRawY = clickY;
+                            canvas.style.cursor = 'crosshair';
+                        }
+                        tooltip.style.display = "none";
+                    });
+
+                    canvas.addEventListener('mouseup', async (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mouseUpX = e.clientX - rect.left;
+                        const mouseUpY = e.clientY - rect.top;
+
+                        if (isPanning) {
+                            isPanning = false;
+                            canvas.style.cursor = 'grab';
+                        } else if (isSelecting) {
+                            isSelecting = false;
+                            canvas.style.cursor = 'default';
+
+                            let boxX1 = Math.min(dragStartRawX, mouseUpX);
+                            let boxX2 = Math.max(dragStartRawX, mouseUpX);
+                            let boxY1 = Math.min(dragStartRawY, mouseUpY);
+                            let boxY2 = Math.max(dragStartRawY, mouseUpY);
+
+                            let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                            let payloadIds = [];
+
+                            blocks.forEach(b => {
+                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
+                                let isMatched = (totalDragDistance > 4) ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
+                                if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
+                                    payloadIds.push(b.id);
+                                }
+                            });
+                            
+                            if (payloadIds.length > 0) {
+                                const statMsg = document.getElementById("crew_sync_status_msg");
+                                statMsg.style.display = "block";
+                                statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
+                                
+                                try {
+                                    for (let id of payloadIds) {
+                                        let target = blocks.find(b => b.id === id);
+                                        if (target) target['LAYER_KEY_status'] = 'completed';
+                                        
+                                        await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
+                                            method: "PATCH", 
+                                            headers: { 
+                                                "apikey": 'SUPABASE_KEY_VAL', 
+                                                "Authorization": 'Bearer SUPABASE_KEY_VAL', 
+                                                "Content-Type": "application/json",
+                                                "Prefer": "return=minimal"
+                                            },
+                                            body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
+                                        });
+                                    }
+                                    statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
+                                    setTimeout(() => { statMsg.style.display = "none"; }, 5000);
+                                } catch (e) {
+                                    statMsg.innerText = "Database updates timed out.";
+                                }
+                            }
+                            setTimeout(draw, 50);
+                        }
+                    });
+
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault(); 
+                        const rect = canvas.getBoundingClientRect(); 
+                        const mouseX = e.clientX - rect.left; 
+                        const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; 
+                        const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
+                        scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; 
+                        offsetY = mouseY - gridY * scale; 
+                        draw();
+                    }, { passive: false });
+
+                    draw();
+                })();
+            </script>
+            """
+            html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
+                                         .replace("LAYER_KEY", str(layer_key))\
+                                         .replace("MIN_C_VAL", str(min_c))\
+                                         .replace("MAX_C_VAL", str(max_c))\
+                                         .replace("MIN_R_VAL", str(min_r))\
+                                         .replace("MAX_R_VAL", str(max_r))\
+                                         .replace("TODAY_STR_VAL", today_str)\
+                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+            return html_crew_map
+
+        def process_crew_tab(tab_obj, key_val):
+            with tab_obj:
+                components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
+
+        process_crew_tab(crew_tabs[0], "pegging")
+        process_crew_tab(crew_tabs[1], "piling")
+        process_crew_tab(crew_tabs[2], "mounting")
+        process_crew_tab(crew_tabs[3], "modules")

@@ -286,29 +286,6 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # ==============================================================================
-    # 🚨 SECURITY GATEWAY CHECK
-    # ==============================================================================
-    if not site_is_published and not st.session_state.is_admin_mode:
-        st.write("---")
-        st.title("🚧 Project Site Setup Phase Incomplete")
-        st.info("The layout workflow configuration parameters are currently being finalized by an authorized Engineering Administrator.")
-        
-        st.markdown("""
-        ### 📋 Deployment Checklist Progress Roadmap:
-        * **[🟢 DONE]** Structural Master Matrix Blueprint Extracted & Uploaded.
-        * **[⏳ PENDING]** Engineering Allocation Zoning Groups.
-        * **[⏳ PENDING]** Inverter Mapping & Cabling Network Routing Layout (AC/DC).
-        * **[⏳ PENDING]** Component Placement Customizers (Pegging & Piling Anchor baselines).
-        * **[⏳ PENDING]** Transformer Drop Hub Substation Loop Integration.
-        ---
-        *Please standby. This workspace view portal will activate automatically as soon as the Admin issues the deployment release.*
-        """)
-        
-        if site_bg_img:
-            st.image(site_bg_img, caption="Draft Layout Reference Sheet", use_container_width=False, width=700)
-        st.stop()
-
     if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
         st.rerun()
 
@@ -342,15 +319,14 @@ else:
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
-    found_zones = set()
+    # Sync any zones explicitly stored in database back into session state
     for b in active_table_data:
         z = b.get("assigned_zone")
-        if z: found_zones.add(z)
         if z and z not in st.session_state.managed_zones:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
     
-    zone_list_for_wiping = sorted(list(found_zones))
-    if "Unassigned" in zone_list_for_wiping: zone_list_for_wiping.remove("Unassigned")
+    # BUILD RESET DROPDOWN LIST DIRECTLY FROM REGISTRY AND SIFT OUT UNASSIGNED OPTIONS
+    clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
@@ -382,9 +358,8 @@ else:
             st.subheader("🛠️ Selective Zone Reset Center")
             col_wipe1, col_wipe2 = st.columns([6, 4])
             with col_wipe1:
-                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + clean_wiping_dropdown_options)
             with col_wipe2:
-                # FIXED PARAMETER HERE (unsafe_allow_html instead of unsafe_allowed_html)
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                 
                 if site_is_published:
@@ -744,7 +719,7 @@ else:
                 """
                 components.html(html_micro_template, height=280)
 
-        # --- STAGE 4: TRANSFORMER HUB PLANCEMENT MAP ---
+        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP ---
         with setup_tabs[3]:
             st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
             html_transformer_engine = """

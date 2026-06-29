@@ -114,7 +114,6 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    # BULLETPROOF CELL DETECTION (Catching both standard text inputs and conditional rules)
                                     if cell.value is not None and len(str(cell.value).strip()) > 0:
                                         is_active_cell = True
                                     elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
@@ -155,20 +154,22 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
-                                        section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
-                                        computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
+                                        # Size guard constraint filter
+                                        if (max_br - min_br + 1) < 40 and (max_bc - min_bc + 1) < 40:
+                                            section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
+                                            section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
+                                            computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
 
-                                        structures_queue.append({
-                                            "farm_id": new_fid, "table_label": f"T-{table_counter}",
-                                            "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                            "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
-                                            "assigned_zone": "Unassigned",
-                                            "section_group": int(computed_section_id),
-                                            "pegging_status": "pending", "piling_status": "pending", 
-                                            "mounting_status": "pending", "modules_status": "pending"
-                                        })
-                                        table_counter += 1
+                                            structures_queue.append({
+                                                "farm_id": new_fid, "table_label": f"T-{table_counter}",
+                                                "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
+                                                "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
+                                                "assigned_zone": "Unassigned",
+                                                "section_group": int(computed_section_id),
+                                                "pegging_status": "pending", "piling_status": "pending", 
+                                                "mounting_status": "pending", "modules_status": "pending"
+                                            })
+                                            table_counter += 1
                             
                             st.sidebar.info(f"📊 Processed {len(structures_queue)} total structural matrices inside layout.")
                             

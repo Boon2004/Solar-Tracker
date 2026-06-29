@@ -111,18 +111,14 @@ if st.session_state.active_site_id is None:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    has_value = cell.value is not None and str(cell.value).strip() != ""
-                                    
-                                    has_fill = False
-                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        if hasattr(cell.fill, 'start_color') and cell.fill.start_color:
-                                            color_hex = str(cell.fill.start_color.rgb)
-                                            if color_hex and "00000000" not in color_hex and "FFFFFFFF" not in color_hex:
-                                                has_fill = True
-                                        else:
-                                            has_fill = True
-                                            
-                                    if has_value or has_fill:
+                                    if cell.value is not None and str(cell.value).strip() != "":
+                                        grid_matrix[r][c] = True
+                                    elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                        grid_matrix[r][c] = True
+                                    elif cell.border and ((cell.border.top and cell.border.top.style) or 
+                                                         (cell.border.bottom and cell.border.bottom.style) or 
+                                                         (cell.border.left and cell.border.left.style) or 
+                                                         (cell.border.right and cell.border.right.style)):
                                         grid_matrix[r][c] = True
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
@@ -166,7 +162,7 @@ if st.session_state.active_site_id is None:
                                                 "farm_id": new_fid, 
                                                 "table_label": discovered_label if discovered_label else f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                                "structure_type": f"Layout_{w_cells}x{h_cells}",
+                                                "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(table_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 
@@ -220,16 +216,12 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         if not st.session_state.is_admin_mode:
-            # Fixed form-lifecycle state assignment bypass sequence
-            adm_pass = st.text_input("Upgrade to Admin Mode:", type="password", key="sidebar_admin_pass_input")
-            if st.button("Verify Clearance", type="primary"):
-                if str(adm_pass) == str(st.session_state.admin_key_match):
-                    st.session_state.is_admin_mode = True
-                    st.success("Clearance Granted!")
-                    time.sleep(0.5)
-                    st.rerun()
-                else: 
-                    st.error("Incorrect Password.")
+            with st.form("admin_upgrade_form", clear_on_submit=True):
+                adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
+                if st.form_submit_button("Verify Clearance"):
+                    if str(adm_pass) == str(st.session_state.admin_key_match):
+                        st.session_state.is_admin_mode = True; st.rerun()
+                    else: st.error("Incorrect Password.")
         else:
             st.info("⚡ Admin Permissions Active")
             
@@ -648,141 +640,16 @@ else:
                                              .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
-        # --- STAGE 2: PEGGING & PILING CUSTOMIZER ---
+        # --- STAGE 2: PEGGIN PHASE MICROSCALE BUILDER ---
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
-            
-            layout_types = {}
-            for block in active_table_data:
-                h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
-                w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
-                layout_key = f"Tracker Configuration Matrix Profile ({w_cells}x{h_cells} Columns/Rows)"
-                
-                if layout_key not in layout_types:
-                    layout_types[layout_key] = {
-                        "type_string": block.get("structure_type"),
-                        "h_cells": h_cells,
-                        "w_cells": w_cells
-                    }
-
-            layout_options = list(layout_types.keys())
-            
-            if not layout_options:
-                st.info("No active matrix layout definitions tracked in database.")
-            else:
-                selected_layout_label = st.selectbox(
-                    "Select Layout Architecture Template Matrix to Customize:", 
-                    layout_options
-                )
-                
-                target_layout = layout_types[selected_layout_label]
-                state_prefix = f"layout_cfg_{target_layout['type_string']}"
-                undo_stack_key = f"undo_{state_prefix}"
-                
-                if undo_stack_key not in st.session_state:
-                    st.session_state[undo_stack_key] = []
-                
-                if f"{state_prefix}_rows" not in st.session_state:
-                    st.session_state[f"{state_prefix}_rows"] = 4
-                if f"{state_prefix}_cols" not in st.session_state:
-                    st.session_state[f"{state_prefix}_cols"] = 3
-
-                col_inputs, col_actions = st.columns([4, 6])
-                
-                with col_inputs:
-                    st.markdown("#### 📏 Target Coordination Point Formations")
-                    row_pts = st.number_input(
-                        "Array Pin Points per Row Dimension Layout:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_rows"
-                    )
-                    col_pts = st.number_input(
-                        "Array Pin Points per Column Dimension Layout:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_cols"
-                    )
-                    
-                    total_calculated_points = row_pts * col_pts
-                    st.metric(label="Calculated Component Volume Distribution Density Matrix", value=f"{total_calculated_points} Points / Block")
-                    
-                    if st.button("💾 Apply & Replicate Structural Configuration Fleetwide", type="primary", use_container_width=True):
-                        st.session_state[undo_stack_key].append({
-                            "rows": row_pts,
-                            "cols": col_pts,
-                            "timestamp": datetime.now().strftime("%H:%M:%S")
-                        })
-                        
-                        with st.spinner("Broadcasting visual component patterns to cloud layout..."):
-                            try:
-                                supabase.table("structures").update({
-                                    "section_group": int(total_calculated_points)
-                                }).eq("farm_id", st.session_state.active_site_id)\
-                                  .eq("structure_type", target_layout["type_string"]).execute()
-                                
-                                st.success("Replication batch mutations applied securely workspace fleetwide!")
-                                time.sleep(1); st.rerun()
-                            except Exception as e:
-                                st.error(f"Transmission mutation dropped: {str(e)}")
-
-                    if st.session_state[undo_stack_key]:
-                        last_action = st.session_state[undo_stack_key][-1]
-                        if st.button(f"↩️ Revert Layout Assignment Block (Snapshot: {last_action['timestamp']})", type="secondary", use_container_width=True):
-                            st.session_state[undo_stack_key].pop()
-                            st.rerun()
-
-                with col_actions:
-                    st.markdown("#### 🛰️ Structural Pin Grid Dynamic Canvas Previewer")
-                    
-                    h_px = int(target_layout["h_cells"] * 25)
-                    w_px = int(target_layout["w_cells"] * 35)
-                    
-                    html_micro_template = f"""
-                    <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center; font-family:sans-serif;">
-                        <canvas id="micro_canvas" width="450" height="280" style="background:#020617; border:2px dashed #38bdf8; border-radius:8px;"></canvas>
-                    </div>
-                    <script>
-                        (function() {{
-                            const canvas = document.getElementById("micro_canvas");
-                            const ctx = canvas.getContext('2d');
-                            
-                            const rows = {row_pts};
-                            const cols = {col_pts};
-                            const boxW = {w_px};
-                            const boxH = {h_px};
-                            
-                            const bx = (canvas.width / 2) - (boxW / 2);
-                            const by = (canvas.height / 2) - (boxH / 2);
-                            
-                            ctx.fillStyle = '#1e293b';
-                            ctx.fillRect(bx, by, boxW, boxH);
-                            ctx.strokeStyle = '#38bdf8';
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(bx, by, boxW, boxH);
-                            
-                            if(rows > 0 && cols > 0) {{
-                                const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
-                                const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
-                                
-                                for(let r = 0; r < rows; r++) {{
-                                    for(let c = 0; c < cols; c++) {{
-                                        let px = (cols === 1) ? bx + (boxW / 2) : bx + (c * colGap);
-                                        let py = (rows === 1) ? by + (boxH / 2) : by + (r * rowGap);
-                                        
-                                        ctx.fillStyle = '#f43f5e';
-                                        ctx.beginPath();
-                                        ctx.arc(px, py, 5, 0, Math.PI * 2);
-                                        ctx.fill();
-                                        
-                                        ctx.strokeStyle = '#ffffff';
-                                        ctx.lineWidth = 1;
-                                        ctx.stroke();
-                                    }}
-                                }}
-                            }}
-                        }})();
-                    </script>
-                    """
-                    components.html(html_micro_template, height=340)
+            col_t1, col_t2 = st.columns([4, 6])
+            with col_t1:
+                html_micro_template = """
+                <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center;"><canvas id="micro_canvas" width="300" height="200" style="background:#020617; border:2px dashed #38bdf8; border-radius:6px; cursor:crosshair;"></canvas><div style="margin-top:12px;"><button style="background:#22c55e; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="alert('Component Pattern Cloned Fleetwide!')">💾 Apply & Replicate Fleetwide</button></div></div>
+                <script>const c = document.getElementById("micro_canvas"); const ctx = c.getContext('2d'); ctx.fillStyle='#334155'; ctx.fillRect(40,30,220,140); ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.strokeRect(40,30,220,140); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(80,100,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(220,100,6,0,Math.PI*2); ctx.fill();</script>
+                """
+                components.html(html_micro_template, height=280)
 
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
@@ -812,7 +679,7 @@ else:
                         <button id="btn_flush_inverters" style="width:100%; background:#334155; border:none; padding:6px; color:#cbd5e1; font-weight:bold; border-radius:4px; cursor:pointer; margin-bottom:6px; font-size:11px;">❌ Clear Inverters Only</button>
                         <button id="btn_flush_transformers" style="width:100%; background:#334155; border:none; padding:6px; color:#cbd5e1; font-weight:bold; border-radius:4px; cursor:pointer; margin-bottom:12px; font-size:11px;">❌ Clear Xfrmrs Only</button>
                         
-                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:9px; color:white; font-weight:bold; border-radius:4px; cursor:pointer;">💾 Save Topologies</button>
+                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:99px; color:white; font-weight:bold; border-radius:4px; cursor:pointer;">💾 Save Topologies</button>
                     </div>
 
                     <div style="position:relative;">

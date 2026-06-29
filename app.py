@@ -89,10 +89,12 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
+                    st.info("🔄 Starting spreadsheet decoding process...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
+                        st.info(f"📊 Found a sheet grid area of size: {max_rows} rows x {max_cols} columns.")
                         
                         new_fid = None
                         try:
@@ -100,9 +102,11 @@ if st.session_state.active_site_id is None:
                                 "name": new_site_name, "admin_password": init_admin_pwd, "installer_password": init_inst_pwd,
                                 "max_rows": max_rows, "max_cols": max_cols, "is_published": False
                             }).execute()
-                            if farm_node.data: new_fid = farm_node.data[0]["id"]
+                            if farm_node.data: 
+                                new_fid = farm_node.data[0]["id"]
+                                st.success(f"✅ Created Farm Node ID in Supabase: {new_fid}")
                         except Exception as e:
-                            st.error(f"Database creation rejected: {str(e)}")
+                            st.error(f"❌ Database reference creation rejected: {str(e)}")
                         
                         if new_fid:
                             visited = set()
@@ -114,7 +118,8 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    if cell.value is not None and len(str(cell.value).strip()) > 0:
+                                    # Fallback strategy: If any visual components or data properties exist, capture it.
+                                    if cell.value is not None and str(cell.value).strip() != "":
                                         is_active_cell = True
                                     elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
                                         is_active_cell = True
@@ -136,7 +141,7 @@ if st.session_state.active_site_id is None:
                                                 if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
                                                     n_cell = sheet.cell(row=nr, column=nc)
                                                     n_active = False
-                                                    if n_cell.value is not None and len(str(n_cell.value).strip()) > 0:
+                                                    if n_cell.value is not None and str(n_cell.value).strip() != "":
                                                         n_active = True
                                                     elif n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
                                                         n_active = True
@@ -154,8 +159,12 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        # Size guard constraint filter
-                                        if (max_br - min_br + 1) < 40 and (max_bc - min_bc + 1) < 40:
+                                        # Size constraint limits to ensure visual layout separations
+                                        h_cells = max_br - min_br + 1
+                                        w_cells = max_bc - min_bc + 1
+                                        
+                                        # Skip macro elements like background tables or total sheets
+                                        if h_cells < (max_rows * 0.8) and w_cells < (max_cols * 0.8):
                                             section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                             section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                             computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -163,7 +172,7 @@ if st.session_state.active_site_id is None:
                                             structures_queue.append({
                                                 "farm_id": new_fid, "table_label": f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                                "structure_type": "double_6x9" if (max_br - min_br + 1) >= 6 else "single_3x9",
+                                                "structure_type": "double_6x9" if h_cells >= 6 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(computed_section_id),
                                                 "pegging_status": "pending", "piling_status": "pending", 
@@ -171,17 +180,23 @@ if st.session_state.active_site_id is None:
                                             })
                                             table_counter += 1
                             
-                            st.sidebar.info(f"📊 Processed {len(structures_queue)} total structural matrices inside layout.")
+                            st.info(f"📊 Layout extraction sequence generated {len(structures_queue)} table entries.")
                             
-                            for idx in range(0, len(structures_queue), 50):
-                                try: 
-                                    supabase.table("structures").insert(structures_queue[idx:idx+50]).execute()
-                                except Exception as batch_error:
-                                    st.error(f"Cloud Batch Ingestion Error: {str(batch_error)}")
-                                time.sleep(0.04)
-                                
-                            st.success("Clean framework mapped perfectly into cloud environments!")
-                            st.cache_data.clear(); st.rerun()
+                            if len(structures_queue) == 0:
+                                st.error("❌ Critical Failure: The layout process generated 0 individual structure blocks. Check layout file formatting metrics.")
+                            else:
+                                success_count = 0
+                                for idx in range(0, len(structures_queue), 50):
+                                    batch = structures_queue[idx:idx+50]
+                                    try: 
+                                        supabase.table("structures").insert(batch).execute()
+                                        success_count += len(batch)
+                                    except Exception as batch_error:
+                                        st.error(f"❌ Batch insertion dropped: {str(batch_error)}")
+                                st.success(f"🎉 Cloud operation finalized! Successfully inserted {success_count}/{len(structures_queue)} solar rows.")
+                                st.cache_data.clear()
+                                time.sleep(2)
+                                st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:

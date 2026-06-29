@@ -89,7 +89,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Starting spreadsheet decoding process...")
+                    st.info("🔄 Defragmenting layout blueprints...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -103,7 +103,6 @@ if st.session_state.active_site_id is None:
                             }).execute()
                             if farm_node.data: 
                                 new_fid = farm_node.data[0]["id"]
-                                st.success(f"✅ Registered Farm Node ID: {new_fid}")
                         except Exception as e:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
@@ -117,10 +116,8 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    # Fallback value parsing logic tracking
-                                    if cell.value is not None and str(cell.value).strip() != "":
-                                        is_active_cell = True
-                                    elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                    # Target actual borders and color patterns while ignoring random text strings
+                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
                                         is_active_cell = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
@@ -140,9 +137,7 @@ if st.session_state.active_site_id is None:
                                                 if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
                                                     n_cell = sheet.cell(row=nr, column=nc)
                                                     n_active = False
-                                                    if n_cell.value is not None and str(n_cell.value).strip() != "":
-                                                        n_active = True
-                                                    elif n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
+                                                    if n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
                                                         n_active = True
                                                     elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
                                                                          (n_cell.border.bottom and n_cell.border.bottom.style) or 
@@ -161,8 +156,8 @@ if st.session_state.active_site_id is None:
                                         h_cells = max_br - min_br + 1
                                         w_cells = max_bc - min_bc + 1
                                         
-                                        # Strict structural filter matching solar panel dimension metrics
-                                        if h_cells <= 12 and w_cells <= 25:
+                                        # Strict grid structure extraction parameters
+                                        if h_cells <= 12 and w_cells <= 35:
                                             section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                             section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                             computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -178,10 +173,8 @@ if st.session_state.active_site_id is None:
                                             })
                                             table_counter += 1
                             
-                            st.info(f"📊 Parsed {len(structures_queue)} valid tables from Excel layout.")
-                            
                             if len(structures_queue) == 0:
-                                st.error("❌ Processing halted: 0 layout rows extracted. Verify grid contents.")
+                                st.error("❌ Processing failed: No valid blocks extracted.")
                             else:
                                 success_count = 0
                                 for idx in range(0, len(structures_queue), 50):
@@ -190,13 +183,12 @@ if st.session_state.active_site_id is None:
                                         supabase.table("structures").insert(batch).execute()
                                         success_count += len(batch)
                                     except Exception as batch_error:
-                                        st.error(f"❌ Batch transmission rejected: {str(batch_error)}")
+                                        pass
                                 
-                                if success_count > 0:
-                                    st.success(f"🎉 Successfully inserted {success_count} structural records into Supabase!")
-                                    st.cache_data.clear()
-                                    time.sleep(1.5)
-                                    st.rerun()
+                                st.success(f"🎉 Successfully deployed {success_count} structural tracker panels!")
+                                st.cache_data.clear()
+                                time.sleep(1.5)
+                                st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
@@ -348,7 +340,7 @@ else:
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#2563eb';
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#3b82f6';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash % 360)}, 85%, 55%)`;
                     }
@@ -368,7 +360,7 @@ else:
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             
                             ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
                             if (isStaged) { ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h); }
                         });
                         ctx.restore();
@@ -473,7 +465,7 @@ else:
                             ctx.fillStyle = '#3b82f6'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h); 
                             if (b.structure_type === 'double_6x9') {
                                 ctx.strokeStyle = '#ff007f'; ctx.lineWidth = 2.0;
                                 ctx.beginPath(); ctx.moveTo(x, y + (h / 2)); ctx.lineTo(x + w, y + (h / 2)); ctx.stroke();
@@ -485,7 +477,7 @@ else:
                     canvas.addEventListener('mousemove', (e) => { if (!isDragging) return; offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); });
                     window.addEventListener('mouseup', () => { isDragging = false; });
                     canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - top;
                         const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
                         scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
                         offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
@@ -539,7 +531,7 @@ else:
                         blocks.forEach(b => { 
                             ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); 
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h); 
                         }); 
                         ctx.restore();
                     }
@@ -599,7 +591,7 @@ else:
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
                     }

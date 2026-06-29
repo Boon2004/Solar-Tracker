@@ -38,6 +38,51 @@ all_registered_farms = fetch_farms_directory()
 farm_options = [f["name"] for f in all_registered_farms]
 
 # ==============================================================================
+# 🪟 NATIVE STREAMLIT EVENT RECEIVER (Replaces raw JS fetch calls)
+# ==============================================================================
+# Custom HTML listener block to pass background actions securely into session state
+st.html("""
+<script>
+    window.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "TRACKER_UPDATE") {
+            const params = new URLSearchParams(window.parent.location.search);
+            params.set("update_trigger", Date.now().toString());
+            params.set("payload", JSON.stringify(event.data));
+            window.parent.history.replaceState({}, "", "?" + params.toString());
+            const btn = window.parent.document.querySelector("button[kind='primary']");
+            if (btn) btn.click();
+        }
+    });
+</script>
+""")
+
+# Process staged structural matrix edits inside native Python environment
+query_params = st.query_params
+if "payload" in query_params:
+    try:
+        event_payload = json.loads(query_params["payload"])
+        target_ids = event_payload.get("ids", [])
+        field_key = event_payload.get("field")
+        target_val = event_payload.get("value")
+        
+        if target_ids and field_key:
+            with st.spinner("Synchronizing field modifications..."):
+                for t_id in target_ids:
+                    if field_key == "assigned_zone":
+                        supabase.table("structures").update({"assigned_zone": target_val}).eq("id", t_id).execute()
+                    else:
+                        today_str = str(date.today())
+                        supabase.table("structures").update({
+                            f"{field_key}_status": "completed",
+                            f"{field_key}_date": today_str
+                        }).eq("id", t_id).execute()
+            st.toast(f"Successfully processed {len(target_ids)} structure updates!", icon="✅")
+            st.query_params.clear()
+            st.rerun()
+    except Exception as error:
+        st.error(f"Synchronization runtime exception: {str(error)}")
+
+# ==============================================================================
 # 🏡 MAIN ENTRY SITE GATEWAY
 # ==============================================================================
 if st.session_state.active_site_id is None:
@@ -290,10 +335,10 @@ else:
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
-            "🖼️ Step 1: Base Overview & Zone Assignation", 
-            "🔌 Step 2: Electrical Inverter Mapping", 
-            "📌 Step 3: Pegging & Piling Customizer",
-            "🏪 Step 4: Transformer Drop Hubs"
+            "🖼️ Base Overview & Zone Assignation", 
+            "🔌 Electrical Inverter Mapping", 
+            "📌 Pegging & Piling Customizer",
+            "🏪 Transformer Drop Hubs"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
@@ -477,15 +522,15 @@ else:
                     });
 
                     document.getElementById("btn_yes").addEventListener('click', () => {
-                        stagedBlockIds.forEach(id => {
-                            let target = blocks.find(b => b.id === id); 
-                            if (target) target.assigned_zone = paintZone;
-                            fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                body: JSON.stringify({ "assigned_zone": paintZone })
-                            });
-                        });
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                        window.parent.postMessage({
+                            type: "TRACKER_UPDATE",
+                            field: "assigned_zone",
+                            value: paintZone,
+                            ids: stagedBlockIds
+                        }, "*");
+                        stagedBlockIds = []; 
+                        document.getElementById("dialogue_overlay").style.display = "none"; 
+                        draw();
                     });
 
                     document.getElementById("btn_no").addEventListener('click', () => {
@@ -508,9 +553,7 @@ else:
                                              .replace("MIN_C_VAL", str(min_c))\
                                              .replace("MAX_C_VAL", str(max_c))\
                                              .replace("MIN_R_VAL", str(min_r))\
-                                             .replace("MAX_R_VAL", str(max_r))\
-                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                                             .replace("MAX_R_VAL", str(max_r))
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
@@ -614,7 +657,7 @@ else:
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
                             ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
@@ -763,6 +806,7 @@ else:
                             let boxY2 = Math.max(dragStartRawY, mouseUpY);
 
                             let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                            let payloadIds = [];
 
                             blocks.forEach(b => {
                                 let cellScreenX1 = b.min_c * CELL * scale + offsetX;
@@ -784,15 +828,18 @@ else:
                                 }
 
                                 if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
-                                    b['LAYER_KEY_status'] = 'completed';
-                                    const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
-                                    fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
-                                        method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                        body: JSON.stringify(payload)
-                                    });
+                                    payloadIds.push(b.id);
                                 }
                             });
                             
+                            if (payloadIds.length > 0) {
+                                window.parent.postMessage({
+                                    type: "TRACKER_UPDATE",
+                                    field: "LAYER_KEY",
+                                    value: "completed",
+                                    ids: payloadIds
+                                }, "*");
+                            }
                             setTimeout(draw, 50);
                         }
                     });
@@ -820,10 +867,7 @@ else:
                                          .replace("MIN_C_VAL", str(min_c))\
                                          .replace("MAX_C_VAL", str(max_c))\
                                          .replace("MIN_R_VAL", str(min_r))\
-                                         .replace("MAX_R_VAL", str(max_r))\
-                                         .replace("TODAY_STR_VAL", today_str)\
-                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                                         .replace("MAX_R_VAL", str(max_r))
             return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):

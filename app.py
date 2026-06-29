@@ -90,7 +90,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Running Grid Matrix Extraction Scanner...")
+                    st.info("🔄 Running Rigid Section Grid Clustering Scanner...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -108,78 +108,71 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            visited = set()
-                            table_counter = 1
-                            structures_queue = []
-                            ROAD_GAP = 2 
-
+                            grid_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    is_active_cell = False
-                                    
                                     if cell.value is not None and str(cell.value).strip() != "":
-                                        is_active_cell = True
+                                        grid_matrix[r][c] = True
                                     elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        is_active_cell = True
+                                        grid_matrix[r][c] = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
-                                                         (cell.border.right and cell.border.right.style)): 
-                                        is_active_cell = True
-                                    
-                                    if is_active_cell and (r, c) not in visited:
-                                        block_cells = []
-                                        queue = [(r, c)]
-                                        visited.add((r, c))
+                                                         (cell.border.right and cell.border.right.style)):
+                                        grid_matrix[r][c] = True
+
+                            visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
+                            structures_queue = []
+                            sect_group_counter = 1
+                            table_counter = 1
+                            ROAD_GAP = 3  
+
+                            for r in range(1, max_rows + 1):
+                                for c in range(1, max_cols + 1):
+                                    if grid_matrix[r][c] and not visited_matrix[r][c]:
+                                        cluster_cells = []
+                                        bfs_queue = [(r, c)]
+                                        visited_matrix[r][c] = True
                                         discovered_label = ""
 
-                                        while queue:
-                                            curr_r, curr_c = queue.pop(0)
-                                            block_cells.append((curr_r, curr_c))
+                                        while bfs_queue:
+                                            curr_r, curr_c = bfs_queue.pop(0)
+                                            cluster_cells.append((curr_r, curr_c))
 
                                             v_cell = sheet.cell(row=curr_r, column=curr_c).value
                                             if v_cell and not discovered_label and not str(v_cell).strip().isdigit():
                                                 discovered_label = str(v_cell).strip()
 
-                                            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-                                                nr, nc = curr_r + dr, curr_c + dc
-                                                if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
-                                                    n_cell = sheet.cell(row=nr, column=nc)
-                                                    n_active = False
-                                                    if n_cell.value is not None and str(n_cell.value).strip() != "":
-                                                        n_active = True
-                                                    elif n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
-                                                        n_active = True
-                                                    elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
-                                                                         (n_cell.border.bottom and n_cell.border.bottom.style) or 
-                                                                         (n_cell.border.left and n_cell.border.left.style) or 
-                                                                         (n_cell.border.right and n_cell.border.right.style)): 
-                                                        n_active = True
-                                                        
-                                                    if n_active:
-                                                        visited.add((nr, nc))
-                                                        queue.append((nr, nc))
-                                                        
-                                        b_rows = [pt[0] for pt in cluster_cells] if 'cluster_cells' in locals() else [item[0] for item in block_cells]
-                                        b_cols = [pt[1] for pt in cluster_cells] if 'cluster_cells' in locals() else [item[1] for item in block_cells]
+                                            for dr in range(-ROAD_GAP, ROAD_GAP + 1):
+                                                for dc in range(-ROAD_GAP, ROAD_GAP + 1):
+                                                    nr, nc = curr_r + dr, curr_c + dc
+                                                    if 1 <= nr <= max_rows and 1 <= nc <= max_cols:
+                                                        if grid_matrix[nr][nc] and not visited_matrix[nr][nc]:
+                                                            visited_matrix[nr][nc] = True
+                                                            bfs_queue.append((nr, nc))
+
+                                        # FIXED: Correct reference pointers to build unified macro boxes rather than tracking down separate single cells
+                                        b_rows = [pt[0] for pt in cluster_cells]
+                                        b_cols = [pt[1] for pt in cluster_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
                                         h_cells = max_br - min_br + 1
                                         w_cells = max_bc - min_bc + 1
 
-                                        if h_cells >= 2 and w_cells >= 2:
+                                        if h_cells >= 2 and w_cells >= 2 and h_cells < (max_rows * 0.85):
                                             structures_queue.append({
                                                 "farm_id": new_fid, 
                                                 "table_label": discovered_label if discovered_label else f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                                 "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
-                                                "section_group": int(table_counter),
+                                                "section_group": int(sect_group_counter),
                                                 "pegging_status": "pending", "piling_status": "pending", 
                                                 "mounting_status": "pending", "modules_status": "pending"
                                             })
                                             table_counter += 1
+                                            sect_group_counter += 1
 
                             if len(structures_queue) == 0:
                                 st.error("❌ Matrix parser rejected configuration: 0 tracker units extracted.")
@@ -333,7 +326,7 @@ else:
 
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
-                <div style="color: #64748b; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag to <b>Scroll/Pan</b> | Mouse Wheel to <b>Zoom</b> | <kbd style="background:#1e293b; padding:2px 5px; border-radius:3px; color:#f1f5f9;">Shift</kbd> + Drag to <b>Box/Marquee Select Whole Sections Together</b>.</div>
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag to <b>Scroll/Pan</b> | Mouse Wheel to <b>Zoom</b> | <kbd style="background:#1e293b; padding:2px 5px; border-radius:3px; color:#f1f5f9;">Shift</kbd> + Drag to <b>Box Select Sections Together</b>.</div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
                     <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
@@ -364,7 +357,7 @@ else:
 
                     let isDragging = false, isSelecting = false;
                     let startX, startY, currentX, currentY;
-                    let stagedBlockIds = [];
+                    let hoverSectionGroup = null; let stagedBlockIds = [];
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
@@ -377,8 +370,11 @@ else:
                         ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
 
                         blocks.forEach(b => {
+                            let isHovered = (hoverSectionGroup !== null && b.section_group === hoverSectionGroup); 
                             let isStaged = stagedBlockIds.includes(b.id);
+                            
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
+                            if (isHovered) ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
                             
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
@@ -389,7 +385,6 @@ else:
                         });
                         ctx.restore();
 
-                        // Render the screen-space transparent selection marquee indicator overlay
                         if (isSelecting) {
                             ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
                             ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
@@ -412,7 +407,7 @@ else:
                             isDragging = true;
                             isSelecting = false;
                             startX = e.clientX - offsetX;
-                            startY = e.clientY - startY;
+                            startY = e.clientY - offsetY;
                         }
                     });
 
@@ -426,6 +421,17 @@ else:
                             currentX = e.clientX - rect.left;
                             currentY = e.clientY - rect.top;
                             draw();
+                        } else {
+                            const mx = (e.clientX - rect.left - offsetX) / scale; 
+                            const my = (e.clientY - rect.top - offsetY) / scale;
+                            let found = null;
+                            blocks.forEach(b => {
+                                let x = b.min_c * CELL; let y = b.min_r * CELL;
+                                let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
+                            });
+                            hoverSectionGroup = found ? found.section_group : null;
+                            draw();
                         }
                     });
 
@@ -435,7 +441,6 @@ else:
                         } else if (isSelecting) {
                             isSelecting = false;
                             
-                            // Process elements mapped within the custom marquee selection box array coordinates
                             let x1 = (Math.min(startX, currentX) - offsetX) / scale;
                             let x2 = (Math.max(startX, currentX) - offsetX) / scale;
                             let y1 = (Math.min(startY, currentY) - offsetY) / scale;
@@ -458,22 +463,10 @@ else:
                         }
                     });
 
-                    // Add support for simple single clicks
                     canvas.addEventListener('click', (e) => {
                         if (e.shiftKey) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const clX = (e.clientX - rect.left - offsetX) / scale;
-                        const clY = (e.clientY - rect.top - offsetY) / scale;
-                        
-                        let target = null;
-                        blocks.forEach(b => {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (clX >= x && clX <= x + w && clY >= y && clY <= y + h) target = b;
-                        });
-
-                        if (target) {
-                            stagedBlockIds = [target.id];
+                        if (hoverSectionGroup !== null) {
+                            stagedBlockIds = blocks.filter(b => b.section_group === hoverSectionGroup).map(b => b.id);
                             document.getElementById("lbl_zone").innerText = paintZone;
                             document.getElementById("dialogue_overlay").style.display = "block";
                             draw();

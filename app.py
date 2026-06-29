@@ -89,7 +89,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Starting rigid bounding geometry parse sequence...")
+                    st.info("🔄 Running layout grid scanner...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -107,82 +107,87 @@ if st.session_state.active_site_id is None:
                             st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
-                            visited = set()
-                            table_counter = 1
-                            structures_queue = []
-                            
+                            # 1. Map all visual elements to a coordinate grid mapping reference
+                            grid_map = []
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    is_active_cell = False
-                                    
-                                    if cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        is_active_cell = True
+                                    has_visual = False
+                                    if cell.value is not None and str(cell.value).strip() != "":
+                                        has_visual = True
+                                    elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
+                                        has_visual = True
                                     elif cell.border and ((cell.border.top and cell.border.top.style) or 
                                                          (cell.border.bottom and cell.border.bottom.style) or 
                                                          (cell.border.left and cell.border.left.style) or 
-                                                         (cell.border.right and cell.border.right.style)): 
-                                        is_active_cell = True
+                                                         (cell.border.right and cell.border.right.style)):
+                                        has_visual = True
                                     
-                                    if is_active_cell and (r, c) not in visited:
-                                        block_cells = []
-                                        queue = [(r, c)]
-                                        visited.add((r, c))
-                                        
-                                        # Capture text labels (like B1, C2) inside the bounding box area to name the table
-                                        structural_label = ""
-                                        
-                                        while queue:
-                                            curr_r, curr_c = queue.pop(0)
-                                            block_cells.append((curr_r, curr_c))
-                                            
-                                            c_val = sheet.cell(row=curr_r, column=curr_c).value
-                                            if c_val and not structural_label:
-                                                structural_label = str(c_val).strip()
-                                                
-                                            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-                                                nr, nc = curr_r + dr, curr_c + dc
-                                                if 1 <= nr <= max_rows and 1 <= nc <= max_cols and (nr, nc) not in visited:
-                                                    n_cell = sheet.cell(row=nr, column=nc)
-                                                    n_active = False
-                                                    if n_cell.fill and n_cell.fill.fill_type is not None and n_cell.fill.fill_type != 'none':
-                                                        n_active = True
-                                                    elif n_cell.border and ((n_cell.border.top and n_cell.border.top.style) or 
-                                                                         (n_cell.border.bottom and n_cell.border.bottom.style) or 
-                                                                         (n_cell.border.left and n_cell.border.left.style) or 
-                                                                         (n_cell.border.right and n_cell.border.right.style)): 
-                                                        n_active = True
-                                                        
-                                                    if n_active:
-                                                        visited.add((nr, nc))
-                                                        queue.append((nr, nc))
-                                                        
-                                        b_rows = [item[0] for item in block_cells]
-                                        b_cols = [item[1] for item in block_cells]
-                                        min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
-                                        
-                                        h_cells = max_br - min_br + 1
-                                        w_cells = max_bc - min_bc + 1
-                                        
-                                        # Geometric validation constraint filtering out noise
-                                        if h_cells <= 15 and w_cells <= 45:
-                                            section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
-                                            section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
-                                            computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
-                                            
-                                            label_final = structural_label if structural_label else f"T-{table_counter}"
-
-                                            structures_queue.append({
-                                                "farm_id": new_fid, "table_label": label_final,
-                                                "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                                "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
-                                                "assigned_zone": "Unassigned",
-                                                "section_group": int(computed_section_id),
-                                                "pegging_status": "pending", "piling_status": "pending", 
-                                                "mounting_status": "pending", "modules_status": "pending"
-                                            })
-                                            table_counter += 1
+                                    if has_visual:
+                                        grid_map.append((r, c))
                             
+                            # 2. Section cluster groupings bounded strictly by road widths (5 rows/cols separation)
+                            sections = []
+                            allocated_points = set()
+                            ROAD_THRESHOLD = 5
+                            
+                            for point in grid_map:
+                                if point in allocated_points:
+                                    continue
+                                
+                                current_cluster = []
+                                scan_queue = [point]
+                                allocated_points.add(point)
+                                
+                                while scan_queue:
+                                    curr_p = scan_queue.pop(0)
+                                    current_cluster.append(curr_p)
+                                    
+                                    # Find nearby visual segments matching your structural gaps
+                                    for target_p in grid_map:
+                                        if target_p not in allocated_points:
+                                            if abs(target_p[0] - curr_p[0]) <= ROAD_THRESHOLD and abs(target_p[1] - curr_p[1]) <= ROAD_THRESHOLD:
+                                                allocated_points.add(target_p)
+                                                scan_queue.append(target_p)
+                                
+                                if current_cluster:
+                                    sections.append(current_cluster)
+                            
+                            # 3. Create clean geometric boxes matching your spreadsheet tables
+                            structures_queue = []
+                            table_counter = 1
+                            
+                            for sect_idx, cluster in enumerate(sections, start=1):
+                                b_rows = [pt[0] for item in cluster for pt in [item]]
+                                b_cols = [pt[1] for item in cluster for pt in [item]]
+                                min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
+                                
+                                h_cells = max_br - min_br + 1
+                                w_cells = max_bc - min_bc + 1
+                                
+                                # Discard empty boundary cells or grid indices
+                                if h_cells > 1 and w_cells > 1 and h_cells < (max_rows * 0.9):
+                                    # Inspect labels inside the section range cleanly
+                                    discovered_label = ""
+                                    for r_sub in range(min_br, max_br + 1):
+                                        for c_sub in range(min_bc, max_bc + 1):
+                                            v = sheet.cell(row=r_sub, column=c_sub).value
+                                            if v and not discovered_label:
+                                                discovered_label = str(v).strip()
+                                    
+                                    label_final = discovered_label if discovered_label else f"T-{table_counter}"
+                                    
+                                    structures_queue.append({
+                                        "farm_id": new_fid, "table_label": label_final,
+                                        "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
+                                        "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
+                                        "assigned_zone": "Unassigned",
+                                        "section_group": int(sect_idx),
+                                        "pegging_status": "pending", "piling_status": "pending", 
+                                        "mounting_status": "pending", "modules_status": "pending"
+                                    })
+                                    table_counter += 1
+                                    
                             if len(structures_queue) == 0:
                                 st.error("❌ Matrix parser rejected configuration: 0 tracker units extracted.")
                             else:
@@ -194,7 +199,7 @@ if st.session_state.active_site_id is None:
                                         success_count += len(batch)
                                     except Exception: pass
                                 
-                                st.success(f"🎉 Geometric rendering ready! Saved {success_count} structured blocks.")
+                                st.success(f"🎉 Bounding boxes aligned perfectly! Saved {success_count} structured blocks.")
                                 st.cache_data.clear()
                                 time.sleep(1)
                                 st.rerun()
@@ -314,7 +319,6 @@ else:
                         st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
                         st.rerun()
                         
-            # MASTER WIPE SWITCH: Reverts all elements cleanly back to Unassigned
             if st.button("🔄 Clear All Allocated Zones & Reset Assignment Fleet", type="secondary"):
                 with st.spinner("Flushing master zoning allocations..."):
                     try:
@@ -358,7 +362,6 @@ else:
                     let isDragging = false, moved = false, startX, startY;
                     let hoverGroupBlockIds = []; let stagedBlockIds = [];
 
-                    // Distinct high-contrast palette mappings for each unique zone value string
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
                         let hash = 0; 

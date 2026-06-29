@@ -366,7 +366,7 @@ else:
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
                         let hash = 0; for (let i = 0; i < zoneName.length; i++) { hash = zoneName.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash % 360)}, 90%, 50%)`;
+                        return `hsl(${Math.abs(hash % 360)}, 85%, 45%)`;
                     }
 
                     function draw() {
@@ -448,6 +448,9 @@ else:
 
                             if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
                                 blocks.forEach(b => {
+                                    // DUMMY-PROOF CHECK: Lock cell from updates if already assigned
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
                                     let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
                                     let cellScreenY1 = b.min_r * CELL * scale + offsetY;
@@ -460,6 +463,9 @@ else:
                                 });
                             } else {
                                 blocks.forEach(b => {
+                                    // DUMMY-PROOF CHECK: Lock cell from updates if already assigned
+                                    if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') return;
+
                                     let cellScreenX1 = b.min_c * CELL * scale + offsetX;
                                     let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
                                     let cellScreenY1 = b.min_r * CELL * scale + offsetY;

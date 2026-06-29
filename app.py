@@ -94,7 +94,6 @@ if st.session_state.active_site_id is None:
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
-                        st.info(f"📊 Found a sheet grid area of size: {max_rows} rows x {max_cols} columns.")
                         
                         new_fid = None
                         try:
@@ -104,9 +103,9 @@ if st.session_state.active_site_id is None:
                             }).execute()
                             if farm_node.data: 
                                 new_fid = farm_node.data[0]["id"]
-                                st.success(f"✅ Created Farm Node ID in Supabase: {new_fid}")
+                                st.success(f"✅ Registered Farm Node ID: {new_fid}")
                         except Exception as e:
-                            st.error(f"❌ Database reference creation rejected: {str(e)}")
+                            st.error(f"❌ Database registration failed: {str(e)}")
                         
                         if new_fid:
                             visited = set()
@@ -118,7 +117,7 @@ if st.session_state.active_site_id is None:
                                     cell = sheet.cell(row=r, column=c)
                                     is_active_cell = False
                                     
-                                    # Fallback strategy: If any visual components or data properties exist, capture it.
+                                    # Fallback value parsing logic tracking
                                     if cell.value is not None and str(cell.value).strip() != "":
                                         is_active_cell = True
                                     elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
@@ -159,12 +158,11 @@ if st.session_state.active_site_id is None:
                                         b_cols = [item[1] for item in block_cells]
                                         min_br, max_br, min_bc, max_bc = min(b_rows), max(b_rows), min(b_cols), max(b_cols)
                                         
-                                        # Size constraint limits to ensure visual layout separations
                                         h_cells = max_br - min_br + 1
                                         w_cells = max_bc - min_bc + 1
                                         
-                                        # Skip macro elements like background tables or total sheets
-                                        if h_cells < (max_rows * 0.8) and w_cells < (max_cols * 0.8):
+                                        # Strict structural filter matching solar panel dimension metrics
+                                        if h_cells <= 12 and w_cells <= 25:
                                             section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                             section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                             computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -172,7 +170,7 @@ if st.session_state.active_site_id is None:
                                             structures_queue.append({
                                                 "farm_id": new_fid, "table_label": f"T-{table_counter}",
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
-                                                "structure_type": "double_6x9" if h_cells >= 6 else "single_3x9",
+                                                "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
                                                 "section_group": int(computed_section_id),
                                                 "pegging_status": "pending", "piling_status": "pending", 
@@ -180,10 +178,10 @@ if st.session_state.active_site_id is None:
                                             })
                                             table_counter += 1
                             
-                            st.info(f"📊 Layout extraction sequence generated {len(structures_queue)} table entries.")
+                            st.info(f"📊 Parsed {len(structures_queue)} valid tables from Excel layout.")
                             
                             if len(structures_queue) == 0:
-                                st.error("❌ Critical Failure: The layout process generated 0 individual structure blocks. Check layout file formatting metrics.")
+                                st.error("❌ Processing halted: 0 layout rows extracted. Verify grid contents.")
                             else:
                                 success_count = 0
                                 for idx in range(0, len(structures_queue), 50):
@@ -192,11 +190,13 @@ if st.session_state.active_site_id is None:
                                         supabase.table("structures").insert(batch).execute()
                                         success_count += len(batch)
                                     except Exception as batch_error:
-                                        st.error(f"❌ Batch insertion dropped: {str(batch_error)}")
-                                st.success(f"🎉 Cloud operation finalized! Successfully inserted {success_count}/{len(structures_queue)} solar rows.")
-                                st.cache_data.clear()
-                                time.sleep(2)
-                                st.rerun()
+                                        st.error(f"❌ Batch transmission rejected: {str(batch_error)}")
+                                
+                                if success_count > 0:
+                                    st.success(f"🎉 Successfully inserted {success_count} structural records into Supabase!")
+                                    st.cache_data.clear()
+                                    time.sleep(1.5)
+                                    st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:

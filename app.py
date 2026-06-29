@@ -91,7 +91,8 @@ if st.session_state.active_site_id is None:
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
                     st.info("🔄 Running Fast Visual Grid Scanner...")
                     with st.spinner("Processing structural frames..."):
-                        wb = openpyxl.load_workbook(uploaded_blueprint, use_iterators=False, data_only=True)
+                        # FIXED: Swapped use_iterators=False for read_only=False
+                        wb = openpyxl.load_workbook(uploaded_blueprint, read_only=False, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
@@ -237,10 +238,10 @@ else:
                         st.session_state.confirm_publish_gate = True
                         st.rerun()
                 else:
-                    st.error("❗ ARE YOU ABSOLUTELY SURE? This lock is permanent.")
+                    st.error("🔒 Confirm permanent field synchronization lock?")
                     col_lock1, col_lock2 = st.columns(2)
                     with col_lock1:
-                        if st.button("🔒 YES, FREEZE & DEPLOY", type="primary", use_container_width=True):
+                        if st.button("🔒 YES, DEPLOY", type="primary", use_container_width=True):
                             supabase.table("farms").update({"is_published": True}).eq("id", st.session_state.active_site_id).execute()
                             st.session_state.confirm_publish_gate = False
                             st.success("Workspace deployed cleanly! Fields locked.")
@@ -873,19 +874,14 @@ else:
                         
                         let hoveredBlock = null;
                         for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
-                                hoveredBlock = b;
-                                break;
-                            }
+                            if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
                         }
 
                         if (hoveredBlock) {
                             tooltip.style.display = "block";
                             tooltip.style.left = (mX + 15) + "px";
                             tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
+                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
                         } else {
                             tooltip.style.display = "none";
                         }
@@ -935,24 +931,8 @@ else:
                             let payloadIds = [];
 
                             blocks.forEach(b => {
-                                let cellScreenX1 = b.min_c * CELL * scale + offsetX;
-                                let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
-                                let cellScreenY1 = b.min_r * CELL * scale + offsetY;
-                                let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
-
-                                let isMatched = false;
-                                if (totalDragDistance > 4) {
-                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
-                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
-                                        isMatched = true;
-                                    }
-                                } else {
-                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
-                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
-                                        isMatched = true;
-                                    }
-                                }
-
+                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
+                                let isMatched = (totalDragDistance > 4) ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
                                 if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
                                     payloadIds.push(b.id);
                                 }
@@ -968,10 +948,6 @@ else:
                                         let target = blocks.find(b => b.id === id);
                                         if (target) target['LAYER_KEY_status'] = 'completed';
                                         
-                                        let updateBody = {};
-                                        updateBody['LAYER_KEY_status'] = 'completed';
-                                        updateBody['LAYER_KEY_date'] = 'TODAY_STR_VAL';
-                                        
                                         await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
                                             method: "PATCH", 
                                             headers: { 
@@ -980,7 +956,7 @@ else:
                                                 "Content-Type": "application/json",
                                                 "Prefer": "return=minimal"
                                             },
-                                            body: JSON.stringify(updateBody)
+                                            body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
                                         });
                                     }
                                     statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";

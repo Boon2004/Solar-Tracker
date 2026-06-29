@@ -228,28 +228,51 @@ else:
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
-                if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary"):
-                    supabase.table("farms").update({"is_published": True}).eq("id", st.session_state.active_site_id).execute()
-                    st.success("Workspace deployed out live successfully!")
-                    time.sleep(0.5); st.rerun()
+                st.warning("⚠️ CRITICAL: Review zoning allocations, electrical maps, structural placement settings, and cabling routes carefully. Once published to the field crew, coordinates cannot be altered.")
+                
+                # Double-Confirmation Confirmation Modal Pop Trigger
+                if "confirm_publish_gate" not in st.session_state: st.session_state.confirm_publish_gate = False
+                
+                if not st.session_state.confirm_publish_gate:
+                    if st.button("🚀 Publish Layout Workspace to Field Crew", type="primary"):
+                        st.session_state.confirm_publish_gate = True
+                        st.rerun()
+                else:
+                    st.error("❗ ARE YOU ABSOLUTELY SURE? This lock is permanent.")
+                    col_lock1, col_lock2 = st.columns(2)
+                    with col_lock1:
+                        if st.button("🔒 YES, FREEZE & DEPLOY", type="primary", use_container_width=True):
+                            supabase.table("farms").update({"is_published": True}).eq("id", st.session_state.active_site_id).execute()
+                            st.session_state.confirm_publish_gate = False
+                            st.success("Workspace deployed cleanly! Fields locked.")
+                            time.sleep(1); st.rerun()
+                    with col_lock2:
+                        if st.button("Cancel", use_container_width=True):
+                            st.session_state.confirm_publish_gate = False
+                            st.rerun()
             else:
-                st.success("✅ Layout Workspace Status: Live to Crew")
-                if st.button("🔒 Revoke Live Deployment and Hide Workspaces"):
+                st.success("✅ Layout Workspace Status: Locked & Live to Crew")
+                # Developer/Admin failsafe back-gate toggle for emergencies
+                if st.button("🔓 Emergency Revoke & Unfreeze Project (Admin Only)"):
                     supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
                     st.rerun()
             
             st.write("---")
-            st.subheader("🖼️ Site Layout Map Background Image")
-            uploaded_map_img = st.file_uploader("Upload Base Layout Image (PNG/JPG):", type=["png", "jpg", "jpeg"])
+            st.subheader("🖼_ Map Background Image Configuration")
+            uploaded_map_img = st.file_uploader("Upload Layout Image Blueprint (PNG/JPG):", type=["png", "jpg", "jpeg"])
             if uploaded_map_img:
                 img_bytes = uploaded_map_img.read()
                 b64_img_string = f"data:{uploaded_map_img.type};base64," + base64.b64encode(img_bytes).decode("utf-8")
-                if st.button("💾 Apply & Save Image Blueprint", type="primary"):
+                
+                # Block updates if site is locked and published
+                if site_is_published:
+                    st.error("Cannot change image background assets on published, finalized frameworks.")
+                elif st.button("💾 Apply & Save Image Blueprint", type="primary"):
                     supabase.table("farms").update({"background_image_url": b64_img_string}).eq("id", st.session_state.active_site_id).execute()
-                    st.success("Image blueprints attached into layout configuration database!")
+                    st.success("Image blueprints attached safely!")
                     time.sleep(0.5); st.rerun()
             
-            if site_bg_img:
+            if site_bg_img and not site_is_published:
                 if st.button("🗑️ Remove Current Background Image", type="secondary"):
                     supabase.table("farms").update({"background_image_url": ""}).eq("id", st.session_state.active_site_id).execute()
                     st.success("Background mapping reference flushed!")
@@ -265,6 +288,30 @@ else:
                     time.sleep(0.4); st.rerun()
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
+
+    # ==============================================================================
+    # 🚨 SECURITY GATEWAY CHECK (Ensures installers are completely locked out until published)
+    # ==============================================================================
+    if not site_is_published and not st.session_state.is_admin_mode:
+        st.write("---")
+        st.title("🚧 Project Site Setup Phase Incomplete")
+        st.info("The layout workflow configuration parameters are currently being finalized by an authorized Engineering Administrator.")
+        
+        # Shows structural schematic roadmap status card below to inform installer field crew
+        st.markdown("""
+        ### 📋 Deployment Checklist Progress Roadmap:
+        * **[🟢 DONE]** Structural Master Matrix Blueprint Extracted & Uploaded.
+        * **[⏳ PENDING]** Engineering Allocation Zoning Groups.
+        * **[⏳ PENDING]** Inverter Mapping & Cabling Network Routing Layout (AC/DC).
+        * **[⏳ PENDING]** Component Placement Customizers (Pegging & Piling Anchor baselines).
+        * **[⏳ PENDING]** Transformer Drop Hub Substation Loop Integration.
+        ---
+        *Please standby. This workspace view portal will activate automatically as soon as the Admin issues the deployment release.*
+        """)
+        
+        if site_bg_img:
+            st.image(site_bg_img, caption="Draft Layout Reference Sheet", use_container_width=False, width=700)
+        st.stop()
 
     if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
         st.rerun()
@@ -299,7 +346,7 @@ else:
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
-    # Dynamic zone parsing fleet
+    # Dynamic zone configuration engines
     found_zones = set()
     for b in active_table_data:
         z = b.get("assigned_zone")
@@ -322,11 +369,8 @@ else:
         with setup_tabs[0]:
             st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             
-            # Flexible Background Blueprint Display Module
             if site_bg_img:
                 st.image(site_bg_img, caption="Active Site Blueprint Layout Background Reference", use_container_width=False, width=600)
-            else:
-                st.info("💡 Tip: You can upload a reference blueprint schematic map image from the left sidebar panel to lay under your tracking metrics matrix grid.")
 
             col_z1, col_z2 = st.columns([6, 4])
             with col_z1:
@@ -340,13 +384,17 @@ else:
                         st.rerun()
             
             st.write("---")
-            st.subheader("🗑️ Selective Zone Reset Center")
+            st.subheader("🛠️ Selective Zone Reset Center")
             col_wipe1, col_wipe2 = st.columns([6, 4])
             with col_wipe1:
                 wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
             with col_wipe2:
-                st.write("<div style='height:28px;'></div>", unsafe_allowed_html=True)
-                if st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
+                st.markdown("<div style='height:28px;'></div>", unsafe_allowed_html=True)
+                
+                # Block structural zoning updates if published & finalized
+                if site_is_published:
+                    st.error("Cannot reset zone assets on a frozen, deployed workspace framework.")
+                elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
                     with st.spinner("Flushing target zones..."):
                         try:
                             if wipe_scope_selection == "ALL ZONES":
@@ -385,6 +433,7 @@ else:
                     const tooltip = document.getElementById("canvas_hover_tooltip");
                     const paintZone = "PAINT_ZONE_VAL";
                     const CELL = CELL_SIZE_VAL;
+                    const isPublished = __IS_PUBLISHED_VAL__;
                     
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL;
@@ -485,6 +534,7 @@ else:
                     });
 
                     canvas.addEventListener('mousedown', (e) => {
+                        if (isPublished) return; // Halt edit events if published and frozen
                         const rect = canvas.getBoundingClientRect();
                         const mX = e.clientX - rect.left;
                         const mY = e.clientY - rect.top;
@@ -618,7 +668,8 @@ else:
                                              .replace("MIN_R_VAL", str(min_r))\
                                              .replace("MAX_R_VAL", str(max_r))\
                                              .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                             .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: INVERTER SETUP WITH FACING SPLIT ENGINE ---
@@ -755,8 +806,6 @@ else:
         # ==============================================================================
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
-        
-        # Display the uploaded layout map directly above the installer workspace tabs
         if site_bg_img:
             st.markdown("### 🗺️ Master Blueprint Reference Layout")
             st.image(site_bg_img, use_container_width=False, width=700)

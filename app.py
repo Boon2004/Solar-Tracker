@@ -252,15 +252,134 @@ else:
     b64_tx_data = base64.b64encode(json.dumps(transformers_data).encode("utf-8")).decode("utf-8")
     b64_inv_data = base64.b64encode(json.dumps(inverters_data).encode("utf-8")).decode("utf-8")
 
+    for b in active_table_data:
+        z = b.get("assigned_zone")
+        if z and z not in st.session_state.managed_zones:
+            st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
+            
+    clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
+
     # ==============================================================================
-    # ⚡ ADMIN MODE tabs
+    # ⚡ ADMIN PLATFORM WORKSPACES
     # ==============================================================================
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs(["🖼️ Base Overview & Zones", "🔌 Unified Master Electrical Canvas"])
         
+        # --- TAB 1: RESTORED FULL LIVE ZONE ASSIGNATION CANVA ENGINE ---
         with setup_tabs[0]:
-            st.markdown("### 🖼️ Zone Management Overview")
+            st.markdown("### 🖼️ Operational Field Zoning Assignation Engine")
             
+            col_z1, col_z2 = st.columns([6, 4])
+            with col_z1:
+                target_paint_zone = st.selectbox("Active Selector Target Zone Label Options:", st.session_state.managed_zones, index=0)
+            with col_z2:
+                new_zone_opt = st.text_input("➕ Extend Managed Zone List Registry:", placeholder="e.g. Zone D...")
+                if st.button("Register Variant Entry") and new_zone_opt:
+                    clean_opt = new_zone_opt.strip()
+                    if clean_opt not in st.session_state.managed_zones:
+                        st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, clean_opt)
+                        st.rerun()
+            
+            st.write("---")
+            st.subheader("🛠️ Selective Zone Reset Center")
+            col_wipe1, col_wipe2 = st.columns([6, 4])
+            with col_wipe1:
+                wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset:", ["ALL ZONES"] + clean_wiping_dropdown_options)
+            with col_wipe2:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                if site_is_published:
+                    st.error("Cannot reset zone assets on a frozen workspace framework.")
+                elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
+                    with st.spinner("Flushing target zones..."):
+                        try:
+                            if wipe_scope_selection == "ALL ZONES":
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).execute()
+                            else:
+                                supabase.table("structures").update({"assigned_zone": "Unassigned"}).eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", wipe_scope_selection).execute()
+                            st.success("Wiped selected configurations maps safely!")
+                            time.sleep(0.5); st.rerun()
+                        except Exception as e: st.error(f"Reset failed: {str(e)}")
+
+            html_zone_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div id="canvas_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
+                <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; text-align:center;">
+                    <div id="status_message_box" style="color:#22c55e; font-weight:bold; margin-bottom:10px; display:none;">Processing...</div>
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8;"></span>?</div>
+                    <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px;">Yes, Confirm</button>
+                    <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer;">No</button>
+                </div>
+                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    let blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("zone_canvas"); const ctx = canvas.getContext('2d');
+                    const tooltip = document.getElementById("canvas_hover_tooltip");
+                    const paintZone = "PAINT_ZONE_VAL"; const CELL = 14; const subUrl = "__SUB_URL__"; const subKey = "__SUB_KEY__";
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    let scale = Math.min((canvas.width - 60) / ((maxX-minX+1)*CELL), (canvas.height - 60) / ((maxY-minY+1)*CELL)) || 0.5;
+                    let offsetX = (canvas.width / 2) - (((maxX-minX+1)*CELL) * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (((maxY-minY+1)*CELL) * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false, isSelecting = false, startX = 0, startY = 0, currentX = 0, currentY = 0, stagedBlockIds = [];
+                    
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    function getZoneColor(z) { if(!z || z.toLowerCase()==='unassigned') return '#334155'; let h=0; for(let i=0;i<z.length;i++) h=z.charCodeAt(i)+((h<<5)-h); return `hsl(${Math.abs(h*45)%360},90%,50%)`; }
+                    
+                    function draw() {
+                        ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.translate(offsetX,offsetY); ctx.scale(scale,scale);
+                        blocks.forEach(b => {
+                            ctx.fillStyle = getZoneColor(b.assigned_zone);
+                            let x=b.min_c*CELL, y=b.min_r*CELL, w=(b.max_c-b.min_c+1)*CELL, h=(b.max_r-b.min_r+1)*CELL;
+                            ctx.fillRect(x,y,w,h); ctx.strokeStyle='#020617'; ctx.lineWidth=0.75; ctx.strokeRect(x,y,w,h);
+                            if(stagedBlockIds.includes(b.id)) { ctx.strokeStyle='#ffff00'; ctx.lineWidth=2.5; ctx.strokeRect(x,y,w,h); }
+                        }); ctx.restore();
+                        if(isSelecting) { ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.fillStyle='rgba(56,189,248,0.25)'; ctx.fillRect(startX,startY,currentX-startX,currentY-startY); }
+                    }
+                    
+                    canvas.addEventListener('mousemove', e => {
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
+                        if(isPanning) { offsetX = e.clientX-startX; offsetY = e.clientY-startY; draw(); return; }
+                        if(isSelecting) { currentX = mX; currentY = mY; draw(); return; }
+                        let wX = (mX-offsetX)/scale, wY = (mY-offsetY)/scale, hb = null;
+                        for(let b of blocks) { if(wX>=b.min_c*CELL && wX<=(b.max_c+1)*CELL && wY>=b.min_r*CELL && wY<=(b.max_r+1)*CELL) { hb=b; break; }}
+                        if(hb) { tooltip.style.display="block"; tooltip.style.left=(mX+15)+"px"; tooltip.style.top=(mY+15)+"px"; tooltip.innerHTML=`Cell Label: ${hb.table_label}<br/>Zone: ${hb.assigned_zone || 'Unassigned'}`; } else tooltip.style.display="none";
+                    });
+                    
+                    canvas.addEventListener('mousedown', e => { const rect=canvas.getBoundingClientRect(); if(e.button===2) { isPanning=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; } else { isSelecting=true; startX=e.clientX-rect.left; startY=e.clientY-rect.top; currentX=startX; currentY=startY; }});
+                    canvas.addEventListener('mouseup', e => {
+                        const rect=canvas.getBoundingClientRect(); if(isPanning) isPanning=false;
+                        else if(isSelecting) {
+                            isSelecting=false; stagedBlockIds=[]; let x1=Math.min(startX,e.clientX-rect.left), x2=Math.max(startX,e.clientX-rect.left), y1=Math.min(startY,e.clientY-rect.top), y2=Math.max(startY,e.clientY-rect.top);
+                            blocks.forEach(b => {
+                                let cx1=b.min_c*CELL*scale+offsetX, cy1=b.min_r*CELL*scale+offsetY;
+                                if(cx1>=x1 && cx1<=x2 && cy1>=y1 && cy1<=y2) stagedBlockIds.push(b.id);
+                            });
+                            if(stagedBlockIds.length>0) { document.getElementById("lbl_zone").innerText=paintZone; document.getElementById("dialogue_overlay").style.display="block"; }
+                            draw();
+                        }
+                    });
+                    
+                    document.getElementById("btn_yes").addEventListener('click', async () => {
+                        document.getElementById("status_message_box").style.display="block";
+                        for(let id of stagedBlockIds) {
+                            let b = blocks.find(x => x.id === id); if(b) b.assigned_zone = paintZone;
+                            fetch(subUrl+"/rest/v1/structures?id=eq."+id, { method:"PATCH", headers:{"apikey":subKey,"Authorization":"Bearer "+subKey,"Content-Type":"application/json"}, body:JSON.stringify({"assigned_zone":paintZone})});
+                        }
+                        document.getElementById("dialogue_overlay").style.display="none"; stagedBlockIds=[]; draw();
+                    });
+                    document.getElementById("btn_no").addEventListener('click', () => { stagedBlockIds=[]; document.getElementById("dialogue_overlay").style.display="none"; draw(); });
+                    canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); const mX=e.clientX-rect.left, mY=e.clientY-rect.top, gX=(mX-offsetX)/scale, gY=(mY-offsetY)/scale; scale*=(e.deltaY<0?1.15:0.85); scale=Math.max(0.05,Math.min(scale,30)); offsetX=mX-gX*scale; offsetY=mY-gY*scale; draw(); }, {passive:false});
+                    draw();
+                })();
+            </script>
+            """.replace("__JSON_DATA_B64__", b64_json_data).replace("PAINT_ZONE_VAL", str(target_paint_zone)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("__SUB_URL__", SUPABASE_URL).replace("__SUB_KEY__", SUPABASE_KEY)
+            components.html(html_zone_engine, height=700)
+
+        # --- TAB 2: DYNAMIC ELECTRICAL LAYOUT CANVAS (NO REFRESHES) ---
         with setup_tabs[1]:
             st.markdown("### 🔌 Bottom-Up Master Electrical Infrastructure Layout Setup")
             
@@ -367,7 +486,7 @@ else:
                                     fetch(subUrl+"/rest/v1/inverters?id=eq."+existingInv.id,{method:"DELETE",headers:{"apikey":subKey,"Authorization":"Bearer "+subKey}});
                                 }
                             } else {
-                                if(parentTxName==="None") return;
+                                if(parentTxNameBlock==="None") return;
                                 let num=prompt("Enter Inverter Identifier Label Number:");
                                 if(num) {
                                     let newInv = {id:Math.random().toString(), farm_id:farmId, transformer_name:parentTxName, inverter_num:num, grid_r:wY, grid_c:wX};
@@ -426,86 +545,8 @@ else:
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
         if not site_is_published:
-            st.info("🚜 Layout configuration is currently locked by the engineering team. Waiting for blueprint deployment release updates...")
+            st.info("🚜 Layout configuration locked by engineers. Waiting for field deployment release sync...")
             st.stop()
 
-        if site_bg_img:
-            st.markdown("### 🗺️ Master Blueprint Reference Layout")
-            st.image(site_bg_img, use_container_width=False, width=700)
-            st.write("---")
-
-        crew_tabs = st.tabs([
-            "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
-        ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
-
-        def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
-            today_str = str(date.today())
-            html_crew_map = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
-                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
-                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block;"></canvas>
-                </div>
-            </div>
-            <script>
-                (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
-                    const canvas = document.getElementById("crew_LAYER_KEY"); const ctx = canvas.getContext('2d');
-                    const tooltip = document.getElementById("crew_hover_tooltip");
-                    const CELL = 14; let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const subUrl = "__SUB_URL__"; const subKey = "__SUB_KEY__";
-                    
-                    let scale = Math.min((canvas.width - 60) / ((maxX-minX+1)*CELL), (canvas.height - 60) / ((maxY-minY+1)*CELL)) || 0.5;
-                    let offsetX = (canvas.width / 2) - (((maxX-minX+1)*CELL) * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (((maxY-minY+1)*CELL) * scale / 2) - (minY * CELL * scale);
-                    let isPanning = false, isSelecting = false, dragStartRawX = 0, dragStartRawY = 0, dragCurrentRawX = 0, dragCurrentRawY = 0;
-
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-                    function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        blocks.forEach(b => {
-                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
-                            let x = b.min_c * CELL, y = b.min_r * CELL, w = (b.max_c - b.min_c + 1) * CELL, h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                        }); ctx.restore();
-                        if (isSelecting) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(34, 197, 94, 0.25)'; ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY); }
-                    }
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
-                        if (isPanning) { offsetX = e.clientX - dragStartRawX; offsetY = e.clientY - dragStartRawY; draw(); return; }
-                        if (isSelecting) { dragCurrentRawX = mX; dragCurrentRawY = mY; draw(); return; }
-                        let worldX = (mX - offsetX) / scale, worldY = (mY - offsetY) / scale, hb = null;
-                        for (let b of blocks) { if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hb = b; break; } }
-                        if (hb) { tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px"; tooltip.innerHTML = `Label: ${hb.table_label}<br/>Zone: ${hb.assigned_zone}<br/>Status: ${hb['LAYER_KEY_status'] || 'pending'}`; } else tooltip.style.display = "none";
-                    });
-                    canvas.addEventListener('mousedown', (e) => { const rect = canvas.getBoundingClientRect(); if (e.button === 2) { isPanning = true; dragStartRawX = e.clientX - offsetX; dragStartRawY = e.clientY - offsetY; } else { isSelecting = true; dragStartRawX = e.clientX - rect.left; dragStartRawY = e.clientY - rect.top; dragCurrentRawX = dragStartRawX; dragCurrentRawY = dragStartRawY; } });
-                    canvas.addEventListener('mouseup', async (e) => {
-                        const rect = canvas.getBoundingClientRect(); if (isPanning) isPanning = false;
-                        else if (isSelecting) {
-                            isSelecting = false; let x1 = Math.min(dragStartRawX, e.clientX - rect.left), x2 = Math.max(dragStartRawX, e.clientX - rect.left), y1 = Math.min(dragStartRawY, e.clientY - rect.top), y2 = Math.max(dragStartRawY, e.clientY - rect.top);
-                            let payloadIds = [];
-                            blocks.forEach(b => {
-                                let cx = b.min_c * CELL * scale + offsetX, cy = b.min_r * CELL * scale + offsetY;
-                                if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2 && b['LAYER_KEY_status'] !== 'completed') payloadIds.push(b.id);
-                            });
-                            if (payloadIds.length > 0) {
-                                for (let id of payloadIds) {
-                                    await fetch(subUrl+'/rest/v1/structures?id=eq.' + id, { method: "PATCH", headers: { "apikey": subKey, "Authorization": 'Bearer ' + subKey, "Content-Type": "application/json" }, body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" }) });
-                                } location.reload();
-                            } draw();
-                        }
-                    });
-                    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top, gridX = (mouseX - offsetX) / scale, gridY = (mouseY - offsetY) / scale; scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15)); offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw(); }, { passive: false });
-                    draw();
-                })();
-            </script>
-            """
-            return html_crew_map.replace("__JSON_DATA_B64__", b64_data).replace("LAYER_KEY", str(layer_key)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("TODAY_STR_VAL", today_str).replace("__SUB_URL__", SUPABASE_URL).replace("__SUB_KEY__", SUPABASE_KEY)
-
-        def process_crew_tab(tab_obj, key_val):
-            with tab_obj: components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
-
-        process_crew_tab(crew_tabs[0], "pegging")
-        process_crew_tab(crew_tabs[1], "piling")
-        process_crew_tab(crew_tabs[2], "mounting")
-        process_crew_tab(crew_tabs[3], "modules")
+        crew_tabs = st.tabs(["📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"])
+        # Custom tracking logic layers here...

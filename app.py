@@ -331,7 +331,7 @@ else:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
             "📌 Pegging & Piling Customizer",
-            "🛰️ Unified Layout Planner & Topology Stringing Node"
+            "🛰️ Unified Layout Planner & Topology Workspace"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
@@ -746,21 +746,14 @@ else:
                         return document.querySelector('input[name="topo_tool"]:checked').value;
                     }
 
-                    function groupColor(invId) {
-                        if (!invId) return "#1e293b";
-                        let num = parseInt(invId) || 0;
-                        let colors = ["#00e5ff", "#d500f9", "#ffea00", "#00e676", "#ff3d00", "#ff80ab"];
-                        return colors[num % colors.length];
-                    }
-
-                    // Converts standard hex values into an opacity-adjusted rgba profile string
-                    function getTranslucentRGB(hexColor, opacity) {
-                        let c = hexColor.substring(1);
-                        let rgb = parseInt(c, 16);
-                        let r = (rgb >> 16) & 0xff;
-                        let g = (rgb >> 8) & 0xff;
-                        let b = (rgb >> 0) & 0xff;
-                        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    // UPGRADE: Discrete color assignment per exact string count (no ranges)
+                    function getCapacityColor(stringCount) {
+                        if (stringCount <= 0) return "#1e293b";
+                        const palette = [
+                            "#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", 
+                            "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"
+                        ];
+                        return palette[(stringCount - 1) % palette.length];
                     }
 
                     function isInverterPlaced(invId) {
@@ -795,21 +788,24 @@ else:
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
                             let linkedInv = gridTopo.stringGroups[s.id];
                             
-                            // UPGRADE: Dynamically fill translucent color profiles if grouped
-                            if (linkedInv && isInverterPlaced(linkedInv)) {
-                                ctx.fillStyle = getTranslucentRGB(groupColor(linkedInv), 0.35);
+                            if (linkedInv) {
+                                if (isInverterPlaced(linkedInv)) {
+                                    // Change color code precisely matching exact connected volume density count
+                                    ctx.fillStyle = getCapacityColor(counts[linkedInv]); 
+                                    ctx.strokeStyle = getCapacityColor(counts[linkedInv]);
+                                    ctx.lineWidth = 1.5;
+                                } else {
+                                    ctx.fillStyle = "#d97706"; // Amber selection uniform profile
+                                    ctx.strokeStyle = "#fbbf24";
+                                    ctx.lineWidth = 2;
+                                }
                             } else {
                                 ctx.fillStyle = "#1e293b"; 
-                            }
-                            ctx.fillRect(x, y, w, h);
-
-                            if (linkedInv && isInverterPlaced(linkedInv)) {
-                                ctx.strokeStyle = groupColor(linkedInv);
-                                ctx.lineWidth = 2;
-                            } else {
                                 ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
                                 ctx.lineWidth = 0.5;
                             }
+                            
+                            ctx.fillRect(x, y, w, h);
                             ctx.strokeRect(x, y, w, h);
 
                             if (linkedInv) {
@@ -843,14 +839,12 @@ else:
                             ctx.fillStyle = "#ff0000";
                             ctx.fillRect(bx, by, badgeW, badgeH / 2);
                             
-                            ctx.fillStyle = groupColor(inv.id);
+                            ctx.fillStyle = getCapacityColor(strCount);
                             ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
 
                             ctx.fillStyle = "#ffffff";
                             ctx.textAlign = "center";
                             ctx.fillText(titleText, inv.x, by + 9);
-                            
-                            ctx.fillStyle = (groupColor(inv.id) === "#ffea00" || groupColor(inv.id) === "#00e5ff") ? "#000000" : "#ffffff";
                             ctx.fillText(countText, inv.x, by + 21);
 
                             ctx.strokeStyle = "#ffffff";
@@ -896,11 +890,16 @@ else:
                         const world = transformToWorldSpace(m);
                         const tool = getActiveTool();
 
-                        // UPGRADE: Right-click removal mechanics for stations
                         if (e.button === 2) {
                             if (tool === "inverter") {
                                 gridTopo.inverters = gridTopo.inverters.filter(inv => {
-                                    return Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) > 20;
+                                    let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
+                                    if (isHit) {
+                                        Object.keys(gridTopo.stringGroups).forEach(key => {
+                                            if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key];
+                                        });
+                                    }
+                                    return !isHit;
                                 });
                                 draw(); return;
                             }
@@ -1076,12 +1075,10 @@ else:
                                 boxSelected.forEach(el => {
                                     let currentAssign = gridTopo.stringGroups[el.id];
                                     
-                                    // LOCKING RULE: Don't let user override selection if already linked to a different inverter node
                                     if (currentAssign && currentAssign !== activeInv) {
                                         return; 
                                     }
 
-                                    // CONDITIONAL TOGGLE: Single clicks remove/unassign, Lasso always forces an assertive grouping assignment
                                     if (isLassoSelection) {
                                         gridTopo.stringGroups[el.id] = activeInv;
                                     } else {

@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta
 # 🔐 SECURE DATABASE CREDENTIALS BRIDGE
 # ==============================================================================
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                  
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                     
 
 @st.cache_resource
 def get_supabase_client():
@@ -124,10 +124,6 @@ if st.session_state.active_site_id is None:
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
                             table_counter = 1
-                            # FIX 3: ROAD_GAP changed from 3 → 1
-                            # Each tracker unit (6×9 cells) is separated by exactly 1 empty row/col.
-                            # Using ROAD_GAP=1 stores each tracker individually.
-                            # Roads (5+ empty cols/rows) naturally separate sections in the JS grouping.
                             ROAD_GAP = 1
 
                             for r in range(1, max_rows + 1):
@@ -326,7 +322,7 @@ else:
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select individual trackers &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a whole cluster &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                    Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -360,29 +356,6 @@ else:
                     let isSelecting = false;
                     let startX = 0, startY = 0, currentX = 0, currentY = 0;
                     let stagedBlockIds = [];
-
-                    let groupIdCounter = 1;
-                    blocks.forEach(b => b.computed_group = 0);
-                    for (let i = 0; i < blocks.length; i++) {
-                        if (blocks[i].computed_group !== 0) continue;
-                        let g = groupIdCounter++;
-                        let q = [blocks[i]];
-                        blocks[i].computed_group = g;
-                        while(q.length > 0) {
-                            let c = q.shift();
-                            for(let j=0; j<blocks.length; j++) {
-                                if(blocks[j].computed_group !== 0) continue;
-                                let vertMatch = (blocks[j].min_c <= c.max_c && blocks[j].max_c >= c.min_c) &&
-                                                Math.min(Math.abs(blocks[j].min_r - c.max_r), Math.abs(c.min_r - blocks[j].max_r)) <= 5;
-                                let horizMatch = (blocks[j].min_r <= c.max_r && blocks[j].max_r >= c.min_r) &&
-                                                 Math.min(Math.abs(blocks[j].min_c - c.max_c), Math.abs(c.min_c - blocks[j].max_c)) <= 5;
-                                if (vertMatch || horizMatch) {
-                                    blocks[j].computed_group = g;
-                                    q.push(blocks[j]);
-                                }
-                            }
-                        }
-                    }
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -464,35 +437,35 @@ else:
                             
                             stagedBlockIds = [];
 
-                            if (Math.abs(endX - startX) > 10) {
-                                // DRAG SELECT: Selects ONLY the specific cells inside the box frame boundary
-                                let x1 = (Math.min(startX, endX) - offsetX) / scale;
-                                let x2 = (Math.max(startX, endX) - offsetX) / scale;
-                                let y1 = (Math.min(startY, endY) - offsetY) / scale;
-                                let y2 = (Math.max(startY, endY) - offsetY) / scale;
+                            let boxX1 = Math.min(startX, endX);
+                            let boxX2 = Math.max(startX, endX);
+                            let boxY1 = Math.min(startY, endY);
+                            let boxY2 = Math.max(startY, endY);
 
+                            if (Math.abs(endX - startX) > 4 || Math.abs(endY - startY) > 4) {
                                 blocks.forEach(b => {
-                                    let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
-                                    let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
-                                    if (bx >= x1 && bx <= x2 && by >= y1 && by <= y2) {
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
+                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
                                         stagedBlockIds.push(b.id);
                                     }
                                 });
                             } else {
-                                // SINGLE CLICK: Falls back to selecting the entire group cluster
-                                let cx = (startX - offsetX) / scale;
-                                let cy = (startY - offsetY) / scale;
-                                let targetGroup = null;
                                 blocks.forEach(b => {
-                                    let x = b.min_c * CELL; let y = b.min_r * CELL;
-                                    let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                    if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) targetGroup = b.computed_group;
+                                    let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                    let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                    let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                    let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
+                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
+                                        stagedBlockIds.push(b.id);
+                                    }
                                 });
-                                if (targetGroup) {
-                                    blocks.forEach(b => {
-                                        if (b.computed_group === targetGroup) stagedBlockIds.push(b.id);
-                                    });
-                                }
                             }
 
                             if (stagedBlockIds.length > 0) {
@@ -529,7 +502,6 @@ else:
                 })();
             </script>
             """
-            
             html_zone_engine = html_zone_engine.replace("__JSON_DATA_B64__", b64_json_data)\
                                              .replace("PAINT_ZONE_VAL", str(target_paint_zone))\
                                              .replace("CELL_SIZE_VAL", str(CELL_SIZE))\
@@ -642,7 +614,7 @@ else:
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                         blocks.forEach(b => { 
                             ctx.fillStyle = '#64748b'; let x = b.min_c * CELL; let y = b.min_r * CELL; 
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
@@ -715,32 +687,6 @@ else:
                     let dragStartRawX = 0, dragStartRawY = 0;
                     let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    let groupIdCounter = 1;
-                    blocks.forEach(b => b.computed_group = 0);
-                    
-                    for (let i = 0; i < blocks.length; i++) {
-                        if (blocks[i].computed_group !== 0) continue;
-                        let currentGroup = groupIdCounter++;
-                        let queue = [blocks[i]];
-                        blocks[i].computed_group = currentGroup;
-                        
-                        while (queue.length > 0) {
-                            let curr = queue.shift();
-                            for (let j = 0; j < blocks.length; j++) {
-                                if (blocks[j].computed_group !== 0) continue;
-                                let verticalMatch = (blocks[j].min_c <= curr.max_c && blocks[j].max_c >= curr.min_c) &&
-                                                    (Math.min(Math.abs(blocks[j].min_r - curr.max_r), Math.abs(curr.min_r - blocks[j].max_r)) <= 5);
-                                let horizontalMatch = (blocks[j].min_r <= curr.max_r && blocks[j].max_r >= curr.min_r) &&
-                                                      (Math.min(Math.abs(blocks[j].min_c - curr.max_c), Math.abs(curr.min_c - blocks[j].max_c)) <= 5);
-                                
-                                if (verticalMatch || horizontalMatch) {
-                                    blocks[j].computed_group = currentGroup;
-                                    queue.push(blocks[j]);
-                                }
-                            }
-                        }
-                    }
-
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
@@ -811,49 +757,42 @@ else:
                             isSelecting = false;
                             canvas.style.cursor = 'default';
 
-                            const totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                            let boxX1 = Math.min(dragStartRawX, mouseUpX);
+                            let boxX2 = Math.max(dragStartRawX, mouseUpX);
+                            let boxY1 = Math.min(dragStartRawY, mouseUpY);
+                            let boxY2 = Math.max(dragStartRawY, mouseUpY);
 
-                            if (totalDragDistance > 10) {
-                                // DRAG SELECT: Processes each cell uniquely inside bounding parameters
-                                let worldX1 = (Math.min(dragStartRawX, mouseUpX) - offsetX) / scale;
-                                let worldX2 = (Math.max(dragStartRawX, mouseUpX) - offsetX) / scale;
-                                let worldY1 = (Math.min(dragStartRawY, mouseUpY) - offsetY) / scale;
-                                let worldY2 = (Math.max(dragStartRawY, mouseUpY) - offsetY) / scale;
+                            let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
 
-                                blocks.forEach(b => {
-                                    let bx = b.min_c * CELL + ((b.max_c - b.min_c + 1) * CELL / 2);
-                                    let by = b.min_r * CELL + ((b.max_r - b.min_r + 1) * CELL / 2);
-                                    if (bx >= worldX1 && bx <= worldX2 && by >= worldY1 && by <= worldY2) {
-                                        if (b['LAYER_KEY_status'] !== 'completed') {
-                                            b['LAYER_KEY_status'] = 'completed';
-                                            const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
-                                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
-                                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                                body: JSON.stringify(payload)
-                                            });
-                                        }
+                            blocks.forEach(b => {
+                                let cellScreenX1 = b.min_c * CELL * scale + offsetX;
+                                let cellScreenX2 = (b.max_c * CELL + CELL) * scale + offsetX;
+                                let cellScreenY1 = b.min_r * CELL * scale + offsetY;
+                                let cellScreenY2 = (b.max_r * CELL + CELL) * scale + offsetY;
+
+                                let isMatched = false;
+                                if (totalDragDistance > 4) {
+                                    if (cellScreenX2 >= boxX1 && cellScreenX1 <= boxX2 &&
+                                        cellScreenY2 >= boxY1 && cellScreenY1 <= boxY2) {
+                                        isMatched = true;
                                     }
-                                });
-                            } else {
-                                // SINGLE CLICK: Falls back to processing individual cell structure click
-                                const worldClickX = (dragStartRawX - offsetX) / scale; 
-                                const worldClickY = (dragStartRawY - offsetY) / scale;
-                                
-                                blocks.forEach(b => {
-                                    let x = b.min_c * CELL; let y = b.min_r * CELL;
-                                    let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                    if (worldClickX >= x && worldClickX <= x + w && worldClickY >= y && worldClickY <= y + h) {
-                                        if (b['LAYER_KEY_status'] !== 'completed') {
-                                            b['LAYER_KEY_status'] = 'completed';
-                                            const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
-                                            fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
-                                                method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
-                                                body: JSON.stringify(payload)
-                                            });
-                                        }
+                                } else {
+                                    if (boxX1 >= cellScreenX1 && boxX1 <= cellScreenX2 &&
+                                        boxY1 >= cellScreenY1 && boxY1 <= cellScreenY2) {
+                                        isMatched = true;
                                     }
-                                });
-                            }
+                                }
+
+                                if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
+                                    b['LAYER_KEY_status'] = 'completed';
+                                    const payload = {}; payload['LAYER_KEY_status'] = 'completed'; payload['LAYER_KEY_date'] = 'TODAY_STR_VAL';
+                                    fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + b.id, {
+                                        method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json" },
+                                        body: JSON.stringify(payload)
+                                    });
+                                }
+                            });
+                            
                             setTimeout(draw, 50);
                         }
                     });
@@ -876,7 +815,6 @@ else:
                 })();
             </script>
             """
-            # Keep remainder of token configuration mapping properties unchanged below...
             html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
                                          .replace("LAYER_KEY", str(layer_key))\
                                          .replace("MIN_C_VAL", str(min_c))\

@@ -28,7 +28,6 @@ if "managed_zones" not in st.session_state:
     st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
 if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
 
-# 🔥 REMOVED CACHE TO FORCE STREAMLIT TO FETCH RAW FRESH DATA
 def fetch_farms_directory():
     try:
         res = supabase.table("farms").select("id, name, admin_password, installer_password, is_published").order("name").execute()
@@ -125,7 +124,11 @@ if st.session_state.active_site_id is None:
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
                             table_counter = 1
-                            ROAD_GAP = 3  
+                            # FIX 3: ROAD_GAP changed from 3 → 1
+                            # Each tracker unit (6×9 cells) is separated by exactly 1 empty row/col.
+                            # Using ROAD_GAP=1 stores each tracker individually.
+                            # Roads (5+ empty cols/rows) naturally separate sections in the JS grouping.
+                            ROAD_GAP = 1
 
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
@@ -249,7 +252,6 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # 🔥 REMOVED CACHE HERE TO MAKE CHANGES LIVE
     def load_site_isolated_tables(farm_id):
         all_data = []
         limit = 1000
@@ -287,7 +289,7 @@ else:
 
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
-        st.warning("🚧 **Configuration Incomplete:** This project site layout layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
+        st.warning("🚧 **Configuration Incomplete:** This project site layout is currently hidden. Please wait for an authorized Administrator to finalize initial setup phases.")
         st.stop()
 
     if st.session_state.is_admin_mode:
@@ -324,7 +326,7 @@ else:
             html_zone_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    鼠标操作: <span style="color:#38bdf8; font-weight:bold;">左键拖拽</span> 多选 | <span style="color:#38bdf8; font-weight:bold;">右键拖拽</span> 移动地图 | <span style="color:#eab308; font-weight:bold;">单击</span> 选中整排结构.
+                    Mouse Controls: <span style="color:#38bdf8; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select whole section &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); text-align:center;">
@@ -359,6 +361,13 @@ else:
                     let startX = 0, startY = 0, currentX = 0, currentY = 0;
                     let stagedBlockIds = [];
 
+                    // ─────────────────────────────────────────────────────────────
+                    // FIX 1: Section grouping BFS — threshold changed from <= 6 to <= 5
+                    //
+                    // Why: tracker blocks separated by 1 empty col have edge distance=2 (joins ✓)
+                    //      blocks across 5-col road gap have edge distance=6 (now blocked ✓)
+                    //      <= 6 (old) accidentally bridged road gaps, merging all blocks into 1 group
+                    // ─────────────────────────────────────────────────────────────
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     for (let i = 0; i < blocks.length; i++) {
@@ -370,8 +379,13 @@ else:
                             let c = q.shift();
                             for(let j=0; j<blocks.length; j++) {
                                 if(blocks[j].computed_group !== 0) continue;
-                                if(((blocks[j].min_c <= c.max_c && blocks[j].max_c >= c.min_c) && Math.min(Math.abs(blocks[j].min_r - c.max_r), Math.abs(c.min_r - blocks[j].max_r)) <= 6) ||
-                                   ((blocks[j].min_r <= c.max_r && blocks[j].max_r >= c.min_r) && Math.min(Math.abs(blocks[j].min_c - c.max_c), Math.abs(c.min_c - blocks[j].max_c)) <= 6)) {
+                                // Vertical neighbour: overlapping columns, row edges within 5
+                                let vertMatch = (blocks[j].min_c <= c.max_c && blocks[j].max_c >= c.min_c) &&
+                                                Math.min(Math.abs(blocks[j].min_r - c.max_r), Math.abs(c.min_r - blocks[j].max_r)) <= 5;
+                                // Horizontal neighbour: overlapping rows, col edges within 5
+                                let horizMatch = (blocks[j].min_r <= c.max_r && blocks[j].max_r >= c.min_r) &&
+                                                 Math.min(Math.abs(blocks[j].min_c - c.max_c), Math.abs(c.min_c - blocks[j].max_c)) <= 5;
+                                if (vertMatch || horizMatch) {
                                     blocks[j].computed_group = g;
                                     q.push(blocks[j]);
                                 }
@@ -460,6 +474,7 @@ else:
                             stagedBlockIds = [];
 
                             if (Math.abs(endX - startX) > 10) {
+                                // Drag-select: find all groups whose centre falls in the box
                                 let x1 = (Math.min(startX, endX) - offsetX) / scale;
                                 let x2 = (Math.max(startX, endX) - offsetX) / scale;
                                 let y1 = (Math.min(startY, endY) - offsetY) / scale;
@@ -477,6 +492,7 @@ else:
                                     if (groupsInBox.has(b.computed_group)) stagedBlockIds.push(b.id);
                                 });
                             } else {
+                                // Single click: find which block was clicked, select its whole group
                                 let cx = (startX - offsetX) / scale;
                                 let cy = (startY - offsetY) / scale;
                                 let targetGroup = null;
@@ -682,9 +698,10 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers | 
-                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to Pan layout map | 
-                    <span style="color:#eab308; font-weight:bold;">Single-Click</span> to select/complete whole section.
+                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select trackers &nbsp;|&nbsp; 
+                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
+                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete whole section &nbsp;|&nbsp;
+                    <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
@@ -710,7 +727,10 @@ else:
                     let dragStartRawX = 0, dragStartRawY = 0;
                     let dragCurrentRawX = 0, dragCurrentRawY = 0;
 
-                    // ⚡ INTERNAL GRID PROXIMITY GENERATOR (5 Row Isolation Grid Rule)
+                    // ─────────────────────────────────────────────────────────────
+                    // FIX 2: Section grouping BFS — threshold changed from <= 6 to <= 5
+                    // Same fix as zone canvas: bridges 1-cell gaps, stops at 5-cell roads
+                    // ─────────────────────────────────────────────────────────────
                     let groupIdCounter = 1;
                     blocks.forEach(b => b.computed_group = 0);
                     
@@ -725,10 +745,9 @@ else:
                             for (let j = 0; j < blocks.length; j++) {
                                 if (blocks[j].computed_group !== 0) continue;
                                 let verticalMatch = (blocks[j].min_c <= curr.max_c && blocks[j].max_c >= curr.min_c) &&
-                                                    (Math.min(Math.abs(blocks[j].min_r - curr.max_r), Math.abs(curr.min_r - blocks[j].max_r)) <= 6);
-                                                    
+                                                    (Math.min(Math.abs(blocks[j].min_r - curr.max_r), Math.abs(curr.min_r - blocks[j].max_r)) <= 5);
                                 let horizontalMatch = (blocks[j].min_r <= curr.max_r && blocks[j].max_r >= curr.min_r) &&
-                                                      (Math.min(Math.abs(blocks[j].min_c - curr.max_c), Math.abs(curr.min_c - blocks[j].max_c)) <= 6);
+                                                      (Math.min(Math.abs(blocks[j].min_c - curr.max_c), Math.abs(curr.min_c - blocks[j].max_c)) <= 5);
                                 
                                 if (verticalMatch || horizontalMatch) {
                                     blocks[j].computed_group = currentGroup;
@@ -811,6 +830,7 @@ else:
                             const totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
 
                             if (totalDragDistance > 10) {
+                                // Drag-select: mark all groups in box as completed
                                 let worldX1 = (Math.min(dragStartRawX, mouseUpX) - offsetX) / scale;
                                 let worldX2 = (Math.max(dragStartRawX, mouseUpX) - offsetX) / scale;
                                 let worldY1 = (Math.min(dragStartRawY, mouseUpY) - offsetY) / scale;
@@ -839,6 +859,7 @@ else:
                                 }
                                 setTimeout(draw, 50);
                             } else {
+                                // Single click: mark clicked block's whole section as completed
                                 const worldClickX = (dragStartRawX - offsetX) / scale; 
                                 const worldClickY = (dragStartRawY - offsetY) / scale;
                                 

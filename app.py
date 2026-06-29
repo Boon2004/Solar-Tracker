@@ -629,10 +629,9 @@ else:
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     ⚙️ <b>Crew Controls:</b> 
-                    Left-Click + Drag to <b>Mass-Select Boxes</b> | 
-                    Right-Click + Drag to <b>Pan/Scroll Map</b> | 
-                    Mouse Wheel to <b>Zoom</b> | 
-                    Single Click to <b>Complete Whole Section</b>.
+                    <b>Left-Click + Drag</b> to marquee-select multiple trackers | 
+                    <b>Right-Click + Drag</b> to Pan map layout | 
+                    <b>Single Click</b> to clear whole section block row.
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
@@ -655,10 +654,9 @@ else:
                     
                     let isPanning = false;
                     let isSelecting = false;
-                    let moved = false;
-                    let startX, startY, currentX, currentY;
+                    let dragDetected = false;
+                    let startX = 0, startY = 0, currentX = 0, currentY = 0;
 
-                    // Disable standard right-click window context menu 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
                     function draw() {
@@ -679,8 +677,9 @@ else:
                         ctx.restore();
 
                         if (isSelecting) {
-                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+                            ctx.strokeStyle = '#22c55e'; 
+                            ctx.lineWidth = 2;
+                            ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
                             ctx.fillRect(startX, startY, currentX - startX, currentY - startY);
                             ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
                         }
@@ -690,17 +689,15 @@ else:
                         const rect = canvas.getBoundingClientRect();
                         const mX = e.clientX - rect.left;
                         const mY = e.clientY - rect.top;
-                        moved = false;
+                        dragDetected = false;
 
                         if (e.button === 2) { 
-                            // Right Click: Pan Map
                             isPanning = true;
                             isSelecting = false;
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
                             canvas.style.cursor = 'move';
                         } else if (e.button === 0) { 
-                            // Left Click: Stage Marquee Drag Initializer
                             isSelecting = true;
                             isPanning = false;
                             startX = mX;
@@ -713,19 +710,25 @@ else:
 
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
-                        moved = true;
                         if (isPanning) {
+                            dragDetected = true;
                             offsetX = e.clientX - startX;
                             offsetY = e.clientY - startY;
                             draw();
                         } else if (isSelecting) {
+                            dragDetected = true;
                             currentX = e.clientX - rect.left;
                             currentY = e.clientY - rect.top;
                             draw();
                         }
                     });
 
-                    window.addEventListener('mouseup', (e) => {
+                    // Linked explicitly to canvas engine frame wrapper directly
+                    canvas.addEventListener('mouseup', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const endX = e.clientX - rect.left;
+                        const endY = e.clientY - rect.top;
+
                         if (isPanning) {
                             isPanning = false;
                             canvas.style.cursor = 'grab';
@@ -733,12 +736,12 @@ else:
                             isSelecting = false;
                             canvas.style.cursor = 'default';
 
-                            // If user dragged a marquee box selection frame
-                            if (Math.abs(currentX - startX) > 5 || Math.abs(currentY - startY) > 5) {
-                                let x1 = (Math.min(startX, currentX) - offsetX) / scale;
-                                let x2 = (Math.max(startX, currentX) - offsetX) / scale;
-                                let y1 = (Math.min(startY, currentY) - offsetY) / scale;
-                                let y2 = (Math.max(startY, currentY) - offsetY) / scale;
+                            // SCENARIO A: User pulled a Marquee Selection Drag frame box
+                            if (Math.abs(endX - startX) > 6 || Math.abs(endY - startY) > 6) {
+                                let x1 = (Math.min(startX, endX) - offsetX) / scale;
+                                let x2 = (Math.max(startX, endX) - offsetX) / scale;
+                                let y1 = (Math.min(startY, endY) - offsetY) / scale;
+                                let y2 = (Math.max(startY, endY) - offsetY) / scale;
 
                                 let targetGroups = new Set();
                                 blocks.forEach(b => {
@@ -760,13 +763,12 @@ else:
                                             });
                                         }
                                     });
-                                    setTimeout(draw, 100);
+                                    setTimeout(draw, 80);
                                 }
-                            } else if (!moved || (Math.abs(currentX - startX) <= 5 && Math.abs(currentY - startY) <= 5)) {
-                                // Single Click Action: Auto-highlight entire section group
-                                const rect = canvas.getBoundingClientRect(); 
-                                const cx = (e.clientX - rect.left - offsetX) / scale; 
-                                const cy = (e.clientY - rect.top - offsetY) / scale;
+                            } else {
+                                // SCENARIO B: Static Single Click Cluster Target Action
+                                const cx = (startX - offsetX) / scale; 
+                                const cy = (startY - offsetY) / scale;
                                 
                                 let clickedSectionGroup = null;
                                 blocks.forEach(b => {
@@ -788,7 +790,7 @@ else:
                                             });
                                         }
                                     });
-                                    setTimeout(draw, 100);
+                                    setTimeout(draw, 80);
                                 }
                             }
                         }

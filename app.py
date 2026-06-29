@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta
 # 🔐 SECURE DATABASE CREDENTIALS BRIDGE
 # ==============================================================================
 SUPABASE_URL = "https://pysicrdtjayyxztoibep.supabase.co" 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                      
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5c2ljcmR0amF5eXh6dG9pYmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0Mjk4NzMsImV4cCI6MjA5ODAwNTg3M30.5X0uesuo7NVf6KDxrEiM-6RIOJ2ffyxcOVsWJF52oNw"                    
 
 @st.cache_resource
 def get_supabase_client():
@@ -644,8 +644,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # --- 1. DETECT UNIQUE STRUCTURAL SCHEMAS ---
-            # Grouping patterns by cell layout geometry footprint calculated on excel import
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -660,28 +658,23 @@ else:
                         "sample_block_id": block.get("id")
                     }
 
-            # --- 2. CONTROL INTERFACE LABELS ---
             layout_options = list(layout_types.keys())
             
             if not layout_options:
                 st.info("No layout pattern distributions extracted from metrics base structure.")
             else:
-                # Layout Selection Dropdown
                 selected_layout_label = st.selectbox(
                     "Select Layout Architecture Template Matrix to Customize:", 
                     layout_options
                 )
                 
                 target_layout = layout_types[selected_layout_label]
-                
-                # --- STATE MANAGEMENT LOGIC (PREVIEW, APPLY & UNDO STACKS) ---
                 state_prefix = f"layout_cfg_{selected_layout_label}"
                 undo_stack_key = f"undo_{state_prefix}"
                 
                 if undo_stack_key not in st.session_state:
                     st.session_state[undo_stack_key] = []
                 
-                # Setup internal form factors or fallback presets
                 if f"{state_prefix}_rows" not in st.session_state:
                     st.session_state[f"{state_prefix}_rows"] = 4
                 if f"{state_prefix}_cols" not in st.session_state:
@@ -705,9 +698,7 @@ else:
                     total_calculated_points = row_pts * col_pts
                     st.metric(label="Calculated Placement Target Pin Points Fleet-wide", value=f"{total_calculated_points} Pts / Unit")
                     
-                    # Core Action Operations
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
-                        # Save current state onto Undo Stack before database modification
                         current_snapshot = {
                             "label": selected_layout_label,
                             "rows": row_pts,
@@ -716,12 +707,10 @@ else:
                         }
                         st.session_state[undo_stack_key].append(current_snapshot)
                         
-                        # Database deployment implementation matching configuration parameters
                         with st.spinner("Broadcasting component layout mapping changes to Supabase ecosystem..."):
                             try:
-                                # Update records across matching variant scopes
                                 supabase.table("structures").update({
-                                    "section_group": int(total_calculated_points) # Storing calculation array value dynamically
+                                    "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
@@ -731,11 +720,9 @@ else:
                             except Exception as e:
                                 st.error(f"Transmission mutation failed: {str(e)}")
 
-                    # Undo Configuration Stack Controller
                     if st.session_state[undo_stack_key]:
                         last_action = st.session_state[undo_stack_key][-1]
                         if st.button(f"↩️ Undo Structural Change (Revert {last_action['timestamp']})", type="secondary", use_container_width=True):
-                            # Pop off stack
                             st.session_state[undo_stack_key].pop()
                             st.info("Reverted system variable parameters profile to snapshot tracking defaults. Rerunning layout...")
                             time.sleep(0.5)
@@ -743,11 +730,9 @@ else:
                     else:
                         st.caption("No dynamic change history snapshots available in this session cluster.")
 
-                # --- 3. DYNAMIC HTML5 CANVAS COMPONENT MATRIX VISUAL PREVIEWER ---
                 with col_actions:
                     st.markdown("#### 🛰️ Matrix Blueprint Grid Previewer")
                     
-                    # Structural measurements mappings
                     h_px = int(target_layout["h_cells"] * 25)
                     w_px = int(target_layout["w_cells"] * 35)
                     
@@ -763,24 +748,20 @@ else:
                             const canvas = document.getElementById("micro_canvas");
                             const ctx = canvas.getContext('2d');
                             
-                            // Dimensions
                             const rows = {row_pts};
                             const cols = {col_pts};
                             
-                            // Grid block configuration box positioning 
                             const boxW = {w_px};
                             const boxH = {h_px};
                             const bx = (canvas.width / 2) - (boxW / 2);
                             const by = (canvas.height / 2) - (boxH / 2);
                             
-                            // Render Base Structural Outline Profile
                             ctx.fillStyle = '#1e293b';
                             ctx.fillRect(bx, by, boxW, boxH);
                             ctx.strokeStyle = '#38bdf8';
                             ctx.lineWidth = 2;
                             ctx.strokeRect(bx, by, boxW, boxH);
                             
-                            // Generate Point Formations based on row/column counts input safely
                             if(rows > 0 && cols > 0) {{
                                 const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
                                 const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
@@ -790,11 +771,9 @@ else:
                                         let px = (rows === 1) ? bx + (boxW / 2) : bx + (c * colGap);
                                         let py = (cols === 1) ? by + (boxH / 2) : by + (r * rowGap);
                                         
-                                        // Guard boundaries adjustment clipping logic
                                         if(rows === 1) py = by + (boxH / 2);
                                         if(cols === 1) px = bx + (boxW / 2);
 
-                                        // Render placement target nodes pin anchors
                                         ctx.fillStyle = '#f43f5e';
                                         ctx.beginPath();
                                         ctx.arc(px, py, 5, 0, Math.PI * 2);
@@ -1311,6 +1290,16 @@ else:
         # ==============================================================================
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
+        
+        # 🔒 LOCK OUT LOCKOUT FOR INSTALERS IF WORKSPACE HAS NOT BEEN DEPLOYED LIVE BY ADMIN
+        if not site_is_published:
+            st.error("🛑 **Access Restricted:** The operational blueprint for this site layout has not been deployed or finalized by the administrator yet.")
+            st.info("ℹ️ Field crews will gain tracker workspace mapping capability once the admin team formally authorizes a live deployment package from the control panel.")
+            
+            if st.button("🔄 Check Deployment Synchronization Status", type="primary"):
+                st.rerun()
+            st.stop()  # Abort all subsequent runtime rendering of crew tracking tabs completely
+            
         if site_bg_img and not site_bg_img.startswith("{"):
             st.markdown("### 🗺️ Master Blueprint Reference Layout")
             st.image(site_bg_img, use_container_width=False, width=700)

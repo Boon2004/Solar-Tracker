@@ -89,7 +89,7 @@ if st.session_state.active_site_id is None:
                 uploaded_blueprint = st.file_uploader("Upload Master Blueprint Sheet (.xlsx)", type=["xlsx"])
                 
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
-                    st.info("🔄 Running Fast Visual Grid Scanner...")
+                    st.info("🔄 Running Rigid Border Matrix Scanner...")
                     with st.spinner("Processing structural frames..."):
                         wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
                         sheet = wb.active
@@ -111,20 +111,21 @@ if st.session_state.active_site_id is None:
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
                                     cell = sheet.cell(row=r, column=c)
-                                    if cell.value is not None and str(cell.value).strip() != "":
+                                    # STRICT BORDER DETECTOR: Ignores metadata rows/columns completely
+                                    if cell.border and ((cell.border.top and cell.border.top.style in ['thin', 'medium', 'thick']) or 
+                                                         (cell.border.bottom and cell.border.bottom.style in ['thin', 'medium', 'thick']) or 
+                                                         (cell.border.left and cell.border.left.style in ['thin', 'medium', 'thick']) or 
+                                                         (cell.border.right and cell.border.right.style in ['thin', 'medium', 'thick'])):
                                         grid_matrix[r][c] = True
                                     elif cell.fill and cell.fill.fill_type is not None and cell.fill.fill_type != 'none':
-                                        grid_matrix[r][c] = True
-                                    elif cell.border and ((cell.border.top and cell.border.top.style) or 
-                                                         (cell.border.bottom and cell.border.bottom.style) or 
-                                                         (cell.border.left and cell.border.left.style) or 
-                                                         (cell.border.right and cell.border.right.style)):
-                                        grid_matrix[r][c] = True
+                                        # Only accept stylized background fills if explicitly filled with non-white elements
+                                        if hasattr(cell.fill.start_color, 'rgb') and cell.fill.start_color.rgb not in ["00000000", "FFFFFFFF", "00FFFFFF"]:
+                                            grid_matrix[r][c] = True
 
                             visited_matrix = [[False for _ in range(max_cols + 1)] for _ in range(max_rows + 1)]
                             structures_queue = []
                             table_counter = 1
-                            ROAD_GAP = 4 
+                            ROAD_GAP = 1 # Tightened look-ahead step to cleanly isolate rows across walkways
 
                             for r in range(1, max_rows + 1):
                                 for c in range(1, max_cols + 1):
@@ -139,7 +140,7 @@ if st.session_state.active_site_id is None:
                                             cluster_cells.append((curr_r, curr_c))
 
                                             v_cell = sheet.cell(row=curr_r, column=curr_c).value
-                                            if v_cell and not discovered_label:
+                                            if v_cell and not discovered_label and not str(v_cell).strip().isdigit():
                                                 discovered_label = str(v_cell).strip()
 
                                             for dr in range(-ROAD_GAP, ROAD_GAP + 1):
@@ -157,7 +158,9 @@ if st.session_state.active_site_id is None:
                                         h_cells = max_br - min_br + 1
                                         w_cells = max_bc - min_bc + 1
 
-                                        if h_cells > 1 and w_cells > 1 and h_cells < (max_rows * 0.9):
+                                        # Keep independent structures separate from layout grid headers
+                                        if h_cells >= 2 and w_cells >= 2 and h_cells < 25:
+                                            # Derive structural block section placement mappings
                                             section_row_idx = 1 if min_br < (max_rows / 4) else (2 if min_br < (max_rows / 2) else (3 if min_br < (max_rows * 0.75) else 4))
                                             section_col_idx = 1 if min_bc < (max_cols / 4) else (2 if min_bc < (max_cols / 2) else (3 if min_bc < (max_cols * 0.75) else 4))
                                             computed_section_id = ((section_row_idx - 1) * 4) + section_col_idx
@@ -178,7 +181,6 @@ if st.session_state.active_site_id is None:
                                 st.error("❌ Matrix parser rejected configuration: 0 tracker units extracted.")
                             else:
                                 success_count = 0
-                                # High-throughput chunk streaming (200 rows per batch)
                                 for idx in range(0, len(structures_queue), 200):
                                     batch = structures_queue[idx:idx+200]
                                     try: 
@@ -253,7 +255,6 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
-    # Paginated loader to break network payload blocks safely
     @st.cache_data(ttl=1)
     def load_site_isolated_tables(farm_id):
         all_data = []
@@ -334,7 +335,7 @@ else:
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">🖱️ <b>Controls:</b> Drag canvas to <b>Scroll/Pan around</b> | Mouse Wheel to <b>Zoom freely</b> | Click any block to shift its section zone.</div>
                 
                 <div id="dialogue_overlay" style="display:none; position:absolute; bottom:35px; left:50%; transform:translateX(-50%); background:#1e293b; padding:18px 35px; border-radius:8px; border:2px solid #38bdf8; z-index:100000; box-shadow: 0 10px 40px rgba(0,0,0,0.85); font-family:sans-serif; text-align:center;">
-                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Section Cluster to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
+                    <div style="color:#f1f5f9; font-weight:bold; margin-bottom:14px; font-size:15px;">Assign Selected Tracker Unit to <span id="lbl_zone" style="color:#38bdf8; text-decoration:underline;"></span>?</div>
                     <button id="btn_yes" style="background:#22c55e; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:12px; font-size:14px;">Yes, Stage Change</button>
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
@@ -361,7 +362,7 @@ else:
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
 
                     let isDragging = false, moved = false, startX, startY;
-                    let hoverGroupBlockIds = []; let stagedBlockIds = [];
+                    let hoverBlockId = null; let stagedBlockId = null;
 
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#334155';
@@ -378,8 +379,8 @@ else:
                         ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
 
                         blocks.forEach(b => {
-                            let isHovered = hoverGroupBlockIds.includes(b.id); 
-                            let isStaged = stagedBlockIds.includes(b.id);
+                            let isHovered = (hoverBlockId === b.id); 
+                            let isStaged = (stagedBlockId === b.id);
                             
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
                             if (isHovered) ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -394,15 +395,6 @@ else:
                         ctx.restore();
                     }
 
-                    function getGroupCluster(targetBlock) {
-                        let cluster = [];
-                        let sectId = targetBlock.section_group || 0;
-                        blocks.forEach(b => {
-                            if (b.section_group === sectId && sectId !== 0) { cluster.push(b.id); }
-                        });
-                        return cluster;
-                    }
-
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect();
                         const mx = (e.clientX - rect.left - offsetX) / scale; const my = (e.clientY - rect.top - offsetY) / scale;
@@ -412,14 +404,14 @@ else:
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             if (mx >= x && mx <= x + w && my >= y && my <= y + h) found = b;
                         });
-                        if (found) { hoverGroupBlockIds = getGroupCluster(found); } else { hoverGroupBlockIds = []; }
+                        hoverBlockId = found ? found.id : null;
                         draw();
                     });
 
                     canvas.addEventListener('click', (e) => {
                         if (moved) return;
-                        if (hoverGroupBlockIds.length > 0) {
-                            stagedBlockIds = [...hoverGroupBlockIds];
+                        if (hoverBlockId !== null) {
+                            stagedBlockId = hoverBlockId;
                             document.getElementById("lbl_zone").innerText = paintZone;
                             document.getElementById("dialogue_overlay").style.display = "block";
                             draw();
@@ -427,18 +419,19 @@ else:
                     });
 
                     document.getElementById("btn_yes").addEventListener('click', () => {
-                        stagedBlockIds.forEach(id => {
-                            let target = blocks.find(b => b.id === id); if (target) target.assigned_zone = paintZone;
-                            fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                        if (stagedBlockId !== null) {
+                            let target = blocks.find(b => b.id === stagedBlockId); 
+                            if (target) target.assigned_zone = paintZone;
+                            fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + stagedBlockId, {
                                 method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                 body: JSON.stringify({ "assigned_zone": paintZone })
                             });
-                        });
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                        }
+                        stagedBlockId = null; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
 
                     document.getElementById("btn_no").addEventListener('click', () => {
-                        stagedBlockIds = []; document.getElementById("dialogue_overlay").style.display = "none"; draw();
+                        stagedBlockId = null; document.getElementById("dialogue_overlay").style.display = "none"; draw();
                     });
 
                     canvas.addEventListener('mousedown', (e) => { isDragging = true; moved = false; startX = e.clientX - offsetX; startY = e.clientY - offsetY; });

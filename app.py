@@ -91,7 +91,7 @@ if st.session_state.active_site_id is None:
                 if uploaded_blueprint and new_site_name and st.button("Compile & Parse Structural Blueprint"):
                     st.info("🔄 Running Fast Visual Grid Scanner...")
                     with st.spinner("Processing structural frames..."):
-                        wb = openpyxl.load_workbook(uploaded_blueprint, data_only=True)
+                        wb = openpyxl.load_workbook(uploaded_blueprint, use_iterators=False, data_only=True)
                         sheet = wb.active
                         max_rows, max_cols = sheet.max_row, sheet.max_column
                         
@@ -230,7 +230,6 @@ else:
             if not site_is_published:
                 st.warning("⚠️ CRITICAL: Review zoning allocations, electrical maps, structural placement settings, and cabling routes carefully. Once published to the field crew, coordinates cannot be altered.")
                 
-                # Double-Confirmation Confirmation Modal Pop Trigger
                 if "confirm_publish_gate" not in st.session_state: st.session_state.confirm_publish_gate = False
                 
                 if not st.session_state.confirm_publish_gate:
@@ -252,19 +251,17 @@ else:
                             st.rerun()
             else:
                 st.success("✅ Layout Workspace Status: Locked & Live to Crew")
-                # Developer/Admin failsafe back-gate toggle for emergencies
                 if st.button("🔓 Emergency Revoke & Unfreeze Project (Admin Only)"):
                     supabase.table("farms").update({"is_published": False}).eq("id", st.session_state.active_site_id).execute()
                     st.rerun()
             
             st.write("---")
-            st.subheader("🖼_ Map Background Image Configuration")
+            st.subheader("🖼️ Map Background Image Configuration")
             uploaded_map_img = st.file_uploader("Upload Layout Image Blueprint (PNG/JPG):", type=["png", "jpg", "jpeg"])
             if uploaded_map_img:
                 img_bytes = uploaded_map_img.read()
                 b64_img_string = f"data:{uploaded_map_img.type};base64," + base64.b64encode(img_bytes).decode("utf-8")
                 
-                # Block updates if site is locked and published
                 if site_is_published:
                     st.error("Cannot change image background assets on published, finalized frameworks.")
                 elif st.button("💾 Apply & Save Image Blueprint", type="primary"):
@@ -290,14 +287,13 @@ else:
             if st.button("🔒 Revoke Admin Clearances"): st.session_state.is_admin_mode = False; st.rerun()
 
     # ==============================================================================
-    # 🚨 SECURITY GATEWAY CHECK (Ensures installers are completely locked out until published)
+    # 🚨 SECURITY GATEWAY CHECK
     # ==============================================================================
     if not site_is_published and not st.session_state.is_admin_mode:
         st.write("---")
         st.title("🚧 Project Site Setup Phase Incomplete")
         st.info("The layout workflow configuration parameters are currently being finalized by an authorized Engineering Administrator.")
         
-        # Shows structural schematic roadmap status card below to inform installer field crew
         st.markdown("""
         ### 📋 Deployment Checklist Progress Roadmap:
         * **[🟢 DONE]** Structural Master Matrix Blueprint Extracted & Uploaded.
@@ -346,7 +342,6 @@ else:
     json_str = json.dumps(active_table_data)
     b64_json_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
-    # Dynamic zone configuration engines
     found_zones = set()
     for b in active_table_data:
         z = b.get("assigned_zone")
@@ -389,9 +384,9 @@ else:
             with col_wipe1:
                 wipe_scope_selection = st.selectbox("Select Target Scope to Flush & Reset to Unassigned:", ["ALL ZONES"] + zone_list_for_wiping)
             with col_wipe2:
-                st.markdown("<div style='height:28px;'></div>", unsafe_allowed_html=True)
+                # FIXED PARAMETER HERE (unsafe_allow_html instead of unsafe_allowed_html)
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                 
-                # Block structural zoning updates if published & finalized
                 if site_is_published:
                     st.error("Cannot reset zone assets on a frozen, deployed workspace framework.")
                 elif st.button("💥 Reset Selected Allocation Fleet", type="secondary", use_container_width=True):
@@ -534,7 +529,7 @@ else:
                     });
 
                     canvas.addEventListener('mousedown', (e) => {
-                        if (isPublished) return; // Halt edit events if published and frozen
+                        if (isPublished) return; 
                         const rect = canvas.getBoundingClientRect();
                         const mX = e.clientX - rect.left;
                         const mY = e.clientY - rect.top;
@@ -749,7 +744,7 @@ else:
                 """
                 components.html(html_micro_template, height=280)
 
-        # --- STAGE 4: TRANSFORMER HUB PLACEMENT MAP ---
+        # --- STAGE 4: TRANSFORMER HUB PLANCEMENT MAP ---
         with setup_tabs[3]:
             st.markdown("### 🏪 Transformer Station Network Grid Loop Nodes")
             html_transformer_engine = """

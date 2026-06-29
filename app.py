@@ -703,7 +703,6 @@ else:
                     const tooltip = document.getElementById("topo_tooltip");
                     const CELL = 14;
 
-                    // Split trackers into independent strings rows
                     let independentStrings = [];
                     databaseStructures.forEach(b => {
                         if (b.structure_type === "double_6x9") {
@@ -754,6 +753,16 @@ else:
                         return colors[num % colors.length];
                     }
 
+                    // Converts standard hex values into an opacity-adjusted rgba profile string
+                    function getTranslucentRGB(hexColor, opacity) {
+                        let c = hexColor.substring(1);
+                        let rgb = parseInt(c, 16);
+                        let r = (rgb >> 16) & 0xff;
+                        let g = (rgb >> 8) & 0xff;
+                        let b = (rgb >> 0) & 0xff;
+                        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    }
+
                     function isInverterPlaced(invId) {
                         return gridTopo.inverters.some(i => i.id === parseInt(invId));
                     }
@@ -764,7 +773,7 @@ else:
                         ctx.translate(offsetX, offsetY);
                         ctx.scale(scale, scale);
 
-                        // 1. Draw Flight Line Routing Connectors
+                        // 1. Flight Lines
                         gridTopo.inverters.forEach(inv => {
                             if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 let xf = gridTopo.transformers[inv.transformerId];
@@ -780,18 +789,20 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 2. Draw Strings with Dynamic Intelligent Border Logic
+                        // 2. Solar Strings
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
-
                             let linkedInv = gridTopo.stringGroups[s.id];
                             
-                            // Table fill color stays neutral blueprint slate grey
-                            ctx.fillStyle = "#1e293b"; 
+                            // UPGRADE: Dynamically fill translucent color profiles if grouped
+                            if (linkedInv && isInverterPlaced(linkedInv)) {
+                                ctx.fillStyle = getTranslucentRGB(groupColor(linkedInv), 0.35);
+                            } else {
+                                ctx.fillStyle = "#1e293b"; 
+                            }
                             ctx.fillRect(x, y, w, h);
 
-                            // BORDER COLOR RULE: Only apply color if grouped AND target inverter has been placed on the grid map
                             if (linkedInv && isInverterPlaced(linkedInv)) {
                                 ctx.strokeStyle = groupColor(linkedInv);
                                 ctx.lineWidth = 2;
@@ -810,7 +821,7 @@ else:
                             }
                         });
 
-                        // 3. Draw Red Header / Bright Sub-badge Blueprint Inverters
+                        // 3. Inverters
                         gridTopo.inverters.forEach(inv => {
                             let strCount = counts[inv.id] || 0;
                             let tsPrefix = "";
@@ -847,7 +858,7 @@ else:
                             ctx.strokeRect(bx, by, badgeW, badgeH);
                         });
 
-                        // 4. Draw Freeform Transformer Hub Boxes
+                        // 4. Transformers
                         gridTopo.transformers.forEach((t, i) => {
                             ctx.fillStyle = "#ff1744";
                             ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
@@ -885,7 +896,33 @@ else:
                         const world = transformToWorldSpace(m);
                         const tool = getActiveTool();
 
-                        if (e.button === 2 || tool === "pan") {
+                        // UPGRADE: Right-click removal mechanics for stations
+                        if (e.button === 2) {
+                            if (tool === "inverter") {
+                                gridTopo.inverters = gridTopo.inverters.filter(inv => {
+                                    return Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) > 20;
+                                });
+                                draw(); return;
+                            }
+                            if (tool === "transformer") {
+                                gridTopo.transformers = gridTopo.transformers.filter((t, idx) => {
+                                    let match = Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25;
+                                    if (match) {
+                                        gridTopo.inverters.forEach(i => { if (i.transformerId === idx) i.transformerId = null; });
+                                    }
+                                    return !match;
+                                });
+                                draw(); return;
+                            }
+                            
+                            isPanning = true;
+                            startX = e.clientX - offsetX;
+                            startY = e.clientY - offsetY;
+                            canvas.style.cursor = "move";
+                            return;
+                        }
+
+                        if (tool === "pan") {
                             isPanning = true;
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
@@ -1000,7 +1037,7 @@ else:
                                     if (invObj && invObj.transformerId !== null) xfmrRef = "TS " + (invObj.transformerId + 1);
                                 }
 
-                                tooltip.innerHTML = `<b>🛠️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
+                                tooltip.innerHTML = `<b>☀️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
                                 matchFound = true;
                             }
                         }
@@ -1009,6 +1046,7 @@ else:
                     });
 
                     canvas.addEventListener("mouseup", e => {
+                        if (e.button === 2) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isSelecting) {
                             isSelecting = false;
@@ -1021,12 +1059,13 @@ else:
                             
                             let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
+                            let isLassoSelection = totalDragDistance > 5;
                             
                             let boxSelected = independentStrings.filter(s => {
                                 let cx = s.min_c * CELL; let cy = s.min_r * CELL;
                                 let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
                                 
-                                if (totalDragDistance <= 4) {
+                                if (!isLassoSelection) {
                                     return (boxX1 >= cx && boxX1 <= cx + cw && boxY1 >= cy && boxY1 <= cy + ch);
                                 } else {
                                     return (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2);
@@ -1037,16 +1076,20 @@ else:
                                 boxSelected.forEach(el => {
                                     let currentAssign = gridTopo.stringGroups[el.id];
                                     
-                                    // BORDER LOGIC LOCK: Lock selection out if already linked to a different inverter node setup
+                                    // LOCKING RULE: Don't let user override selection if already linked to a different inverter node
                                     if (currentAssign && currentAssign !== activeInv) {
                                         return; 
                                     }
 
-                                    // SELECT TOGGLE LOGIC: Remove string from inverter set if clicked/dragged over a second time
-                                    if (currentAssign === activeInv) {
-                                        delete gridTopo.stringGroups[el.id]; 
-                                    } else {
+                                    // CONDITIONAL TOGGLE: Single clicks remove/unassign, Lasso always forces an assertive grouping assignment
+                                    if (isLassoSelection) {
                                         gridTopo.stringGroups[el.id] = activeInv;
+                                    } else {
+                                        if (currentAssign === activeInv) {
+                                            delete gridTopo.stringGroups[el.id]; 
+                                        } else {
+                                            gridTopo.stringGroups[el.id] = activeInv;
+                                        }
                                     }
                                 });
                                 draw();
@@ -1115,7 +1158,7 @@ else:
 
     else:
         # ==============================================================================
-        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS - UNTOUCHED)
+        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
         if site_bg_img and not site_bg_img.startswith("{"):
             st.markdown("### 🗺️ Master Blueprint Reference Layout")

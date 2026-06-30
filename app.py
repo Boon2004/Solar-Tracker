@@ -63,24 +63,55 @@ if st.session_state.active_site_id is None:
                 
                 st.markdown("---")
                 st.subheader("🗑️ Cloud Database Cleaner")
+                st.markdown("---")
+                st.subheader("🗑️ Cloud Database Cleaner")
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
-                    if st.button("💥 Purge Cloud Data Records", type="primary"):
-                        with st.spinner(f"Purging data assets for {wipe_target}..."):
-                            try:
-                                target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
-                                if target_farm:
-                                    supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
-                                    supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
-                                    st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
-                                    st.cache_resource.clear()
-                                    time.sleep(1); st.rerun()
-                            except Exception as e: 
-                                st.error(f"Purge rejected: {str(e)}")
+                    
+                    # Initialize confirmation gate if not present
+                    if "confirm_purge_gate" not in st.session_state:
+                        st.session_state.confirm_purge_gate = False
+                    if "purge_target_selected" not in st.session_state:
+                        st.session_state.purge_target_selected = ""
+
+                    # If they changed the dropdown selection, reset the confirmation gate for safety
+                    if st.session_state.purge_target_selected != wipe_target:
+                        st.session_state.confirm_purge_gate = False
+                        st.session_state.purge_target_selected = wipe_target
+
+                    if not st.session_state.confirm_purge_gate:
+                        # Initial click button
+                        if st.button("💥 Purge Cloud Data Records", type="primary"):
+                            st.session_state.confirm_purge_gate = True
+                            st.rerun()
+                    else:
+                        # Revealed confirmation menu block after the initial click
+                        st.error(f"🚨 **CRITICAL WARNING:** Are you absolutely sure you want to completely wipe out all structural framework layers and layout parameters for **{wipe_target}**? This cannot be undone.")
+                        
+                        col_purge1, col_purge2 = st.columns(2)
+                        with col_purge1:
+                            if st.button("🔥 YES, PERMANENTLY PURGE", type="primary", use_container_width=True):
+                                with st.spinner(f"Purging data assets for {wipe_target}..."):
+                                    try:
+                                        target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
+                                        if target_farm:
+                                            supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
+                                            supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
+                                            st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
+                                            
+                                            # Reset gate conditions
+                                            st.session_state.confirm_purge_gate = False
+                                            st.cache_resource.clear()
+                                            time.sleep(1)
+                                            st.rerun()
+                                    except Exception as e: 
+                                        st.error(f"Purge rejected: {str(e)}")
+                        with col_purge2:
+                            if st.button("❌ Cancel / Abort", use_container_width=True):
+                                st.session_state.confirm_purge_gate = False
+                                st.rerun()
                 else:
                     st.info("No active cloud entries found to clear.")
-                
-                st.write("---")
                 st.subheader("🚀 Onboard New Layout Framework")
                 new_site_name = st.text_input("Assign Site Project Name:")
                 init_admin_pwd = st.text_input("Assign Management Password:", value="ok")

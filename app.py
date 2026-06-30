@@ -1873,7 +1873,6 @@ else:
             updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
             
             if st.form_submit_button("💾 Commit Shift Remarks to Permanent Log Database"):
-                # Ensure exactly 16 spaces (4 levels deep) are applied here:
                 safe_target = int(math.floor(target_runrate))
                 safe_deviation = int(installed_today_count - safe_target)
                 

@@ -63,8 +63,6 @@ if st.session_state.active_site_id is None:
                 
                 st.markdown("---")
                 st.subheader("🗑️ Cloud Database Cleaner")
-                st.markdown("---")
-                st.subheader("🗑️ Cloud Database Cleaner")
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     
@@ -86,7 +84,7 @@ if st.session_state.active_site_id is None:
                             st.rerun()
                     else:
                         # Revealed confirmation menu block after the initial click
-                        st.error(f"🚨 **CRITICAL WARNING:** Are you absolutely sure you want to completely wipe out all structural framework layers and layout parameters for **{wipe_target}**? This cannot be undone.")
+                        st.error(f"🚨 **CRITICAL WARNING:** Are you sure you want to delete layout parameters for **{wipe_target}**? This cannot be undone.")
                         
                         col_purge1, col_purge2 = st.columns(2)
                         with col_purge1:

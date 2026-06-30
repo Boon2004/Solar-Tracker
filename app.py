@@ -1413,9 +1413,11 @@ else:
             # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
             
+            # 🟢 UPDATED EXECUTIVE MODULE QUANTITIES TRACKER IN TAB 3:
             layout_analysis = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
+            grand_total_actual_modules = 0  # New tracking variable
             
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
@@ -1426,21 +1428,28 @@ else:
                     c_f = int(enc_val % 100)
                     pins_per_unit = int(r_f * c_f)
                 else:
-                    if enc_val == 12: pins_per_unit, r_f, c_f = 12, 3, 4
-                    elif enc_val == 6: pins_per_unit, r_f, c_f = 6, 2, 3
-                    else: pins_per_unit, r_f, c_f = 12, 4, 3
+                    pins_per_unit = 12; r_f = 4; c_f = 3
+                
+                # Apply the explicit panel density factor
+                if l_type == "double_6x9":
+                    modules_per_tracker = 54
+                else:
+                    modules_per_tracker = 27
                 
                 if l_type not in layout_analysis:
                     layout_analysis[l_type] = {
-                        "tracker_count": 0,
-                        "pins_per_unit": pins_per_unit,
-                        "matrix_shape": f"{r_f} Rows × {c_f} Columns",
-                        "total_pins": 0
+                        "tracker_count": 0, "pins_per_unit": pins_per_unit,
+                        "matrix_shape": f"{r_f} Rows × {c_f} Columns", "total_pins": 0,
+                        "modules_per_tracker": modules_per_tracker, "total_modules": 0
                     }
+                    
                 layout_analysis[l_type]["tracker_count"] += 1
                 layout_analysis[l_type]["total_pins"] += pins_per_unit
+                layout_analysis[l_type]["total_modules"] += modules_per_tracker
+                
                 grand_total_trackers += 1
                 grand_total_pegging_points += pins_per_unit
+                grand_total_actual_modules += modules_per_tracker
 
             summary_metrics_rows = []
             for l_name, metrics in layout_analysis.items():
@@ -1453,10 +1462,11 @@ else:
                 })
             st.table(summary_metrics_rows)
             
-            col_plant1, col_plant2, col_plant3 = st.columns(3)
-            with col_plant1: st.metric("Plant Total Tracker Structures Installed", f"{grand_total_trackers} Units")
-            with col_plant2: st.metric("Plant Total Configured Pegging Pinpoints", f"{grand_total_pegging_points} Coordinates")
-            with col_plant3: st.metric("Plant Active Transrelation Inverter Hubs", f"{len(inverters_list)} INVs")
+            col_plant1, col_plant2, col_plant3, col_plant4 = st.columns(4)
+            with col_plant1: st.metric("Plant Total Tracker Tables", f"{grand_total_trackers} Units")
+            with col_plant2: st.metric("Plant Total Pegging Pins", f"{grand_total_pegging_points} Pts")
+            with col_plant3: st.metric("Plant Total Actual PV Modules", f"{grand_total_actual_modules} Panels")
+            with col_plant4: st.metric("Plant Active Inverter Hubs", f"{len(inverters_list)} INVs")
             
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
@@ -1613,12 +1623,15 @@ else:
             elif selected_sched_aspect == "modules":
                 # Matches the exact pattern layout criteria found inside your summaries
                 for b in active_table_data:
-                    ev = b.get("section_group") if b.get("section_group") is not None else 403
-                    if ev > 100:
-                        pins_per_unit = int((ev // 100) * (ev % 100))
+                    l_type = b.get("structure_type", "single_3x9")
+                    
+                    # Multiply structural tables by true physical panel distributions
+                    if l_type == "double_6x9":
+                        panel_density = 54  # 6 rows x 9 columns of modules
                     else:
-                        pins_per_unit = 12
-                    total_elements_count += pins_per_unit
+                        panel_density = 27  # 3 rows x 9 columns of modules
+                        
+                    total_elements_count += panel_density
             elif selected_sched_aspect in ["inverter_structure", "inverter"]:
                 total_elements_count = len(topo_meta_obj.get("inverters", []))
             elif selected_sched_aspect in ["transformer", "ac_cabling"]:
@@ -1633,12 +1646,56 @@ else:
                 with sched_cols[1]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
                 with sched_cols[2]: end_sc_dt = st.date_input("Scheduled Operational Wrap Date:", value=current_system_date + timedelta(days=14))
                 
+                # 🟢 INSERT THIS ZONE-SPECIFIC CALCULATOR HERE:
+                zone_specific_element_count = 0
+                
+                # Filter structures belonging only to the user-selected zone dropdown value
+                zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(target_sched_zone)]
+                
+                if selected_sched_aspect in ["pegging", "piling"]:
+                    for b in zone_filtered_blocks:
+                        ev = b.get("section_group") if b.get("section_group") is not None else 403
+                        if ev > 100:
+                            zone_specific_element_count += int((ev // 100) * (ev % 100))
+                        else:
+                            zone_specific_element_count += 12 # Default fallback matching configuration
+                            
+                elif selected_sched_aspect in ["mounting", "dc_cabling"]:
+                    zone_specific_element_count = len(zone_filtered_blocks)
+                    
+                elif selected_sched_aspect == "modules":
+                    for b in zone_filtered_blocks:
+                        l_type = b.get("structure_type", "single_3x9")
+                        zone_specific_element_count += 54 if l_type == "double_6x9" else 27
+                        
+                elif selected_sched_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
+                    # Match inverters situated physically inside the borders of this zone's tables
+                    for inv in topo_meta_obj.get("inverters", []):
+                        inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
+                        CELL = 14
+                        match_found = any(
+                            str(b.get("assigned_zone")) == str(target_sched_zone) and
+                            (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and
+                            (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL)
+                            for b in active_table_data
+                        )
+                        if match_found:
+                            zone_specific_element_count += 1
+                            
+                elif selected_sched_aspect == "transformer":
+                    # Transformer stations are global infrastructure, select all
+                    zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
+
+                st.markdown(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{target_sched_zone}** for this aspect layer.")
+
+                # Update submission execution engine to pass the true calculated proportion
                 if st.form_submit_button("💾 Broadcast Milestones & Save Run-Rates"):
                     w_days = calculate_network_working_days(start_sc_dt, end_sc_dt)
-                    if w_days <= 0: st.error("Terminal validation exception: End date must exceed start date parameters bounds.")
+                    if w_days <= 0: 
+                        st.error("Terminal validation exception: End date must exceed start date parameters bounds.")
                     else:
-                        zone_proportion = total_elements_count // max(len(zones_to_configure), 1)
-                        computed_runrate_target = round(zone_proportion / w_days, 2)
+                        # 🟢 Dividends are now driven directly by the true structural coordinates count!
+                        computed_runrate_target = round(zone_specific_element_count / w_days, 2)
                         
                         try:
                             supabase.table("project_schedules").upsert(
@@ -1651,7 +1708,7 @@ else:
                                     "working_days": int(w_days), 
                                     "daily_target": float(computed_runrate_target)
                                 },
-                                on_conflict="farm_id, aspect, zone"  # Tells Supabase how to overwrite duplicates safely
+                                on_conflict="farm_id, aspect, zone"
                             ).execute()
                             st.success(f"Milestones locked! Target set to {computed_runrate_target} Units / Working Day.")
                             time.sleep(0.5)
@@ -1659,8 +1716,6 @@ else:
                         except Exception as sched_err:
                             st.error("🚨 Database rejected schedule upload block!")
                             st.code(str(sched_err))
-                        st.success(f"Milestones locked! Target set to {computed_runrate_target} Units / Working Day.")
-                        time.sleep(0.5); st.rerun()
 
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:

@@ -1867,36 +1867,40 @@ else:
             })
         st.table(compiled_ui_matrix_rows)
         
-        def commit_field_crew_remarks(f_id, aspect, zone, l_date, target, installed, remark_text):
-    try:
-        calc_dev = int(installed - math.floor(target))
-        supabase.table("daily_progress_logs").upsert({
-            "farm_id": str(f_id),
-            "aspect": str(aspect),
-            "zone": str(zone),
-            "log_date": str(l_date),
-            "target_units": int(math.floor(target)),
-            "installed_units": int(installed),
-            "deviation": calc_dev,
-            "remark": str(remark_text)
-        }).execute()
-        st.toast("✅ Log entries updated cleanly!", icon="🟢")
-        time.sleep(0.5)
-    except Exception as db_err:
-        st.error(f"Cloud update rejected: {str(db_err)}")
+        def cache_reporting_remark(f_id, aspect, zone, l_date, target, installed, remark_text):
+    st.session_state["staged_remark_payload"] = {
+        "farm_id": str(f_id),
+        "aspect": str(aspect),
+        "zone": str(zone),
+        "log_date": str(l_date),
+        "target_units": int(math.floor(target)),
+        "installed_units": int(installed),
+        "deviation": int(installed - math.floor(target)),
+        "remark": str(remark_text)
+    }
 
-# 2. RENDER THE INTERFACE
+# 2. RENDER THE INTERFACE ENGINES
 st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
 with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
     active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
     updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
     
-    # Trigger the flat function directly on click
     st.form_submit_button(
-        "举 Save Field Tracking Data & Update Progress Table",
-        on_click=commit_field_crew_remarks,
+        "💾 Save Field Tracking Data & Update Progress Table",
+        on_click=cache_reporting_remark,
         args=(st.session_state.active_site_id, selected_crew_aspect, active_zone_profile, current_date_str, target_runrate, installed_today_count, updated_remark_note)
     )
+
+# 3. RUN DATABASE TRANSACTIONS SAFELY AT THE COMPLETELY UNINDENTED BASE LEVEL
+if "staged_remark_payload" in st.session_state:
+    payload_data = st.session_state.pop("staged_remark_payload")
+    try:
+        supabase.table("daily_progress_logs").upsert(payload_data).execute()
+        st.success("Log entries updated cleanly!")
+        time.sleep(0.5)
+        st.rerun()
+    except Exception as db_err:
+        st.error(f"Cloud update rejected: {str(db_err)}")
     # Cast calculation metrics safely to avoid float serialization errors
     safe_target = int(math.floor(target_runrate))
     safe_deviation = int(installed_today_count - safe_target)

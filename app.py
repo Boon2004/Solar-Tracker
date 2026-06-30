@@ -1034,6 +1034,7 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
+                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1043,27 +1044,46 @@ else:
                             ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
 
-                        let processedInverters = new Set();
+                        // 2. High-Contrast True Perimeter Group Border Tracing Algorithm
+                        let inverterCellsMap = {};
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv || processedInverters.has(linkedInv)) return;
-                            processedInverters.add(linkedInv);
-
-                            let currentCluster = independentStrings.filter(item => gridTopo.stringGroups[item.id] === linkedInv);
-                            if (currentCluster.length === 0) return;
-
-                            let minC = Math.min(...currentCluster.map(item => item.min_c));
-                            let maxC = Math.max(...currentCluster.map(item => item.max_c));
-                            let minR = Math.min(...currentCluster.map(item => item.min_r));
-                            let maxR = Math.max(...currentCluster.map(item => item.max_r));
-
-                            let boundX = minC * CELL; let boundY = minR * CELL;
-                            let boundW = (maxC - minC + 1) * CELL; let boundH = (maxR - minR + 1) * CELL;
-
-                            ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 2.5;
-                            ctx.strokeRect(boundX + 1, boundY + 1, boundW - 2, boundH - 2);
+                            if (!linkedInv) return;
+                            if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
+                            
+                            inverterCellsMap[linkedInv].push({
+                                r1: s.min_r, r2: s.max_r,
+                                c1: s.min_c, c2: s.max_c
+                            });
                         });
 
+                        Object.keys(inverterCellsMap).forEach(invId => {
+                            let cellBlocks = inverterCellsMap[invId];
+                            ctx.strokeStyle = "#ff0000"; 
+                            ctx.lineWidth = 3.0;
+                            ctx.lineJoin = "round";
+
+                            cellBlocks.forEach(b => {
+                                let x = b.c1 * CELL;
+                                let y = b.r1 * CELL;
+                                let w = (b.max_c - b.c1 + 1) * CELL;
+                                let h = (b.max_r - b.r1 + 1) * CELL;
+
+                                let topShared = cellBlocks.some(other => b !== other && other.r2 === b.r1 - 1 && other.c1 <= b.c2 && other.c2 >= b.c1);
+                                let bottomShared = cellBlocks.some(other => b !== other && other.r1 === b.r2 + 1 && other.c1 <= b.c2 && other.c2 >= b.c1);
+                                let leftShared = cellBlocks.some(other => b !== other && other.c2 === b.c1 - 1 && other.r1 <= b.r2 && other.r2 >= b.r1);
+                                let rightShared = cellBlocks.some(other => b !== other && other.c1 === b.c2 + 1 && other.r1 <= b.r2 && other.r2 >= b.r1);
+
+                                ctx.beginPath();
+                                if (!topShared) { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); }
+                                if (!bottomShared) { ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); }
+                                if (!leftShared) { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + h); }
+                                if (!rightShared) { ctx.moveTo(x + w - 1, y); ctx.lineTo(x + w - 1, y + h); }
+                                ctx.stroke();
+                            });
+                        });
+
+                        // 3. String component tokens data overlays
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
                             if (!linkedInv) return;

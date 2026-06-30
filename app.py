@@ -1392,6 +1392,7 @@ else:
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
             
+            # Compute Core Structural Dataset Parameters
             layout_analysis = {}
             zone_module_counts = {}
             grand_total_trackers = 0
@@ -1410,6 +1411,7 @@ else:
                 else:
                     pins_per_unit = 12; r_f = 4; c_f = 3
                 
+                # Dynamic panel dimensions tracker math
                 grid_rows = int(block["max_r"] - block["min_r"] + 1)
                 grid_cols = int(block["max_c"] - block["min_c"] + 1)
                 modules_per_tracker = int(grid_rows * grid_cols)
@@ -1434,6 +1436,9 @@ else:
                 grand_total_pegging_points += pins_per_unit
                 grand_total_actual_modules += modules_per_tracker
 
+            # ==================================================================
+            # LEVEL 1: WHOLE PLANT KEY PERFORMANCE METRICS CARD DECK
+            # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Fleet Summary")
             
             col_p1, col_p2, col_p3, col_p4 = st.columns(4)
@@ -1444,6 +1449,7 @@ else:
             
             st.write("")
             
+            # Split Layout: Architectural Breakdown Left | Regional Allocation Cards Right
             split_cols = st.columns([5, 5])
             
             with split_cols[0]:
@@ -1466,6 +1472,7 @@ else:
                     with sub_cards[idx]:
                         st.info(f"**{z_key.upper()}**\n\n🔹 `{zone_module_counts[z_key]['trackers']}` Trackers\n\n🔹 `{zone_module_counts[z_key]['modules']}` Panels")
 
+            # Inline configuration capacity tracker log logic
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
                 bucket_key = f"{s_count} Strings Load"
@@ -1488,6 +1495,9 @@ else:
             
             st.write("---")
             
+            # ==================================================================
+            # LEVEL 2: REGIONAL ZONE COMPONENT ALLOCATION METRICS BREAKDOWN
+            # ==================================================================
             st.subheader("🗺️ LEVEL 2: Regional Zone Operations Summary Ledger")
             
             # Spatial Matching Engine: Calculate which zone boundary encloses each inverter node
@@ -1529,6 +1539,27 @@ else:
                     "Numerical Sequence Inverters Pool": inv_sequence_pool
                 })
             st.table(zone_metrics_rows)
+            
+            st.write("---")
+            
+            # ==================================================================
+            # LEVEL 3: MVS TRANSFORMER STATION INTERCONNECTION REGISTRY
+            # ==================================================================
+            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Interconnections")
+            st.write(f"**Total Medium Voltage Infrastructure Pool:** `{len(transformers_list)} Active Stations Registered`")
+            
+            ts_summary_table = []
+            for ts_idx, ts_obj in enumerate(transformers_list):
+                connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
+                connected_invs.sort()
+                inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
+                
+                ts_summary_table.append({
+                    "Transformer Location ID": f"TS {ts_idx + 1}",
+                    "Interconnected Inverters Count": len(connected_invs),
+                    "Routed Inverter Hub Sub-Pool": inv_string_labels
+                })
+            st.table(ts_summary_table)
         
         # --- STAGE 5: SCHEDULERS & TARGETS MANAGER ---
         with setup_tabs[4]:

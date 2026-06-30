@@ -1643,11 +1643,10 @@ else:
                 with sched_cols[1]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
                 with sched_cols[2]: end_sc_dt = st.date_input("Scheduled Operational Wrap Date:", value=current_system_date + timedelta(days=14))
                 
-                # 🟢 INSERT THIS ZONE-SPECIFIC CALCULATOR HERE:
-                zone_specific_element_count = 0
-                
-                # Filter structures belonging only to the user-selected zone dropdown value
+                # 🟢 CRITICAL: DEFINE THIS FIRST BEFORE ANY CALCULATION LOOPS RUN
                 zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(target_sched_zone)]
+                
+                zone_specific_element_count = 0
                 
                 if selected_sched_aspect in ["pegging", "piling"]:
                     for b in zone_filtered_blocks:
@@ -1655,18 +1654,22 @@ else:
                         if ev > 100:
                             zone_specific_element_count += int((ev // 100) * (ev % 100))
                         else:
-                            zone_specific_element_count += 12 # Default fallback matching configuration
+                            zone_specific_element_count += 12
                             
                 elif selected_sched_aspect in ["mounting", "dc_cabling"]:
                     zone_specific_element_count = len(zone_filtered_blocks)
                     
                 elif selected_sched_aspect == "modules":
                     for b in zone_filtered_blocks:
-                        l_type = b.get("structure_type", "single_3x9")
-                        zone_specific_element_count += 54 if l_type == "double_6x9" else 27
+                        # Dynamically measure the physical grid layout footprint matrix
+                        grid_rows = int(b["max_r"] - b["min_r"] + 1)
+                        grid_cols = int(b["max_c"] - b["min_c"] + 1)
+                        
+                        # Determine panel density multiplier on the fly based on geometry
+                        panel_density = grid_rows * grid_cols
+                        zone_specific_element_count += panel_density
                         
                 elif selected_sched_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
-                    # Match inverters situated physically inside the borders of this zone's tables
                     for inv in topo_meta_obj.get("inverters", []):
                         inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
                         CELL = 14
@@ -1680,18 +1683,15 @@ else:
                             zone_specific_element_count += 1
                             
                 elif selected_sched_aspect == "transformer":
-                    # Transformer stations are global infrastructure, select all
                     zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
                 st.markdown(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{target_sched_zone}** for this aspect layer.")
 
-                # Update submission execution engine to pass the true calculated proportion
                 if st.form_submit_button("💾 Broadcast Milestones & Save Run-Rates"):
                     w_days = calculate_network_working_days(start_sc_dt, end_sc_dt)
                     if w_days <= 0: 
                         st.error("Terminal validation exception: End date must exceed start date parameters bounds.")
                     else:
-                        # 🟢 Dividends are now driven directly by the true structural coordinates count!
                         computed_runrate_target = round(zone_specific_element_count / w_days, 2)
                         
                         try:

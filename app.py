@@ -73,7 +73,7 @@ if st.session_state.active_site_id is None:
                                     supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
                                     supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                     st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
-                                    st.cache_data.clear()
+                                    st.cache_resource.clear()
                                     time.sleep(1); st.rerun()
                             except Exception as e: 
                                 st.error(f"Purge rejected: {str(e)}")
@@ -164,7 +164,7 @@ if st.session_state.active_site_id is None:
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                                 "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
-                                                "section_group": 12, 
+                                                "section_group": 403, # Encoded Default (4 rows, 3 cols)
                                                 "pegging_status": "pending", "piling_status": "pending", 
                                                 "mounting_status": "pending", "modules_status": "pending"
                                             })
@@ -182,7 +182,7 @@ if st.session_state.active_site_id is None:
                                     except Exception: pass
                                 
                                 st.success(f"🎉 Saved {success_count} structured blocks.")
-                                st.cache_data.clear()
+                                st.cache_resource.clear()
                                 time.sleep(1)
                                 st.rerun()
 
@@ -317,7 +317,7 @@ else:
                                     except Exception:
                                         pass
                                         
-                                    st.cache_data.clear()
+                                    st.cache_resource.clear()
                                     st.success("🎉 Sandbox configuration successfully duplicated! Check the project menu list directory.")
                                     time.sleep(1.5)
                                     st.rerun()
@@ -760,14 +760,14 @@ else:
                         "h_cells": h_cells,
                         "w_cells": w_cells,
                         "sample_block_id": block.get("id"),
-                        "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
+                        "encoded_value": block.get("section_group") if block.get("section_group") is not None else 403
                     }
 
             layout_count = len(layout_types)
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # UPPER SECTION: Isolated layout template slots mapping layout matrices perfectly
+                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -775,28 +775,25 @@ else:
                     with top_cols[idx]:
                         st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
                         
-                        saved_pts = data["points_per_unit"]
-                        # Reduced scaling multiplier slightly from 25/35 down to 18/26 to add zoom out safety margin
+                        enc_val = data["encoded_value"]
+                        # Decode custom rows and columns directly from the stored multiplier value
+                        if enc_val > 100:
+                            saved_rows = int(enc_val // 100)
+                            saved_cols = int(enc_val % 100)
+                        else:
+                            # Fallback support legacy integers safely
+                            if enc_val == 12: saved_rows, saved_cols = 3, 4
+                            elif enc_val == 6: saved_rows, saved_cols = 2, 3
+                            else: saved_rows, saved_cols = 4, 3
+                        
                         h_px = int(data["h_cells"] * 18)
                         w_px = int(data["w_cells"] * 26)
-                        
-                        # Parse factors from overall database value integers safely
-                        if saved_pts == 12:
-                            saved_rows, saved_cols = 4, 3
-                        elif saved_pts == 6:
-                            saved_rows, saved_cols = 2, 3
-                        elif saved_pts == 16:
-                            saved_rows, saved_cols = 4, 4
-                        elif saved_pts == 8:
-                            saved_rows, saved_cols = 2, 4
-                        else:
-                            saved_cols = math.ceil(math.sqrt(saved_pts))
-                            saved_rows = math.ceil(saved_pts / saved_cols) if saved_cols > 0 else 1
+                        total_pts = int(saved_rows * saved_cols)
 
                         html_current_view = f"""
                         <div style="background:#0f172a; padding:10px; border-radius:8px; text-align:center; font-family:sans-serif;">
                             <canvas id="saved_canvas_{idx}" width="320" height="200" style="background:#020617; border:2px solid #22c55e; border-radius:6px;"></canvas>
-                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Database Value: {saved_pts} Pins ({saved_rows}x{saved_cols} Matrix Layout)</div>
+                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Database Value: {total_pts} Pins ({saved_rows} Rows × {saved_cols} Columns)</div>
                         </div>
                         <script>
                             (function() {{
@@ -806,7 +803,6 @@ else:
                                 const cols = {saved_cols};
                                 const boxW = {w_px}; const boxH = {h_px};
                                 
-                                // Zoom control padding compensation logic to keep dots away from canvas boundary clipping limits
                                 const bx = (canvas.width / 2) - (boxW / 2); 
                                 const by = (canvas.height / 2) - (boxH / 2);
                                 
@@ -846,14 +842,14 @@ else:
                 target_layout = layout_types[selected_layout_label]
                 state_prefix = f"layout_cfg_{selected_layout_label}"
                 
-                if f"{state_prefix}_rows" not in st.session_state: st.session_state[f"{state_prefix}_rows"] = 4
-                if f"{state_prefix}_cols" not in st.session_state: st.session_state[f"{state_prefix}_cols"] = 3
+                if f"{state_prefix}_rows" not in st.session_state: st.session_state[f"{state_prefix}_rows"] = 3
+                if f"{state_prefix}_cols" not in st.session_state: st.session_state[f"{state_prefix}_cols"] = 4
 
                 col_inputs, col_actions = st.columns([4, 6])
                 
                 with col_inputs:
-                    row_pts = st.number_input("Array Points per Row Count:", min_value=1, max_value=20, key=f"{state_prefix}_rows")
-                    col_pts = st.number_input("Array Points per Column Count:", min_value=1, max_value=20, key=f"{state_prefix}_cols")
+                    row_pts = st.number_input("Array Points per Row (Rows Count stacked vertically):", min_value=1, max_value=20, key=f"{state_prefix}_rows")
+                    col_pts = st.number_input("Array Points per Column (Columns Count lined horizontally):", min_value=1, max_value=20, key=f"{state_prefix}_cols")
                     
                     total_calculated_points = row_pts * col_pts
                     st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit")
@@ -861,16 +857,16 @@ else:
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
                         with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
                             try:
-                                # 1. Push updates to your cloud database
+                                # Encode compound rows and columns integer signature directly into the database field
+                                encoded_group_signature = int((row_pts * 100) + col_pts)
+                                
                                 supabase.table("structures").update({
-                                    "section_group": int(total_calculated_points)
+                                    "section_group": encoded_group_signature
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                # 2. FORCE REFRESH: Clear cached data so the application drops old values
+                                # Flush layout memory resource pipelines to accurately reflect fresh fetches on map loops
                                 st.cache_resource.clear()
-                                
-                                # 3. Trigger immediate rerun to draw the new grid dimensions instantly
                                 st.success("Updated fleet configuration profiles cleanly!")
                                 time.sleep(0.5)
                                 st.rerun()
@@ -878,7 +874,6 @@ else:
                                 st.error(f"Transmission mutation failure occurred: {str(e)}")
 
                 with col_actions:
-                    # Sync lower preview scale bounds to match the layout presentation geometry above perfectly
                     h_px_prev = int(target_layout["h_cells"] * 18)
                     w_px_prev = int(target_layout["w_cells"] * 26)
                     
@@ -1039,7 +1034,6 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1049,7 +1043,6 @@ else:
                             ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
 
-                        // 2. High-contrast thick grouping outline block path logic (matching your screenshot)
                         let processedInverters = new Set();
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
@@ -1071,7 +1064,6 @@ else:
                             ctx.strokeRect(boundX + 1, boundY + 1, boundW - 2, boundH - 2);
                         });
 
-                        // 3. String component tokens data overlays
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
                             if (!linkedInv) return;
@@ -1252,66 +1244,64 @@ else:
         # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
         with setup_tabs[3]:
             st.markdown("### 📊 Executive Analytical Dashboard Summary")
-            
-            try:
-                topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
-            except Exception:
-                topo_meta = {}
-                
+            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception: topo_meta = {}
             inverters_list = topo_meta.get("inverters", [])
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
             
             st.markdown("#### 🪵 Tracker & Pinpoint Fleet Distributions")
-            
-            # Group distributions, counts, and point aggregates by structure architecture layout type
             layout_analysis = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
             
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
-                pins_per_unit = block.get("section_group") if block.get("section_group") is not None else 12
+                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
+                
+                # Dynamic decoding logic for analytical table tallies
+                if enc_val > 100:
+                    r_f = int(enc_val // 100)
+                    c_f = int(enc_val % 100)
+                    pins_per_unit = int(r_f * c_f)
+                else:
+                    if enc_val == 12: pins_per_unit, r_f, c_f = 12, 3, 4
+                    elif enc_val == 6: pins_per_unit, r_f, c_f = 6, 2, 3
+                    else: pins_per_unit, r_f, c_f = 12, 4, 3
                 
                 if l_type not in layout_analysis:
                     layout_analysis[l_type] = {
                         "tracker_count": 0,
                         "pins_per_unit": pins_per_unit,
+                        "matrix_shape": f"{r_f} Rows × {c_f} Columns",
                         "total_pins": 0
                     }
                 
                 layout_analysis[l_type]["tracker_count"] += 1
                 layout_analysis[l_type]["total_pins"] += pins_per_unit
-                
                 grand_total_trackers += 1
                 grand_total_pegging_points += pins_per_unit
 
-            # Build data grid representation matrix rows
             summary_metrics_rows = []
             for l_name, metrics in layout_analysis.items():
                 summary_metrics_rows.append({
                     "Structure Architecture Pattern": l_name.upper(),
                     "Total Trackers Installed": metrics["tracker_count"],
+                    "Matrix Shape Proportions": metrics["matrix_shape"],
                     "Pins Configured Per Unit": f"{metrics['pins_per_unit']} Pts",
                     "Aggregate Pegging Pinpoints Total": f"{metrics['total_pins']} Pts"
                 })
                 
-            # Display granular structured data breaks
             st.table(summary_metrics_rows)
             
-            # Macro cumulative asset totals cards
             col_totals1, col_cols2 = st.columns(2)
-            with col_totals1:
-                st.metric("Total Overall Farm Tracker Units Fleet", f"{grand_total_trackers} Units")
-            with col_cols2:
-                st.metric("Total Cumulative Structural Pinpoints Registered", f"{grand_total_pegging_points} Coordinates")
+            with col_totals1: st.metric("Total Overall Farm Tracker Units Fleet", f"{grand_total_trackers} Units")
+            with col_cols2: st.metric("Total Cumulative Structural Pinpoints Registered", f"{grand_total_pegging_points} Coordinates")
                 
             st.write("---")
-            
             st.markdown("#### ⚡ Electrical Inverter Influx String Capacity Metrics")
             inv_string_distribution = {}
-            for str_id, inv_id in string_groups.items():
-                inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
+            for str_id, inv_id in string_groups.items(): inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
                 
             capacity_buckets = {}
             for inv_id, s_count in inv_string_distribution.items():
@@ -1321,13 +1311,11 @@ else:
             if capacity_buckets:
                 c_cols = st.columns(min(len(capacity_buckets), 4))
                 for idx, (b_name, b_count) in enumerate(capacity_buckets.items()):
-                    with c_cols[idx % len(c_cols)]:
-                        st.metric(b_name, f"{b_count} Inverters")
+                    with c_cols[idx % len(c_cols)]: st.metric(b_name, f"{b_count} Inverters")
             else:
                 st.info("No strings have been dynamically linked to active inverter tokens yet.")
                 
             st.write("---")
-            
             st.markdown("#### 🏪 Transformer Station (MVS) Interconnection Registries")
             st.metric("Total Active Transformer Stations (MVS Pool)", f"{len(transformers_list)} Hubs")
             
@@ -1336,7 +1324,6 @@ else:
                 connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
                 connected_invs.sort()
                 inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
-                
                 ts_summary_table.append({
                     "Transformer Hub Location ID": f"TS {ts_idx + 1}",
                     "Aggregated Inverters Count": len(connected_invs),

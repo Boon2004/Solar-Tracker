@@ -23,7 +23,7 @@ supabase: Client = get_supabase_client()
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
 # --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
-sst.markdown("""
+st.markdown("""
     <style>
     /* Cleanly collapse and hide the entire upper header toolbar context completely */
     div[data-testid="stAppToolbar"] {

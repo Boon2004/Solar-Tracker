@@ -1413,11 +1413,10 @@ else:
             # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
             
-            # 🟢 UPDATED EXECUTIVE MODULE QUANTITIES TRACKER IN TAB 3:
             layout_analysis = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
-            grand_total_actual_modules = 0  # New tracking variable
+            grand_total_actual_modules = 0  
             
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
@@ -1430,17 +1429,16 @@ else:
                 else:
                     pins_per_unit = 12; r_f = 4; c_f = 3
                 
-                # Apply the explicit panel density factor
-                if l_type == "double_6x9":
-                    modules_per_tracker = 54
-                else:
-                    modules_per_tracker = 27
+                # Dynamically calculate modules for this specific tracker cell geometry
+                grid_rows = int(block["max_r"] - block["min_r"] + 1)
+                grid_cols = int(block["max_c"] - block["min_c"] + 1)
+                modules_per_tracker = int(grid_rows * grid_cols)
                 
                 if l_type not in layout_analysis:
                     layout_analysis[l_type] = {
                         "tracker_count": 0, "pins_per_unit": pins_per_unit,
                         "matrix_shape": f"{r_f} Rows × {c_f} Columns", "total_pins": 0,
-                        "modules_per_tracker": modules_per_tracker, "total_modules": 0
+                        "total_modules": 0
                     }
                     
                 layout_analysis[l_type]["tracker_count"] += 1
@@ -1451,6 +1449,7 @@ else:
                 grand_total_pegging_points += pins_per_unit
                 grand_total_actual_modules += modules_per_tracker
 
+            # Render original structural layout summary
             summary_metrics_rows = []
             for l_name, metrics in layout_analysis.items():
                 summary_metrics_rows.append({
@@ -1461,6 +1460,28 @@ else:
                     "Aggregate Pegging Pinpoints Total": f"{metrics['total_pins']} Pts"
                 })
             st.table(summary_metrics_rows)
+            
+            # --- NEW ADJACENT MODULE BOX PANEL BREAKDOWN ---
+            st.markdown("#### 📦 Regional Module Allocation Breakdown")
+            
+            # Group module totals by zone for the summary card array
+            zone_module_counts = {}
+            for block in active_table_data:
+                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
+                g_rows = int(block["max_r"] - block["min_r"] + 1)
+                g_cols = int(block["max_c"] - block["min_c"] + 1)
+                
+                if z_name not in zone_module_counts:
+                    zone_module_counts[z_name] = 0
+                zone_module_counts[z_name] += int(g_rows * g_cols)
+            
+            # Dynamically split zone module summaries into visual columns
+            zone_cols = st.columns(len(zone_module_counts) if zone_module_counts else 1)
+            for idx, (z_key, z_val) in enumerate(sorted(zone_module_counts.items())):
+                with zone_cols[idx]:
+                    st.metric(f"📦 Total Modules ({z_key})", f"{z_val} Panels")
+            
+            st.markdown("---")
             
             col_plant1, col_plant2, col_plant3, col_plant4 = st.columns(4)
             with col_plant1: st.metric("Plant Total Tracker Tables", f"{grand_total_trackers} Units")
@@ -1500,7 +1521,6 @@ else:
             grand_total_actual_modules = 0  
             
             for block in active_table_data:
-                # Extract the assigned zone or mark as Unassigned fallback
                 b_zone = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
                 enc_val = block.get("section_group") if block.get("section_group") is not None else 403
                 
@@ -1511,7 +1531,6 @@ else:
                 else:
                     pins_per_unit = 12; r_f = 4; c_f = 3
                 
-                # Dynamically measure dimensions safely from the cell layout footprint
                 grid_rows = int(block["max_r"] - block["min_r"] + 1)
                 grid_cols = int(block["max_c"] - block["min_c"] + 1)
                 modules_per_tracker = int(grid_rows * grid_cols)
@@ -1531,7 +1550,6 @@ else:
                 grand_total_pegging_points += pins_per_unit
                 grand_total_actual_modules += modules_per_tracker
 
-            # Generate the zone summary matrix table
             zone_metrics_rows = []
             for zone_name in sorted(zone_analysis.keys()):
                 metrics = zone_analysis[zone_name]
@@ -1545,13 +1563,13 @@ else:
             st.markdown("#### 🗺️ Regional Zone Component Allocation Metrics Breakdown")
             st.table(zone_metrics_rows)
             
-            # Plant-wide summary metrics
             st.markdown("#### 🌐 Plant-Wide Grand Totals Summary")
             col_plant1, col_plant2, col_plant3, col_plant4 = st.columns(4)
             with col_plant1: st.metric("Plant Total Tracker Tables", f"{grand_total_trackers} Units")
             with col_plant2: st.metric("Plant Total Pegging Pins", f"{grand_total_pegging_points} Pts")
             with col_plant3: st.metric("Plant Total Actual PV Modules", f"{grand_total_actual_modules} Panels")
             with col_plant4: st.metric("Plant Active Inverter Hubs", f"{len(inverters_list)} INVs")
+            
             # ==================================================================
             # LEVEL 3: MVS TRANSFORMER STATION POOL ASSIGNATION MATRIX
             # ==================================================================

@@ -25,24 +25,20 @@ st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 # --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
 st.markdown("""
     <style>
-    /* 1. Remove the GitHub repository shortcut icon link */
-    .stAppToolbar a[href*="github.com"],
-    .stAppToolbar a:has(svg),
+    /* 1. Target the toolbar wrapper and hide generic link elements (GitHub) */
     div[data-testid="stAppToolbar"] a {
         display: none !important;
     }
     
-    /* 2. Hide the developer edit pencil action button specifically */
-    .stAppToolbar button[aria-label="Manage app"],
-    .stAppToolbar button:has(svg path[d*="M14.06"]),
-    .stAppToolbar button:has(svg path[d*="M3 17.25"]),
+    /* 2. Target any standard action buttons that are NOT the three-dot dropdown */
     div[data-testid="stAppToolbar"] button:not([data-testid="stActionButtonDropdown"]) {
-        /* This hides other buttons in the toolbar area, safely keeping the dropdown menu */
+        display: none !important;
     }
     
-    /* Strict fallback logic to enforce keeping only the three-dots dropdown */
-    .stAppToolbar > div > *:not(button[data-testid="stActionButtonDropdown"]):not(:has(button[data-testid="stActionButtonDropdown"])) {
-        display: none !important;
+    /* 3. Fallback: Ensure the three-dot dropdown is explicitly forced to display */
+    button[data-testid="stActionButtonDropdown"] {
+        display: inline-flex !important;
+        visibility: visible !important;
     }
     </style>
 """, unsafe_allow_html=True)

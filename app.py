@@ -330,18 +330,18 @@ else:
             st.rerun()
             
     # Clean default theme tracking context state if admin toggle is hidden
+    col_h1, col_h2 = st.columns([8, 2])
+    with col_h1: 
+        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
+    with col_h2:
+        if st.button("🚪 Exit Site", use_container_width=True): 
+            st.session_state.active_site_id = None
+            st.session_state.is_admin_mode = False
+            st.rerun()
+            
+    # Clean default theme tracking context state if admin toggle is hidden
     if not st.session_state.is_admin_mode:
         app_theme = "Dark Mode"
-            with st.form("admin_upgrade_form", clear_on_submit=True):
-                adm_pass = st.text_input("Enter Management Credentials Panel Pass:", type="password")
-                if st.form_submit_button("Verify Clearance", use_container_width=True):
-                    if str(adm_pass) == str(st.session_state.admin_key_match):
-                        st.session_state.is_admin_mode = True
-                        st.rerun()
-                    else: 
-                        st.error("Incorrect Password.")
-        else:
-            st.success("⚡ Admin Permissions Active")
             
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):

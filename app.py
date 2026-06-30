@@ -746,153 +746,77 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # 1. Master dynamic framework overview panel at the top
-            st.markdown("#### 🗺️ Fleet-Wide Live Coordinate Preview Interactive Matrix Plot")
-            
-            html_global_piling_preview = """
-            <div style="background:#0f172a; padding:12px; border-radius:12px; text-align:center; font-family:sans-serif; color:#f8fafc; position:relative;">
-                <div style="font-size:12px; margin-bottom:6px; color:#94a3b8;">Holistic Fleet Setup Pins Coordination Index Chart (Right-Click+Drag to pan | Scroll to zoom)</div>
-                <div id="piling_preview_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #f43f5e; padding: 6px 12px; border-radius: 4px; font-size: 11px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold; text-align: left;"></div>
-                <canvas id="global_piling_canvas" width="1000" height="400" style="background:#020617; border:1px solid #1e293b; border-radius:6px; display:block; margin:0 auto;"></canvas>
-            </div>
-            <script>
-                (function(){
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("global_piling_canvas");
-                    const ctx = canvas.getContext("2d");
-                    const tooltip = document.getElementById("piling_preview_tooltip");
-                    const CELL = 22;
-                    
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    let mapW = (maxX - minX + 1) * CELL;
-                    let mapH = (maxY - minY + 1) * CELL;
-                    
-                    let scale = Math.min((canvas.width - 60) / mapW, (canvas.height - 60) / mapH);
-                    if (scale <= 0 || !isFinite(scale)) scale = 0.3;
-                    let offsetX = (canvas.width / 2) - (mapW * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapH * scale / 2) - (minY * CELL * scale);
-                    
-                    let isPanning = false;
-                    let startX = 0, startY = 0;
-                    
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-                    
-                    function draw() {
-                        ctx.clearRect(0,0,canvas.width,canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
-                        
-                        blocks.forEach(b => {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillStyle = "#1e293b";
-                            ctx.fillRect(x,y,w,h);
-                            ctx.strokeStyle = "rgba(56,189,248,0.35)";
-                            ctx.lineWidth = 0.75;
-                            ctx.strokeRect(x,y,w,h);
-                            
-                            let ptsCount = b.section_group || 12;
-                            let sides = Math.ceil(Math.sqrt(ptsCount));
-                            let idx = 0;
-                            
-                            ctx.fillStyle = "#f43f5e";
-                            for (let r=0; r<sides; r++) {
-                                for (let c=0; c<sides; c++) {
-                                    if (idx >= ptsCount) break;
-                                    let px = x + (w / (sides + 1)) * (c + 1);
-                                    let py = y + (h / (sides + 1)) * (r + 1);
-                                    ctx.beginPath();
-                                    ctx.arc(px, py, 1.8, 0, Math.PI*2);
-                                    ctx.fill();
-                                    idx++;
-                                }
-                            }
-                        });
-                        ctx.restore();
-                    }
-                    
-                    canvas.addEventListener('mousedown', (e) => {
-                        isPanning = true;
-                        startX = e.clientX - offsetX;
-                        startY = e.clientY - offsetY;
-                    });
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-                        if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        }
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        let found = null;
-                        for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= worldY && worldY <= y + h) {
-                                found = b; break;
-                            }
-                        }
-                        if (found) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px";
-                            tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `<b>Tracker ID:</b> ${found.table_label}<br><b>Pattern:</b> ${found.structure_type.toUpperCase()}<br><b>Active Saved Pins:</b> ${found.section_group || 12} Pins`;
-                        } else {
-                            tooltip.style.display = "none";
-                        }
-                    });
-                    canvas.addEventListener('mouseup', () => { isPanning = false; });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault();
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        const gridX = (mX - offsetX) / scale; const gridY = (mY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.02, Math.min(scale, 10));
-                        offsetX = mX - gridX * scale; offsetY = mY - gridY * scale; draw();
-                    }, { passive: false });
-                    
-                    draw();
-                })();
-            </script>
-            """
-            html_global_piling_preview = html_global_piling_preview.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                                   .replace("MIN_C_VAL", str(min_c))\
-                                                                   .replace("MAX_C_VAL", str(max_c))\
-                                                                   .replace("MIN_R_VAL", str(min_r))\
-                                                                   .replace("MAX_R_VAL", str(max_r))
-            components.html(html_global_piling_preview, height=440)
-            st.write("---")
-
-            # 2. Re-instantiated clean dropdown selector parameters dashboard deck at the bottom
-            st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
+            # 1. Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
                 w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
-                layout_key = f"{block.get('structure_type', 'unknown')} ({h_cells}x{w_cells} grid template)"
+                l_type = block.get("structure_type", "single_3x9")
+                layout_key = f"{l_type} ({h_cells}x{w_cells} grid layout)"
                 
                 if layout_key not in layout_types:
                     layout_types[layout_key] = {
-                        "type_string": block.get("structure_type"),
+                        "type_string": l_type,
                         "h_cells": h_cells,
                         "w_cells": w_cells,
-                        "sample_block_id": block.get("id"),
                         "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
                     }
 
-            layout_options = list(layout_types.keys())
-            
-            if not layout_options:
+            layout_count = len(layout_types)
+            if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                selected_layout_label = st.selectbox(
-                    "Select Model Template Variant to Configure Layout Pins Amount:", 
-                    layout_options
-                )
+                # 2. UPPER SECTION: Show ONLY the individual layout boxes with current saved points (No heavy multi-row map lag)
+                st.markdown("#### 🗺️ Current Active Database Layout Formations")
+                top_cols = st.columns(max(layout_count, 2))
+                
+                for idx, (label, data) in enumerate(layout_types.items()):
+                    with top_cols[idx]:
+                        st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
+                        
+                        # Render a lightweight canvas showing exactly ONE isolated block frame using current saved database values
+                        saved_pts = data["points_per_unit"]
+                        h_px = int(data["h_cells"] * 25)
+                        w_px = int(data["w_cells"] * 35)
+                        
+                        html_current_view = f"""
+                        <div style="background:#0f172a; padding:10px; border-radius:8px; text-align:center; font-family:sans-serif;">
+                            <canvas id="saved_canvas_{idx}" width="300" height="180" style="background:#020617; border:2px solid #22c55e; border-radius:6px;"></canvas>
+                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Saved Base Capacity: {saved_pts} Pins</div>
+                        </div>
+                        <script>
+                            (function() {{
+                                const canvas = document.getElementById("saved_canvas_{idx}");
+                                const ctx = canvas.getContext('2d');
+                                const totalPts = {saved_pts};
+                                const boxW = {w_px}; const boxH = {h_px};
+                                const bx = (canvas.width / 2) - (boxW / 2); const by = (canvas.height / 2) - (boxH / 2);
+                                
+                                ctx.fillStyle = '#1e293b'; ctx.fillRect(bx, by, boxW, boxH);
+                                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, boxW, boxH);
+                                
+                                let sides = Math.ceil(Math.sqrt(totalPts));
+                                let ptIdx = 0;
+                                ctx.fillStyle = '#22c55e';
+                                for(let r=0; r<sides; r++) {{
+                                    for(let c=0; c<sides; c++) {{
+                                        if(ptIdx >= totalPts) break;
+                                        let px = (sides === 1) ? bx + (boxW/2) : bx + (boxW / (sides + 1)) * (c + 1);
+                                        let py = (sides === 1) ? by + (boxH/2) : by + (boxH / (sides + 1)) * (r + 1);
+                                        ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI*2); ctx.fill();
+                                        ptIdx++;
+                                    }}
+                                }}
+                            }})();
+                        </script>
+                        """
+                        components.html(html_current_view, height=220)
+
+                st.write("---")
+                
+                # 3. LOWER SECTION: Standard Interactive Template Editor Selector Matrix
+                st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
+                selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 
                 target_layout = layout_types[selected_layout_label]
                 state_prefix = f"layout_cfg_{selected_layout_label}"
@@ -907,17 +831,17 @@ else:
                     col_pts = st.number_input("Array Points per Column Count:", min_value=1, max_value=20, key=f"{state_prefix}_cols")
                     
                     total_calculated_points = row_pts * col_pts
-                    st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit", delta=f"Saved footprint base: {target_layout['points_per_unit']} Pts")
+                    st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit")
                     
-                    if st.button("💾 Replicate & Sync Selection Globally", type="primary", use_container_width=True):
-                        with st.spinner("Transmitting coordinate modifications to Supabase records..."):
+                    if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
+                        with st.spinner("Transmitting coordinate modifications to database..."):
                             try:
                                 supabase.table("structures").update({
                                     "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                st.success("Updated fleet metrics cleanly! Upper master map synced.")
+                                st.success("Updated fleet metrics cleanly!")
                                 time.sleep(0.8)
                                 st.rerun()
                             except Exception as e:
@@ -929,7 +853,7 @@ else:
                     
                     html_micro_template = f"""
                     <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center; font-family:sans-serif;">
-                        <div style="margin-bottom: 8px; font-size:12px; color:#94a3b8;">Auto-Updating Local Matrix Preview Block Outline</div>
+                        <div style="margin-bottom: 8px; font-size:12px; color:#94a3b8;">Auto-Updating Local Matrix Preview (Before Saving)</div>
                         <canvas id="micro_canvas" width="400" height="220" style="background:#020617; border:1px dashed #38bdf8; border-radius:8px;"></canvas>
                     </div>
                     <script>

@@ -226,9 +226,11 @@ if st.session_state.active_site_id is None:
                     st.session_state.active_site_id = target_site_record["id"]
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
+                    
+                    # FIX: Instantly lock developer panel when entering a layout workspace
+                    st.session_state.dev_unlocked = False 
+                    
                     st.rerun()
-                else: st.error("Incorrect password credentials.")
-
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING PLATFORM COMMAND CENTER
 # ==============================================================================

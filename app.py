@@ -1034,7 +1034,7 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 1. Core structural background fills (Stroke lines completely removed inside assigned blocks)
+                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1043,13 +1043,12 @@ else:
                             ctx.fillStyle = linkedInv ? (isInverterPlaced(linkedInv) ? getCapacityColor(counts[linkedInv]) : "#d97706") : "#1e293b";
                             ctx.fillRect(x, y, w, h);
                             
-                            // If unassigned, draw a faint layout border. If assigned, keep it flat so internal grid-lines disappear.
                             if (!linkedInv) {
                                 ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                             }
                         });
 
-                        // 2. High-Contrast Unified Outer Perimeter Group Tracer (No inner border subdivisions)
+                        // 2. Dynamic Group Border Tracer (Crosses Black Gaps & Erases All Internal Dividers)
                         let inverterCellsMap = {};
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
@@ -1060,8 +1059,8 @@ else:
 
                         Object.keys(inverterCellsMap).forEach(invId => {
                             let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff3333"; // Vibrant outer group border color
-                            ctx.lineWidth = 3.5;
+                            ctx.strokeStyle = "#ff0000"; 
+                            ctx.lineWidth = 4.0;
                             ctx.lineJoin = "miter";
 
                             cellBlocks.forEach(b => {
@@ -1070,11 +1069,11 @@ else:
                                 let w = (b.max_c - b.min_c + 1) * CELL;
                                 let h = (b.max_r - b.min_r + 1) * CELL;
 
-                                // Advanced edge evaluation: drops boundary strokes if an adjacent block belongs to the same inverter group
-                                let topShared = cellBlocks.some(other => b !== other && (other.max_r === b.min_r - 1 || other.parentId === b.parentId) && other.min_c <= b.max_c && other.max_c >= b.min_c && b.min_r > other.min_r);
-                                let bottomShared = cellBlocks.some(other => b !== other && (other.min_r === b.max_r + 1 || other.parentId === b.parentId) && other.min_c <= b.max_c && other.max_c >= b.min_c && b.max_r < other.max_r);
-                                let leftShared = cellBlocks.some(other => b !== other && other.max_c === b.min_c - 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
-                                let rightShared = cellBlocks.some(other => b !== other && other.min_c === b.max_c + 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
+                                // Lookahead Neighbor Evaluation Engine (Checks past empty grid spacing arrays seamlessly)
+                                let topShared = cellBlocks.some(other => b !== other && b.min_r > other.min_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (b.min_r - other.max_r <= 5 || other.parentId === b.parentId));
+                                let bottomShared = cellBlocks.some(other => b !== other && b.max_r < other.max_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (other.min_r - b.max_r <= 5 || other.parentId === b.parentId));
+                                let leftShared = cellBlocks.some(other => b !== other && b.min_c > other.min_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (b.min_c - other.max_c <= 5));
+                                let rightShared = cellBlocks.some(other => b !== other && b.max_c < other.max_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (other.min_c - b.max_c <= 5));
 
                                 ctx.beginPath();
                                 if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }

@@ -1055,8 +1055,8 @@ else:
 
                         Object.keys(inverterCellsMap).forEach(invId => {
                             let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff3333"; 
-                            ctx.lineWidth = 3.0;
+                            ctx.strokeStyle = "#ff0000"; 
+                            ctx.lineWidth = 3.5;
                             ctx.lineJoin = "miter";
 
                             cellBlocks.forEach(b => {
@@ -1065,7 +1065,7 @@ else:
                                 let w = (b.max_c - b.min_c + 1) * CELL;
                                 let h = (b.max_r - b.min_r + 1) * CELL;
 
-                                // Edge neighbors evaluation matrix
+                                // Edge neighbors evaluation matrix (checks coordinates across the entire matching ID cluster)
                                 let topShared = cellBlocks.some(other => b !== other && other.max_r === b.min_r - 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
                                 let bottomShared = cellBlocks.some(other => b !== other && other.min_r === b.max_r + 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
                                 let leftShared = cellBlocks.some(other => b !== other && other.max_c === b.min_c - 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
@@ -1214,13 +1214,19 @@ else:
 
                     canvas.addEventListener("mouseup", e => {
                         if (e.button === 2 || isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
+                        if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
+                        
                         if (isSelecting) {
-                            isSelecting = false; const mUp = getMouseLocation(e);
+                            isSelecting = false;
+                            canvas.style.cursor = "default";
+                            const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
-                            let x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x), y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
-                            let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
 
+                            let boxX1 = Math.min(p1.x, p2.x), boxX2 = Math.max(p1.x, p2.x);
+                            let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
+                            let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
+                            
                             if (getActiveTool() === "route") {
                                 if (dist > 5) {
                                     gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });

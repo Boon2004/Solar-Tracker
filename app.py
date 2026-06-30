@@ -267,52 +267,59 @@ else:
     site_is_published = current_farm_record.get("is_published", False)
     site_bg_img = current_farm_record.get("background_image_url", "")
 
-    # ADD THIS ACTIVE TIMESTAMPS ASSIGNMENT
+    # Clean execution timestamp retrieval assignment
     current_system_date = get_operational_system_date(current_farm_record)
+    current_date_str = str(current_system_date)
 
+    # ==============================================================================
+    # 🔐 UNIFIED INTERFACE CONTROL & CREDENTIAL CLEARANCE SIDEBAR BLOCK
+    # ==============================================================================
     with st.sidebar:
-    st.header("🔐 Workspace Clearances")
-    
-    # Render credential panel input matrix ONLY if not currently authenticated
-    if not st.session_state.is_admin_mode:
-        with st.form("sidebar_management_credential_verification_form"):
-            admin_pass_input = st.text_input(
-                "Enter Management Credentials Panel Pass:", 
-                type="password", 
-                help="Input terminal administrative token keys to authorize project broadcasting layers."
-            )
-            submit_clearance = st.form_submit_button("Verify Clearance")
+        st.header("🔐 Workspace Clearances")
+        
+        # Render credential panel input matrix ONLY if not currently authenticated
+        if not st.session_state.is_admin_mode:
+            with st.form("sidebar_management_credential_verification_form"):
+                admin_pass_input = st.text_input(
+                    "Enter Management Credentials Panel Pass:", 
+                    type="password", 
+                    help="Input terminal administrative token keys to authorize project broadcasting layers."
+                )
+                submit_clearance = st.form_submit_button("Verify Clearance")
+                
+                if submit_clearance:
+                    # Replace "admin123" with your custom project security access password string if needed
+                    if admin_pass_input == "admin123":
+                        st.session_state.is_admin_mode = True
+                        st.success("Clearance authorized!")
+                        time.sleep(0.4)
+                        st.rerun()
+                    else:
+                        st.error("Invalid credentials block.")
+                        
+        # Render administrative configuration widgets if authorized
+        if st.session_state.is_admin_mode:
+            st.success("⚡ Admin Permissions Active")
             
-            if submit_clearance:
-                # Replace "admin123" with your custom project security access password string if needed
-                if admin_pass_input == "admin123":
-                    st.session_state.is_admin_mode = True
-                    st.success("Clearance authorized!")
-                    time.sleep(0.4)
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials block.")
-                    
-    # Render administrative configuration widgets if authorized
-    if st.session_state.is_admin_mode:
-        st.success("⚡ Admin Permissions Active")
-        
-        # Global operational app dark/light mode toggle
-        app_theme = st.radio(
-            "Visual Dashboard Workspace Theme Profile:", 
-            ["Dark Mode", "Light Mode"], 
-            key="app_theme_selection_toggle"
-        )
-        
-        st.markdown("---")
-        # Global operational simulation time-travel anchor widget
-        current_system_date = st.date_input(
-            "Select System Operation Date Window:", 
-            value=date.today(),
-            help="Alters active calendar timeline perspectives for reporting shift segments."
-        )
-        current_date_str = str(current_system_date)
+            # Global operational app dark/light mode toggle
+            app_theme = st.radio(
+                "Visual Dashboard Workspace Theme Profile:", 
+                ["Dark Mode", "Light Mode"], 
+                key="app_theme_selection_toggle"
+            )
+            
+            st.markdown("---")
+            # Global operational simulation time-travel anchor widget
+            current_system_date = st.date_input(
+                "Select System Operation Date Window:", 
+                value=current_system_date if 'current_system_date' in locals() else date.today(),
+                help="Alters active calendar timeline perspectives for reporting shift segments."
+            )
+            current_date_str = str(current_system_date)
 
+    # ==============================================================================
+    # 🛰️ MAIN DASHBOARD APEX HEADER INTERFACE PANEL 
+    # ==============================================================================
     col_h1, col_h2 = st.columns([8, 2])
     with col_h1: 
         st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
@@ -322,8 +329,9 @@ else:
             st.session_state.is_admin_mode = False
             st.rerun()
             
-        
-        if not st.session_state.is_admin_mode:
+    # Clean default theme tracking context state if admin toggle is hidden
+    if not st.session_state.is_admin_mode:
+        app_theme = "Dark Mode"
             with st.form("admin_upgrade_form", clear_on_submit=True):
                 adm_pass = st.text_input("Enter Management Credentials Panel Pass:", type="password")
                 if st.form_submit_button("Verify Clearance", use_container_width=True):

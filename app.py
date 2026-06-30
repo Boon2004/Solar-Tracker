@@ -746,118 +746,219 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
+            # 1. Master dynamic framework overview panel at the top
+            st.markdown("#### 🗺️ Fleet-Wide Live Coordinate Preview Interactive Matrix Plot")
+            
+            html_global_piling_preview = """
+            <div style="background:#0f172a; padding:12px; border-radius:12px; text-align:center; font-family:sans-serif; color:#f8fafc; position:relative;">
+                <div style="font-size:12px; margin-bottom:6px; color:#94a3b8;">Holistic Fleet Setup Pins Coordination Index Chart (Right-Click+Drag to pan | Scroll to zoom)</div>
+                <div id="piling_preview_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #f43f5e; padding: 6px 12px; border-radius: 4px; font-size: 11px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold; text-align: left;"></div>
+                <canvas id="global_piling_canvas" width="1000" height="400" style="background:#020617; border:1px solid #1e293b; border-radius:6px; display:block; margin:0 auto;"></canvas>
+            </div>
+            <script>
+                (function(){
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("global_piling_canvas");
+                    const ctx = canvas.getContext("2d");
+                    const tooltip = document.getElementById("piling_preview_tooltip");
+                    const CELL = 22;
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    let mapW = (maxX - minX + 1) * CELL;
+                    let mapH = (maxY - minY + 1) * CELL;
+                    
+                    let scale = Math.min((canvas.width - 60) / mapW, (canvas.height - 60) / mapH);
+                    if (scale <= 0 || !isFinite(scale)) scale = 0.3;
+                    let offsetX = (canvas.width / 2) - (mapW * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapH * scale / 2) - (minY * CELL * scale);
+                    
+                    let isPanning = false;
+                    let startX = 0, startY = 0;
+                    
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    
+                    function draw() {
+                        ctx.clearRect(0,0,canvas.width,canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
+                        
+                        blocks.forEach(b => {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillStyle = "#1e293b";
+                            ctx.fillRect(x,y,w,h);
+                            ctx.strokeStyle = "rgba(56,189,248,0.35)";
+                            ctx.lineWidth = 0.75;
+                            ctx.strokeRect(x,y,w,h);
+                            
+                            let ptsCount = b.section_group || 12;
+                            let sides = Math.ceil(Math.sqrt(ptsCount));
+                            let idx = 0;
+                            
+                            ctx.fillStyle = "#f43f5e";
+                            for (let r=0; r<sides; r++) {
+                                for (let c=0; c<sides; c++) {
+                                    if (idx >= ptsCount) break;
+                                    let px = x + (w / (sides + 1)) * (c + 1);
+                                    let py = y + (h / (sides + 1)) * (r + 1);
+                                    ctx.beginPath();
+                                    ctx.arc(px, py, 1.8, 0, Math.PI*2);
+                                    ctx.fill();
+                                    idx++;
+                                }
+                            }
+                        });
+                        ctx.restore();
+                    }
+                    
+                    canvas.addEventListener('mousedown', (e) => {
+                        isPanning = true;
+                        startX = e.clientX - offsetX;
+                        startY = e.clientY - offsetY;
+                    });
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left;
+                        const mY = e.clientY - rect.top;
+                        if (isPanning) {
+                            offsetX = e.clientX - startX;
+                            offsetY = e.clientY - startY;
+                            draw();
+                            tooltip.style.display = "none";
+                            return;
+                        }
+                        let worldX = (mX - offsetX) / scale;
+                        let worldY = (mY - offsetY) / scale;
+                        let found = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL;
+                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= worldY && worldY <= y + h) {
+                                found = b; break;
+                            }
+                        }
+                        if (found) {
+                            tooltip.style.display = "block";
+                            tooltip.style.left = (mX + 15) + "px";
+                            tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `<b>Tracker ID:</b> ${found.table_label}<br><b>Pattern:</b> ${found.structure_type.toUpperCase()}<br><b>Active Saved Pins:</b> ${found.section_group || 12} Pins`;
+                        } else {
+                            tooltip.style.display = "none";
+                        }
+                    });
+                    canvas.addEventListener('mouseup', () => { isPanning = false; });
+                    canvas.addEventListener('wheel', (e) => {
+                        e.preventDefault();
+                        const rect = canvas.getBoundingClientRect();
+                        const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                        const gridX = (mX - offsetX) / scale; const gridY = (mY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.02, Math.min(scale, 10));
+                        offsetX = mX - gridX * scale; offsetY = mY - gridY * scale; draw();
+                    }, { passive: false });
+                    
+                    draw();
+                })();
+            </script>
+            """
+            html_global_piling_preview = html_global_piling_preview.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                                   .replace("MIN_C_VAL", str(min_c))\
+                                                                   .replace("MAX_C_VAL", str(max_c))\
+                                                                   .replace("MIN_R_VAL", str(min_r))\
+                                                                   .replace("MAX_R_VAL", str(max_r))
+            components.html(html_global_piling_preview, height=440)
+            st.write("---")
+
+            # 2. Re-instantiated clean dropdown selector parameters dashboard deck at the bottom
+            st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
                 w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
-                l_type = block.get("structure_type", "single_3x9")
-                layout_key = f"{l_type} ({h_cells}x{w_cells} grid template)"
+                layout_key = f"{block.get('structure_type', 'unknown')} ({h_cells}x{w_cells} grid template)"
                 
                 if layout_key not in layout_types:
                     layout_types[layout_key] = {
-                        "type_string": l_type,
+                        "type_string": block.get("structure_type"),
                         "h_cells": h_cells,
                         "w_cells": w_cells,
+                        "sample_block_id": block.get("id"),
                         "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
                     }
 
-            st.markdown("#### 🗺️ Extracted Fleet Blueprint Layout Models")
+            layout_options = list(layout_types.keys())
             
-            layout_columns = st.columns(max(len(layout_types), 2))
-            
-            for idx, (layout_label, layout_data) in enumerate(layout_types.items()):
-                state_prefix = f"layout_cfg_{layout_label}"
-                undo_stack_key = f"undo_{state_prefix}"
+            if not layout_options:
+                st.info("No structure architecture frameworks detected.")
+            else:
+                selected_layout_label = st.selectbox(
+                    "Select Model Template Variant to Configure Layout Pins Amount:", 
+                    layout_options
+                )
                 
-                if undo_stack_key not in st.session_state: st.session_state[undo_stack_key] = []
+                target_layout = layout_types[selected_layout_label]
+                state_prefix = f"layout_cfg_{selected_layout_label}"
+                
                 if f"{state_prefix}_rows" not in st.session_state: st.session_state[f"{state_prefix}_rows"] = 4
                 if f"{state_prefix}_cols" not in st.session_state: st.session_state[f"{state_prefix}_cols"] = 3
+
+                col_inputs, col_actions = st.columns([4, 6])
                 
-                with layout_columns[idx % len(layout_columns)]:
-                    st.info(f"📐 **{layout_data['type_string'].upper()}**")
-                    st.caption(f"Dimensions: {layout_data['w_cells']}x{layout_data['h_cells']} cell matrix")
-                    
-                    row_pts = st.number_input(
-                        "Array Pins per Row:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_rows"
-                    )
-                    col_pts = st.number_input(
-                        "Array Pins per Column:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_cols"
-                    )
+                with col_inputs:
+                    row_pts = st.number_input("Array Points per Row Count:", min_value=1, max_value=20, key=f"{state_prefix}_rows")
+                    col_pts = st.number_input("Array Points per Column Count:", min_value=1, max_value=20, key=f"{state_prefix}_cols")
                     
                     total_calculated_points = row_pts * col_pts
-                    st.metric(
-                        label="Resulting Formations", 
-                        value=f"{total_calculated_points} Pts / Block",
-                        delta=f"Active Saved Base: {layout_data['points_per_unit']} Pts"
-                    )
+                    st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit", delta=f"Saved footprint base: {target_layout['points_per_unit']} Pts")
                     
-                    if st.button("💾 Apply Pattern Globally", key=f"btn_save_{state_prefix}", type="primary", use_container_width=True):
-                        st.session_state[undo_stack_key].append({
-                            "timestamp": datetime.now().strftime("%H:%M:%S")
-                        })
-                        with st.spinner("Broadcasting alignment arrays..."):
+                    if st.button("💾 Replicate & Sync Selection Globally", type="primary", use_container_width=True):
+                        with st.spinner("Transmitting coordinate modifications to Supabase records..."):
                             try:
                                 supabase.table("structures").update({
                                     "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
-                                  .eq("structure_type", layout_data["type_string"]).execute()
+                                  .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                st.success("Updated profile configurations!")
+                                st.success("Updated fleet metrics cleanly! Upper master map synced.")
                                 time.sleep(0.8)
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Sync issue: {str(e)}")
-                                
-                    h_px = int(layout_data["h_cells"] * 25)
-                    w_px = int(layout_data["w_cells"] * 35)
+                                st.error(f"Transmission rejected: {str(e)}")
+
+                with col_actions:
+                    h_px = int(target_layout["h_cells"] * 25)
+                    w_px = int(target_layout["w_cells"] * 35)
                     
                     html_micro_template = f"""
-                    <div style="background:#0f172a; padding:12px; border-radius:10px; text-align:center; font-family:sans-serif; margin-top:10px;">
-                        <canvas id="micro_canvas_{idx}" width="320" height="200" style="background:#020617; border:1px dashed #38bdf8; border-radius:6px;"></canvas>
+                    <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center; font-family:sans-serif;">
+                        <div style="margin-bottom: 8px; font-size:12px; color:#94a3b8;">Auto-Updating Local Matrix Preview Block Outline</div>
+                        <canvas id="micro_canvas" width="400" height="220" style="background:#020617; border:1px dashed #38bdf8; border-radius:8px;"></canvas>
                     </div>
                     <script>
                         (function() {{
-                            const canvas = document.getElementById("micro_canvas_{idx}");
+                            const canvas = document.getElementById("micro_canvas");
                             const ctx = canvas.getContext('2d');
-                            const rows = {row_pts};
-                            const cols = {col_pts};
+                            const rows = {row_pts}; const cols = {col_pts};
                             const boxW = {w_px}; const boxH = {h_px};
-                            const bx = (canvas.width / 2) - (boxW / 2);
-                            const by = (canvas.height / 2) - (boxH / 2);
+                            const bx = (canvas.width / 2) - (boxW / 2); const by = (canvas.height / 2) - (boxH / 2);
                             
-                            ctx.fillStyle = '#1e293b';
-                            ctx.fillRect(bx, by, boxW, boxH);
-                            ctx.strokeStyle = '#38bdf8';
-                            ctx.lineWidth = 1.5;
-                            ctx.strokeRect(bx, by, boxW, boxH);
+                            ctx.fillStyle = '#1e293b'; ctx.fillRect(bx, by, boxW, boxH);
+                            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.strokeRect(bx, by, boxW, boxH);
                             
                             if(rows > 0 && cols > 0) {{
                                 const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
                                 const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
-                                
                                 for(let r = 0; r < rows; r++) {{
                                     for(let c = 0; c < cols; c++) {{
                                         let px = (cols === 1) ? bx + (boxW / 2) : bx + (c * colGap);
                                         let py = (rows === 1) ? by + (boxH / 2) : by + (r * rowGap);
-                                        
-                                        ctx.fillStyle = '#f43f5e';
-                                        ctx.beginPath();
-                                        ctx.arc(px, py, 4, 0, Math.PI * 2);
-                                        ctx.fill();
-                                        ctx.strokeStyle = '#ffffff';
-                                        ctx.lineWidth = 1;
-                                        ctx.stroke();
+                                        ctx.fillStyle = '#f43f5e'; ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill();
+                                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
                                     }}
                                 }}
                             }}
-                        }}))();
+                        }})();
                     </script>
                     """
-                    components.html(html_micro_template, height=240)
+                    components.html(html_micro_template, height=270)
 
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
@@ -874,7 +975,7 @@ else:
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Click / Lasso Strings</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverter to MVS (Click or Drag Lasso)</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverters to MVS (Click / Drag Lasso)</label>
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
@@ -970,421 +1071,212 @@ else:
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.save();
-                        ctx.translate(offsetX, offsetY);
-                        ctx.scale(scale, scale);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
 
                         gridTopo.inverters.forEach(inv => {
                             if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 let xf = gridTopo.transformers[inv.transformerId];
-                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
-                                ctx.lineWidth = 2.0;
-                                ctx.beginPath();
-                                ctx.moveTo(inv.x, inv.y);
-                                ctx.lineTo(xf.x, xf.y);
-                                ctx.stroke();
+                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)"; ctx.lineWidth = 2.0; ctx.beginPath();
+                                ctx.moveTo(inv.x, inv.y); ctx.lineTo(xf.x, xf.y); ctx.stroke();
                             }
                         });
 
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
+                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
                             let linkedInv = gridTopo.stringGroups[s.id];
-                            
-                            if (linkedInv) {
-                                if (isInverterPlaced(linkedInv)) {
-                                    ctx.fillStyle = getCapacityColor(counts[linkedInv]); 
-                                } else {
-                                    ctx.fillStyle = "#d97706";
-                                }
-                            } else {
-                                ctx.fillStyle = "#1e293b"; 
-                            }
-                            
+                            ctx.fillStyle = linkedInv ? (isInverterPlaced(linkedInv) ? getCapacityColor(counts[linkedInv]) : "#d97706") : "#1e293b";
                             ctx.fillRect(x, y, w, h);
-                            
-                            if (linkedInv) {
-                                ctx.strokeStyle = getCapacityColor(counts[linkedInv]); 
-                                ctx.lineWidth = 2.0; 
-                                ctx.strokeRect(x + 1, y + 1, w - 2, h - 2); 
-                                ctx.strokeStyle = "#ffffff";
-                                ctx.lineWidth = 0.75;
-                                ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
-                            } else {
-                                ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-                                ctx.lineWidth = 0.5;
-                                ctx.strokeRect(x, y, w, h);
-                            }
+                            ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        });
 
-                            if (linkedInv) {
-                                ctx.fillStyle = "rgba(0,0,0,0.85)";
-                                ctx.fillRect(x + 2, y + 2, 35, 11);
-                                ctx.fillStyle = "#ffffff";
-                                ctx.font = "bold 7px sans-serif";
-                                ctx.fillText("I-" + linkedInv, x + 4, y + 10);
-                            }
+                        // 2. High-contrast thick grouping outline block path logic (matching your screenshot)
+                        let processedInverters = new Set();
+                        independentStrings.forEach(s => {
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            if (!linkedInv || processedInverters.has(linkedInv)) return;
+                            processedInverters.add(linkedInv);
+
+                            let currentCluster = independentStrings.filter(item => gridTopo.stringGroups[item.id] === linkedInv);
+                            if (currentCluster.length === 0) return;
+
+                            let minC = Math.min(...currentCluster.map(item => item.min_c));
+                            let maxC = Math.max(...currentCluster.map(item => item.max_c));
+                            let minR = Math.min(...currentCluster.map(item => item.min_r));
+                            let maxR = Math.max(...currentCluster.map(item => item.max_r));
+
+                            let boundX = minC * CELL; let boundY = minR * CELL;
+                            let boundW = (maxC - minC + 1) * CELL; let boundH = (maxR - minR + 1) * CELL;
+
+                            ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 2.5;
+                            ctx.strokeRect(boundX + 1, boundY + 1, boundW - 2, boundH - 2);
+                        });
+
+                        // 3. String component tokens data overlays
+                        independentStrings.forEach(s => {
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            if (!linkedInv) return;
+                            let x = s.min_c * CELL; let y = s.min_r * CELL;
+                            ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(x + 2, y + 2, 35, 11);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 7px sans-serif";
+                            ctx.fillText("I-" + linkedInv, x + 4, y + 10);
                         });
 
                         gridTopo.inverters.forEach(inv => {
                             let strCount = counts[inv.id] || 0;
-                            let tsPrefix = "";
-                            if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
-                                tsPrefix = "TS" + (inv.transformerId + 1) + "-";
-                            }
+                            let tsPrefix = inv.transformerId !== null && gridTopo.transformers[inv.transformerId] ? "TS" + (inv.transformerId + 1) + "-" : "";
                             let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
                             let countText = strCount + " STRINGS";
 
                             ctx.font = "bold 9px sans-serif";
-                            let titleW = ctx.measureText(titleText).width + 12;
-                            let countW = ctx.measureText(countText).width + 12;
-                            let badgeW = Math.max(titleW, countW, 65);
-                            let badgeH = 26;
+                            let badgeW = Math.max(ctx.measureText(titleText).width + 12, ctx.measureText(countText).width + 12, 65);
+                            let badgeH = 26; let bx = inv.x - (badgeW / 2); let by = inv.y - (badgeH / 2);
 
-                            let bx = inv.x - (badgeW / 2);
-                            let by = inv.y - (badgeH / 2);
+                            ctx.fillStyle = "#ff0000"; ctx.fillRect(bx, by, badgeW, badgeH / 2);
+                            ctx.fillStyle = getCapacityColor(strCount); ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
+                            ctx.fillStyle = "#ffffff"; ctx.textAlign = "center";
+                            ctx.fillText(titleText, inv.x, by + 9); ctx.fillText(countText, inv.x, by + 21);
 
-                            ctx.fillStyle = "#ff0000";
-                            ctx.fillRect(bx, by, badgeW, badgeH / 2);
-                            
-                            ctx.fillStyle = getCapacityColor(strCount);
-                            ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
-
-                            ctx.fillStyle = "#ffffff";
-                            ctx.textAlign = "center";
-                            ctx.fillText(titleText, inv.x, by + 9);
-                            ctx.fillText(countText, inv.x, by + 21);
-
-                            if (lassoSelectedInvertersList.includes(inv.id)) {
-                                ctx.strokeStyle = "#facc15";
-                                ctx.lineWidth = 3.5;
-                            } else {
-                                ctx.strokeStyle = "#ffffff";
-                                ctx.lineWidth = 1;
-                            }
-                            ctx.strokeRect(bx, by, badgeW, badgeH);
+                            ctx.strokeStyle = lassoSelectedInvertersList.includes(inv.id) ? "#facc15" : "#ffffff";
+                            ctx.lineWidth = lassoSelectedInvertersList.includes(inv.id) ? 3.5 : 1; ctx.strokeRect(bx, by, badgeW, badgeH);
                         });
 
                         gridTopo.transformers.forEach((t, i) => {
-                            ctx.fillStyle = "#ff1744";
-                            ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
-                            ctx.strokeStyle = "#ffffff";
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
-                            
-                            ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 10px sans-serif";
-                            ctx.textAlign = "center";
+                            ctx.fillStyle = "#ff1744"; ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
+                            ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
                             ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
                         });
 
                         ctx.restore();
 
                         if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "route")) {
-                            ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; 
-                            ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; ctx.lineWidth = 1.5;
                             ctx.fillStyle = getActiveTool() === "string" ? "rgba(167, 139, 250, 0.2)" : "rgba(56, 189, 248, 0.2)";
-                            ctx.fillRect(startX, startY, currX - startX, currY - startY);
-                            ctx.strokeRect(startX, startY, currX - startX, currY - startY);
+                            ctx.fillRect(startX, startY, currX - startX, currY - startY); ctx.strokeRect(startX, startY, currX - startX, currY - startY);
                         }
                     }
 
-                    function getMouseLocation(e) {
-                        const rect = canvas.getBoundingClientRect();
-                        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-                    }
-
-                    function transformToWorldSpace(p) {
-                        return { x: (p.x - offsetX) / scale, y: (p.y - offsetY) / scale };
-                    }
+                    function getMouseLocation(e) { const rect = canvas.getBoundingClientRect(); return { x: e.clientX - rect.left, y: e.clientY - rect.top }; }
+                    function transformToWorldSpace(p) { return { x: (p.x - offsetX) / scale, y: (p.y - offsetY) / scale }; }
 
                     canvas.addEventListener("mousedown", e => {
-                        const m = getMouseLocation(e);
-                        const world = transformToWorldSpace(m);
-                        const tool = getActiveTool();
+                        const m = getMouseLocation(e); const world = transformToWorldSpace(m); const tool = getActiveTool();
 
                         if (e.button === 2) {
                             if (tool === "transformer") {
-                                let targetedXfmrIdx = gridTopo.transformers.findIndex(t => 
-                                    Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25
-                                );
-                                
-                                if (targetedXfmrIdx !== -1) {
-                                    gridTopo.transformers.splice(targetedXfmrIdx, 1);
-                                    gridTopo.inverters.forEach(i => {
-                                        if (i.transformerId === targetedXfmrIdx) i.transformerId = null;
-                                        else if (i.transformerId > targetedXfmrIdx) i.transformerId -= 1;
-                                    });
+                                let tIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
+                                if (tIdx !== -1) {
+                                    gridTopo.transformers.splice(tIdx, 1);
+                                    gridTopo.inverters.forEach(i => { if (i.transformerId === tIdx) i.transformerId = null; else if (i.transformerId > tIdx) i.transformerId -= 1; });
                                 }
-                                draw();
-                                return;
-                            }
-                            if (tool === "inverter") {
+                            } else if (tool === "inverter") {
                                 gridTopo.inverters = gridTopo.inverters.filter(inv => {
-                                    let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
-                                    if (isHit) {
-                                        Object.keys(gridTopo.stringGroups).forEach(key => {
-                                            if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key];
-                                        });
-                                    }
-                                    return !isHit;
+                                    let hit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
+                                    if (hit) { Object.keys(gridTopo.stringGroups).forEach(k => { if (gridTopo.stringGroups[k] === inv.id) delete gridTopo.stringGroups[k]; }); }
+                                    return !hit;
                                 });
-                                draw(); return;
+                            } else {
+                                isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
                             }
-                            
-                            isPanning = true;
-                            startX = e.clientX - offsetX;
-                            startY = e.clientY - offsetY;
-                            canvas.style.cursor = "move";
-                            return;
+                            draw(); return;
                         }
 
                         if (tool === "pan") {
-                            isPanning = true;
-                            startX = e.clientX - offsetX;
-                            startY = e.clientY - offsetY;
-                            canvas.style.cursor = "move";
+                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
                         } else if (tool === "string" || tool === "route") {
                             if (tool === "route") {
-                                let clickedInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
-                                if (clickedInv) {
-                                    if (lassoSelectedInvertersList.includes(clickedInv.id)) {
-                                        lassoSelectedInvertersList = lassoSelectedInvertersList.filter(id => id !== clickedInv.id);
-                                    } else {
-                                        lassoSelectedInvertersList.push(clickedInv.id);
-                                    }
-                                    draw();
-                                    return;
+                                let cInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
+                                if (cInv) {
+                                    if (lassoSelectedInvertersList.includes(cInv.id)) { lassoSelectedInvertersList = lassoSelectedInvertersList.filter(id => id !== cInv.id); }
+                                    else { lassoSelectedInvertersList.push(cInv.id); }
+                                    draw(); return;
                                 }
-                                
-                                let clickedXfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
-                                if (clickedXfmrIdx !== -1 && lassoSelectedInvertersList.length > 0) {
-                                    gridTopo.inverters.forEach(inv => {
-                                        if (lassoSelectedInvertersList.includes(inv.id)) {
-                                            inv.transformerId = clickedXfmrIdx;
-                                        }
-                                    });
-                                    lassoSelectedInvertersList = [];
-                                    draw();
-                                    return;
+                                let cXfmr = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
+                                if (cXfmr !== -1 && lassoSelectedInvertersList.length > 0) {
+                                    gridTopo.inverters.forEach(inv => { if (lassoSelectedInvertersList.includes(inv.id)) inv.transformerId = cXfmr; });
+                                    lassoSelectedInvertersList = []; draw(); return;
                                 }
                             }
-                            isSelecting = true;
-                            startX = m.x; startY = m.y;
-                            currX = m.x; currY = m.y;
+                            isSelecting = true; startX = m.x; startY = m.y; currX = m.x; currY = m.y;
                         } else if (tool === "inverter") {
-                            let hitStruct = databaseStructures.find(b => {
-                                let sx = b.min_c * CELL, sy = b.min_r * CELL;
-                                let sw = (b.max_c - b.min_c + 1) * CELL, sh = (b.max_r - b.min_r + 1) * CELL;
-                                return world.x >= sx && world.x <= sx + sw && world.y >= sy && world.y <= sy + sh;
-                            });
-
+                            let hitStruct = databaseStructures.find(b => world.x >= b.min_c*CELL && world.x <= (b.max_c+1)*CELL && world.y >= b.min_r*CELL && world.y <= (b.max_r+1)*CELL);
                             if (hitStruct) {
                                 let invId = parseInt(document.getElementById("topo_inv_token").value) || 20;
                                 gridTopo.inverters = gridTopo.inverters.filter(i => i.id !== invId);
-                                
-                                let structW = (hitStruct.max_c - hitStruct.min_c + 1) * CELL;
-                                let structH = (hitStruct.max_r - hitStruct.min_r + 1) * CELL;
-                                
-                                gridTopo.inverters.push({
-                                    id: invId,
-                                    x: (hitStruct.min_c * CELL) + (structW / 2),
-                                    y: (hitStruct.min_r * CELL) + (structH / 2),
-                                    transformerId: null
-                                });
+                                gridTopo.inverters.push({ id: invId, x: (hitStruct.min_c * CELL) + (((hitStruct.max_c - hitStruct.min_c + 1) * CELL) / 2), y: (hitStruct.min_r * CELL) + (((hitStruct.max_r - hitStruct.min_r + 1) * CELL) / 2), transformerId: null });
                                 draw();
                             }
                         } else if (tool === "transformer") {
-                            let hitString = independentStrings.find(s => {
-                                let sx = s.min_c * CELL, sy = s.min_r * CELL;
-                                return world.x >= sx && world.x <= sx + ((s.max_c - s.min_c + 1) * CELL) &&
-                                       world.y >= sy && world.y <= sy + ((s.max_r - s.min_r + 1) * CELL);
-                            });
-                            if (!hitString) {
-                                gridTopo.transformers.push({ x: world.x, y: world.y });
-                                draw();
-                            }
+                            let hitStr = independentStrings.find(s => world.x >= s.min_c*CELL && world.x <= (s.max_c+1)*CELL && world.y >= s.min_r*CELL && world.y <= (s.max_r+1)*CELL);
+                            if (!hitStr) { gridTopo.transformers.push({ x: world.x, y: world.y }); draw(); }
                         }
                     });
 
                     canvas.addEventListener("mousemove", e => {
-                        const m = getMouseLocation(e);
-                        const world = transformToWorldSpace(m);
+                        const m = getMouseLocation(e); const world = transformToWorldSpace(m);
+                        if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); return; }
+                        else if (isSelecting) { currX = m.x; currY = m.y; draw(); return; }
 
-                        if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
-                            draw(); return;
-                        } else if (isSelecting) {
-                            currX = m.x; currY = m.y;
-                            draw(); return;
-                        }
-
-                        let matchFound = false;
-
-                        gridTopo.transformers.forEach((t, index) => {
+                        let match = false;
+                        gridTopo.transformers.forEach((t, idx) => {
                             if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
-                                let connectedInvsList = gridTopo.inverters
-                                    .filter(i => i.transformerId === index)
-                                    .map(i => i.id)
-                                    .sort((a, b) => a - b)
-                                    .map(id => "INV " + id)
-                                    .join(", ");
-
-                                tooltip.style.display = "block";
-                                tooltip.style.left = (m.x + 15) + "px";
-                                tooltip.style.top = (m.y + 15) + "px";
-                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${index + 1}<br>Fed by Inverters: [ ${connectedInvsList || 'None'} ]`;
-                                matchFound = true;
+                                let list = gridTopo.inverters.filter(i => i.transformerId === idx).map(i => "INV " + i.id).join(", ");
+                                tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
+                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${idx+1}<br>Fed by: [ ${list || 'None'} ]`; match = true;
                             }
                         });
-
-                        if (!matchFound) {
+                        if (!match) {
                             gridTopo.inverters.forEach(inv => {
                                 if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25) {
-                                    tooltip.style.display = "block";
-                                    tooltip.style.left = (m.x + 15) + "px";
-                                    tooltip.style.top = (m.y + 15) + "px";
-                                    tooltip.innerHTML = `<b>⚡ Inverter Badge</b><br>Inverter ID: INV #${inv.id}<br>Routed Station: ${inv.transformerId !== null ? 'TS ' + (inv.transformerId + 1) : 'Unassigned Route'}`;
-                                    matchFound = true;
+                                    tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
+                                    tooltip.innerHTML = `<b>⚡ Inverter Node</b><br>ID: ##${inv.id}<br>Route: ${inv.transformerId !== null ? 'TS ' + (inv.transformerId+1) : 'Unassigned'}`; match = true;
                                 }
                             });
                         }
-
-                        if (!matchFound) {
-                            let s = independentStrings.find(s => {
-                                let sx = s.min_c * CELL, sy = s.min_r * CELL;
-                                return world.x >= sx && world.x <= sx + ((s.max_c - s.min_c + 1) * CELL) &&
-                                       world.y >= sy && world.y <= sy + ((s.max_r - s.min_r + 1) * CELL);
-                            });
-
+                        if (!match) {
+                            let s = independentStrings.find(s => world.x >= s.min_c*CELL && world.x <= (s.max_c+1)*CELL && world.y >= s.min_r*CELL && world.y <= (s.max_r+1)*CELL);
                             if (s) {
-                                tooltip.style.display = "block";
-                                tooltip.style.left = (m.x + 15) + "px";
-                                tooltip.style.top = (m.y + 15) + "px";
-                                
-                                let invRef = gridTopo.stringGroups[s.id] || "None Assigned";
-                                let xfmrRef = "None Assigned";
-                                if (invRef !== "None Assigned") {
-                                    let invObj = gridTopo.inverters.find(i => i.id === parseInt(invRef));
-                                    if (invObj && invObj.transformerId !== null) xfmrRef = "TS " + (invObj.transformerId + 1);
-                                }
-
-                                tooltip.innerHTML = `<b>☀️ Tracker Table String</b><br>Table Label: ${s.label}<br>Zone ID: ${s.zone}<br>Connected Inverter: ${invRef}<br>Connected Transformer: ${xfmrRef}`;
-                                matchFound = true;
+                                tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
+                                tooltip.innerHTML = `<b>☀️ String Table</b><br>Label: ${s.label}<br>Inverter: ${gridTopo.stringGroups[s.id] || 'None'}`; match = true;
                             }
                         }
-
-                        if (!matchFound && selectedInverterIndexForRouting === null) tooltip.style.display = "none";
+                        if (!match) tooltip.style.display = "none";
                     });
 
                     canvas.addEventListener("mouseup", e => {
-                        if (e.button === 2) { isPanning = false; canvas.style.cursor = "default"; return; }
-                        if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
-                        
+                        if (e.button === 2 || isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isSelecting) {
-                            isSelecting = false;
-                            canvas.style.cursor = "default";
-                            const mUp = getMouseLocation(e);
+                            isSelecting = false; const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
+                            let x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x), y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
+                            let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
 
-                            let boxX1 = Math.min(p1.x, p2.x), boxX2 = Math.max(p1.x, p2.x);
-                            let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
-                            let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
-                            
                             if (getActiveTool() === "route") {
-                                if (totalDragDistance > 5) {
-                                    gridTopo.inverters.forEach(inv => {
-                                        if (inv.x >= boxX1 && inv.x <= boxX2 && inv.y >= boxY1 && inv.y <= boxY2) {
-                                            if (!lassoSelectedInvertersList.includes(inv.id)) {
-                                                lassoSelectedInvertersList.push(inv.id);
-                                            }
-                                        }
-                                    });
+                                if (dist > 5) {
+                                    gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });
                                 }
-                                draw();
-                                return;
+                                draw(); return;
                             }
 
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
-                            let isLassoSelection = totalDragDistance > 5;
+                            let targets = independentStrings.filter(s => dist > 5 ? (s.min_c*CELL >= x1 && s.min_c*CELL <= x2 && s.min_r*CELL >= y1 && s.min_r*CELL <= y2) : (x1 >= s.min_c*CELL && x1 <= (s.max_c+1)*CELL && y1 >= s.min_r*CELL && y1 <= (s.max_r+1)*CELL));
                             
-                            let boxSelected = independentStrings.filter(s => {
-                                let cx = s.min_c * CELL; let cy = s.min_r * CELL;
-                                let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
-                                
-                                if (!isLassoSelection) {
-                                    return (boxX1 >= cx && boxX1 <= cx + cw && boxY1 >= cy && boxY1 <= cy + ch);
-                                } else {
-                                    return (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2);
-                                }
-                            });
-
-                            if (boxSelected.length > 0) {
-                                boxSelected.forEach(el => {
-                                    let currentAssign = gridTopo.stringGroups[el.id];
-                                    if (currentAssign && currentAssign !== activeInv) return;
-
-                                    if (isLassoSelection) {
-                                        gridTopo.stringGroups[el.id] = activeInv;
-                                    } else {
-                                        if (currentAssign === activeInv) {
-                                            delete gridTopo.stringGroups[el.id]; 
-                                        } else {
-                                            gridTopo.stringGroups[el.id] = activeInv;
-                                        }
-                                    }
-                                });
-                                draw();
-                            }
+                            targets.forEach(s => { if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { if (dist <= 5 && gridTopo.stringGroups[s.id] === activeInv) delete gridTopo.stringGroups[s.id]; else gridTopo.stringGroups[s.id] = activeInv; } });
+                            draw();
                         }
                     });
 
                     canvas.addEventListener("wheel", e => {
-                        e.preventDefault();
-                        const m = getMouseLocation(e); const world = transformToWorldSpace(m);
+                        e.preventDefault(); const m = getMouseLocation(e); const world = transformToWorldSpace(m);
                         scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
                         offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
-
-                    document.getElementById("btn_flush_routes").addEventListener("click", () => {
-                        if (confirm("Disconnect layout line strings routes safely?")) {
-                            gridTopo.inverters.forEach(i => i.transformerId = null); draw();
-                        }
-                    });
-                    document.getElementById("btn_flush_inverters").addEventListener("click", () => {
-                        if (confirm("Flush custom configured inverter nodes?")) {
-                            gridTopo.inverters = []; gridTopo.stringGroups = {}; draw();
-                        }
-                    });
-                    document.getElementById("btn_flush_transformers").addEventListener("click", () => {
-                        if (confirm("Flush transformer stations?")) {
-                            gridTopo.transformers = []; gridTopo.inverters.forEach(i => i.transformerId = null); draw();
-                        }
-                    });
-
-                    document.getElementById("btn_topo_save").addEventListener("click", async () => {
-                        const saveBtn = document.getElementById("btn_topo_save");
-                        saveBtn.innerText = "⏳ Saving Topology...";
-                        try {
-                            await fetch("SUPABASE_URL_VAL/rest/v1/farms?id=eq.ACTIVE_SITE_ID_VAL", {
-                                method: "PATCH",
-                                headers: {
-                                    "apikey": "SUPABASE_KEY_VAL",
-                                    "Authorization": "Bearer SUPABASE_KEY_VAL",
-                                    "Content-Type": "application/json"
-                                },
-                                body: JSON.stringify({ background_image_url: JSON.stringify(gridTopo) })
-                            });
-                            saveBtn.innerText = "🎉 Saved to Cloud Database!";
-                            setTimeout(() => { saveBtn.innerText = "💾 Save Workspace Topologies"; }, 2500);
-                        } catch (err) {
-                            saveBtn.innerText = "❌ Sync Failure";
-                        }
-                    });
 
                     draw();
                 })();
@@ -1405,12 +1297,8 @@ else:
         # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
         with setup_tabs[3]:
             st.markdown("### 📊 Executive Analytical Dashboard Summary")
-            
-            try:
-                topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
-            except Exception:
-                topo_meta = {}
-                
+            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception: topo_meta = {}
             inverters_list = topo_meta.get("inverters", [])
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
@@ -1423,17 +1311,14 @@ else:
                 
             col_an1, col_an2 = st.columns(2)
             with col_an1:
-                for k, v in layout_counts.items():
-                    st.metric(f"Total Model Placements [{k.upper()}]", f"{v} Blocks")
+                for k, v in layout_counts.items(): st.metric(f"Total Model Placements [{k.upper()}]", f"{v} Blocks")
             with col_an2:
                 st.metric("Total Overall Farm Tracker Units Fleet", f"{len(active_table_data)} Units")
                 
             st.write("---")
-            
             st.markdown("#### ⚡ Electrical Inverter Influx String Capacity Metrics")
             inv_string_distribution = {}
-            for str_id, inv_id in string_groups.items():
-                inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
+            for str_id, inv_id in string_groups.items(): inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
                 
             capacity_buckets = {}
             for inv_id, s_count in inv_string_distribution.items():
@@ -1443,13 +1328,11 @@ else:
             if capacity_buckets:
                 c_cols = st.columns(min(len(capacity_buckets), 4))
                 for idx, (b_name, b_count) in enumerate(capacity_buckets.items()):
-                    with c_cols[idx % len(c_cols)]:
-                        st.metric(b_name, f"{b_count} Inverters")
+                    with c_cols[idx % len(c_cols)]: st.metric(b_name, f"{b_count} Inverters")
             else:
                 st.info("No strings have been dynamically linked to active inverter tokens yet.")
                 
             st.write("---")
-            
             st.markdown("#### 🏪 Transformer Station (MVS) Interconnection Registries")
             st.metric("Total Active Transformer Stations (MVS Pool)", f"{len(transformers_list)} Hubs")
             
@@ -1458,7 +1341,6 @@ else:
                 connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
                 connected_invs.sort()
                 inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
-                
                 ts_summary_table.append({
                     "Transformer Hub Location ID": f"TS {ts_idx + 1}",
                     "Aggregated Inverters Count": len(connected_invs),
@@ -1473,9 +1355,7 @@ else:
         if not site_is_published:
             st.error("🛑 **Access Restricted:** The operational blueprint for this site layout has not been deployed or finalized by the administrator yet.")
             st.info("ℹ️ Field crews will gain tracker workspace mapping capability once the admin team formally authorizes a live deployment package from the control panel.")
-            
-            if st.button("🔄 Check Deployment Synchronization Status", type="primary"):
-                st.rerun()
+            if st.button("🔄 Check Deployment Synchronization Status", type="primary"): st.rerun()
             st.stop()
             
         if site_bg_img and not site_bg_img.startswith("{"):
@@ -1515,18 +1395,15 @@ else:
                     const tooltip = document.getElementById("crew_hover_tooltip");
                     const CELL = 14; 
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; 
-                    const mapHeight = (maxY - minY + 1) * CELL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
 
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                     if (scale <= 0 || scale === Infinity) scale = 0.5;
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     
-                    let isPanning = false;
-                    let isSelecting = false;
-                    let dragStartRawX = 0, dragStartRawY = 0;
-                    let dragCurrentRawX = 0, dragCurrentRawY = 0;
+                    let isPanning = false, isSelecting = false;
+                    let dragStartRawX = 0, dragStartRawY = 0, dragCurrentRawX = 0, dragCurrentRawY = 0;
 
                     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -1538,150 +1415,80 @@ else:
                             ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); 
-                            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
 
                         if (isSelecting) {
-                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
-                            ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
                             ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
                             ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
                         }
                     }
 
                     canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                         
-                        if (isPanning) {
-                            offsetX = e.clientX - dragStartRawX;
-                            offsetY = e.clientY - dragStartRawY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        } else if (isSelecting) {
-                            dragCurrentRawX = mX;
-                            dragCurrentRawY = mY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        }
+                        if (isPanning) { offsetX = e.clientX - dragStartRawX; offsetY = e.clientY - dragStartRawY; draw(); tooltip.style.display = "none"; return; }
+                        else if (isSelecting) { dragCurrentRawX = mX; dragCurrentRawY = mY; draw(); tooltip.style.display = "none"; return; }
 
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        
-                        let hoveredBlock = null;
-                        for (let b of blocks) {
-                            if (worldX >= b.min_c * CELL && worldX <= (b.max_c + 1) * CELL && worldY >= b.min_r * CELL && worldY <= (b.max_r + 1) * CELL) { hoveredBlock = b; break; }
-                        }
+                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
+                        let b = blocks.find(item => worldX >= item.min_c*CELL && worldX <= (item.max_c+1)*CELL && worldY >= item.min_r*CELL && worldY <= (item.max_r+1)*CELL);
 
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px";
-                            tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${hoveredBlock.table_label}<br/>Zone: ${hoveredBlock.assigned_zone}<br/>Status: ${hoveredBlock['LAYER_KEY_status'] || 'pending'}`;
-                        } else {
-                            tooltip.style.display = "none";
-                        }
+                        if (b) {
+                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `Label: ${b.table_label}<br/>Zone: ${b.assigned_zone}<br/>Status: ${b['LAYER_KEY_status'] || 'pending'}`;
+                        } else { tooltip.style.display = "none"; }
                     });
 
                     canvas.addEventListener('mousedown', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const clickY = e.clientY - rect.top;
-
-                        if (e.button === 2) { 
-                            isPanning = true;
-                            isSelecting = false;
-                            dragStartRawX = e.clientX - offsetX;
-                            dragStartRawY = e.clientY - offsetY;
-                            canvas.style.cursor = 'move';
-                        } else if (e.button === 0) { 
-                            isSelecting = true;
-                            isPanning = false;
-                            dragStartRawX = clickX;
-                            dragStartRawY = clickY;
-                            dragCurrentRawX = clickX;
-                            dragCurrentRawY = clickY;
-                            canvas.style.cursor = 'crosshair';
-                        }
+                        const rect = canvas.getBoundingClientRect(); const clickX = e.clientX - rect.left; const clickY = e.clientY - rect.top;
+                        if (e.button === 2) { isPanning = true; isSelecting = false; dragStartRawX = e.clientX - offsetX; dragStartRawY = e.clientY - offsetY; canvas.style.cursor = 'move'; }
+                        else if (e.button === 0) { isSelecting = true; isPanning = false; dragStartRawX = clickX; dragStartRawY = clickY; dragCurrentRawX = clickX; dragCurrentRawY = clickY; canvas.style.cursor = 'crosshair'; }
                         tooltip.style.display = "none";
                     });
 
                     canvas.addEventListener('mouseup', async (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mouseUpX = e.clientX - rect.left;
-                        const mouseUpY = e.clientY - rect.top;
+                        const rect = canvas.getBoundingClientRect(); const mouseUpX = e.clientX - rect.left; const mouseUpY = e.clientY - rect.top;
 
-                        if (isPanning) {
-                            isPanning = false;
-                            canvas.style.cursor = 'grab';
-                        } else if (isSelecting) {
-                            isSelecting = false;
-                            canvas.style.cursor = 'default';
-
-                            let boxX1 = Math.min(dragStartRawX, mouseUpX);
-                            let boxX2 = Math.max(dragStartRawX, mouseUpX);
-                            let boxY1 = Math.min(dragStartRawY, mouseUpY);
-                            let boxY2 = Math.max(dragStartRawY, mouseUpY);
-
-                            let totalDragDistance = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
+                        if (isPanning) { isPanning = false; canvas.style.cursor = 'grab'; }
+                        else if (isSelecting) {
+                            isSelecting = false; canvas.style.cursor = 'default';
+                            let boxX1 = Math.min(dragStartRawX, mouseUpX); let boxX2 = Math.max(dragStartRawX, mouseUpX);
+                            let boxY1 = Math.min(dragStartRawY, mouseUpY); let boxY2 = Math.max(dragStartRawY, mouseUpY);
+                            let dist = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
                             let payloadIds = [];
 
                             blocks.forEach(b => {
                                 let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
-                                let isMatched = (totalDragDistance > 4) ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
-                                if (isMatched && b['LAYER_KEY_status'] !== 'completed') {
-                                    payloadIds.push(b.id);
-                                }
+                                let match = dist > 4 ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
+                                if (match && b['LAYER_KEY_status'] !== 'completed') payloadIds.push(b.id);
                             });
                             
                             if (payloadIds.length > 0) {
-                                const statMsg = document.getElementById("crew_sync_status_msg");
-                                statMsg.style.display = "block";
+                                const statMsg = document.getElementById("crew_sync_status_msg"); statMsg.style.display = "block";
                                 statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
-                                
                                 try {
                                     for (let id of payloadIds) {
-                                        let target = blocks.find(b => b.id === id);
-                                        if (target) target['LAYER_KEY_status'] = 'completed';
-                                        
+                                        let target = blocks.find(item => item.id === id); if (target) target['LAYER_KEY_status'] = 'completed';
                                         await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                            method: "PATCH", 
-                                            headers: { 
-                                                "apikey": 'SUPABASE_KEY_VAL', 
-                                                "Authorization": 'Bearer SUPABASE_KEY_VAL', 
-                                                "Content-Type": "application/json",
-                                                "Prefer": "return=minimal"
-                                            },
+                                            method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json", "Prefer": "return=minimal" },
                                             body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
                                         });
                                     }
                                     statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
                                     setTimeout(() => { statMsg.style.display = "none"; }, 5000);
-                                } catch (e) {
-                                    statMsg.innerText = "Database updates timed out.";
-                                }
+                                } catch (e) { statMsg.innerText = "Database updates timed out."; }
                             }
                             setTimeout(draw, 50);
                         }
                     });
 
                     canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); 
-                        const rect = canvas.getBoundingClientRect(); 
-                        const mouseX = e.clientX - rect.left; 
-                        const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; 
-                        const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); 
-                        scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; 
-                        offsetY = mouseY - gridY * scale; 
-                        draw();
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
                     }, { passive: false });
 
                     draw();
@@ -1700,8 +1507,7 @@ else:
             return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):
-            with tab_obj:
-                components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
+            with tab_obj: components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
 
         process_crew_tab(crew_tabs[0], "pegging")
         process_crew_tab(crew_tabs[1], "piling")

@@ -25,17 +25,19 @@ st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 # --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
 st.markdown("""
     <style>
-    /* 1. Target the toolbar wrapper and hide generic link elements (GitHub) */
+    /* 1. Target and hide the entire sub-container that holds GitHub and the Edit buttons */
+    div[data-testid="stAppToolbar"] > div:has(a),
+    div[data-testid="stAppToolbar"] div[class*="stActionButton"]:not(:has(button[data-testid="stActionButtonDropdown"])) {
+        display: none !important;
+    }
+
+    /* 2. Target any loose anchor tags (links) inside the toolbar and kill them */
     div[data-testid="stAppToolbar"] a {
         display: none !important;
     }
-    
-    /* 2. Target any standard action buttons that are NOT the three-dot dropdown */
-    div[data-testid="stAppToolbar"] button:not([data-testid="stActionButtonDropdown"]) {
-        display: none !important;
-    }
-    
-    /* 3. Fallback: Ensure the three-dot dropdown is explicitly forced to display */
+
+    /* 3. Strict structural exception: Force the three-dots popover wrapper to remain visible */
+    div[data-testid="stAppToolbar"] div:has(button[data-testid="stActionButtonDropdown"]),
     button[data-testid="stActionButtonDropdown"] {
         display: inline-flex !important;
         visibility: visible !important;

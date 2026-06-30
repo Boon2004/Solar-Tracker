@@ -302,8 +302,6 @@ else:
             st.session_state.is_admin_mode = False
             st.rerun()
             
-    with st.sidebar:
-        st.header("🔐 Workspace Clearances")
         
         if not st.session_state.is_admin_mode:
             with st.form("admin_upgrade_form", clear_on_submit=True):

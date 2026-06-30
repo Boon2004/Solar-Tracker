@@ -22,6 +22,32 @@ supabase: Client = get_supabase_client()
 
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
+st.markdown("""
+    <style>
+    /* Hide the GitHub icon */
+    .stAppToolbar a[href*="github.com"] {
+        display: none !important;
+    }
+    
+    /* Hide the Edit / Developer pencil icon */
+    .stAppToolbar button[aria-label="Manage app"], 
+    .stAppToolbar button:has(svg path[d*="M14.06"]) {
+        display: none !important;
+    }
+    
+    /* Alternative blanket option: Hide the entire upper right toolbar icons entirely */
+    .stAppToolbar {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* Hide the main hamburger settings menu for end users */
+    #MainMenu {
+        visibility: hidden !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 if "active_site_id" not in st.session_state: st.session_state.active_site_id = None
 if "is_admin_mode" not in st.session_state: st.session_state.is_admin_mode = False
 if "managed_zones" not in st.session_state: 

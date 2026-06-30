@@ -240,129 +240,38 @@ else:
                 sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
                 
                 if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
-                    with st.spinner("Synchronizing blueprint structures..."):
+                    with st.spinner("Executing Cloud-Native Database Duplication..."):
                         try:
-                            parent_farm = current_farm_record
                             parent_farm_id = st.session_state.active_site_id
                             
-                            raw_topo_string = parent_farm.get("background_image_url") or "{}"
-                            
+                            # 1. Duplicate the farm configuration metadata shell directly
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
-                                "admin_password": parent_farm.get("admin_password", "ok"),
-                                "installer_password": parent_farm.get("installer_password", "1234"),
-                                "max_rows": int(parent_farm.get("max_rows", 100)),
-                                "max_cols": int(parent_farm.get("max_cols", 150)),
+                                "admin_password": current_farm_record.get("admin_password", "ok"),
+                                "installer_password": current_farm_record.get("installer_password", "1234"),
+                                "max_rows": int(current_farm_record.get("max_rows", 100)),
+                                "max_cols": int(current_farm_record.get("max_cols", 150)),
                                 "is_published": False,
-                                "background_image_url": "{}" # Initial placeholder
+                                "background_image_url": current_farm_record.get("background_image_url", "{}") # Copies inverter/string JSON untouched!
                             }
                             
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
                             
                             if new_farm_response.data:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
-                                parent_structures = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("min_r").order("min_c").execute().data
                                 
-                                if parent_structures:
-                                    sandbox_structures = []
-                                    id_mapping_dictionary = {}
-                                    
-                                    for struct in parent_structures:
-                                        cloned_struct = {
-                                            "farm_id": sandbox_farm_id,
-                                            "table_label": str(struct.get("table_label", "")),
-                                            "min_r": int(struct.get("min_r")),
-                                            "max_r": int(struct.get("max_r")),
-                                            "min_c": int(struct.get("min_c")),
-                                            "max_c": int(struct.get("max_c")),
-                                            "structure_type": str(struct.get("structure_type", "single_3x9")),
-                                            "assigned_zone": str(struct.get("assigned_zone", "Unassigned")),
-                                            "section_group": int(struct.get("section_group")) if struct.get("section_group") is not None else None,
-                                            "pegging_status": str(struct.get("pegging_status", "pending")),
-                                            "piling_status": str(struct.get("piling_status", "pending")),
-                                            "mounting_status": str(struct.get("mounting_status", "pending")),
-                                            "modules_status": str(struct.get("modules_status", "pending"))
-                                        }
-                                        sandbox_structures.append(cloned_struct)
-                                    
-                                    inserted_structures_fleet = []
-                                    for idx in range(0, len(sandbox_structures), 200):
-                                        batch = sandbox_structures[idx:idx+200]
-                                        res_batch = supabase.table("structures").insert(batch).execute()
-                                        if res_batch.data:
-                                            inserted_structures_fleet.extend(res_batch.data)
-                                    
-                                    # Fix: Link parents to children properly for topology string groups mapping
-                                    for old_s in parent_structures:
-                                        # Match child to parent explicitly using unique physical grid coordinates
-                                        match = next((new_s for new_s in inserted_structures_fleet 
-                                                        if new_s["table_label"] == str(old_s["table_label"]) 
-                                                        and int(new_s["min_r"]) == int(old_s["min_r"]) 
-                                                        and int(new_s["min_c"]) == int(old_s["min_c"])), None)
-                                        if match:
-                                            id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
-                                    
-                                    try:
-                                        if raw_topo_string.startswith("{"):
-                                            topo_data = json.loads(raw_topo_string)
-                                            
-                                            # 1. Remap the structural string groups keys
-                                            if "stringGroups" in topo_data:
-                                                new_string_groups = {}
-                                                for old_key, inv_value in topo_data["stringGroups"].items():
-                                                    parts = old_key.split("_")
-                                                    old_base_id = parts[0]
-                                                    suffix = f"_{parts[1]}" if len(parts) > 1 else ""
-                                                    
-                                                    if old_base_id in id_mapping_dictionary:
-                                                        new_base_id = id_mapping_dictionary[old_base_id]
-                                                        new_string_groups[f"{new_base_id}{suffix}"] = inv_value
-                                                topo_data["stringGroups"] = new_string_groups
-                                            
-                                            # 2. FIX: Recalculate physical Inverter coordinates so they snap perfectly onto the new blocks
-                                            if "inverters" in topo_data and parent_structures and inserted_structures_fleet:
-                                                for inv in topo_data["inverters"]:
-                                                    # Find the original anchor structure block linked to this inverter
-                                                    # by checking which parent block contained its original (x, y) point
-                                                    CELL = 14
-                                                    matching_parent_block = None
-                                                    for p_struct in parent_structures:
-                                                        px1 = p_struct["min_c"] * CELL
-                                                        px2 = (p_struct["max_c"] + 1) * CELL
-                                                        py1 = p_struct["min_r"] * CELL
-                                                        py2 = (p_struct["max_r"] + 1) * CELL
-                                                        
-                                                        if px1 <= inv["x"] <= px2 and py1 <= inv["y"] <= py2:
-                                                            matching_parent_block = p_struct
-                                                            break
-                                                    
-                                                    # If found, snap the inverter coordinates directly onto the center of the newly cloned block
-                                                    if matching_parent_block:
-                                                        old_id_str = str(matching_parent_block["id"])
-                                                        if old_id_str in id_mapping_dictionary:
-                                                            new_id_val = int(id_mapping_dictionary[old_id_str])
-                                                            new_block = next((nb for nb in inserted_structures_fleet if nb["id"] == new_id_val), None)
-                                                            if new_block:
-                                                                inv["x"] = (new_block["min_c"] * CELL) + (((new_block["max_c"] - new_block["min_c"] + 1) * CELL) / 2)
-                                                                inv["y"] = (new_block["min_r"] * CELL) + (((new_block["max_r"] - new_block["min_r"] + 1) * CELL) / 2)
-                                            
-                                            # Update cloned farm metadata with clean topologies and correctly placed nodes
-                                            supabase.table("farms").update({
-                                                "background_image_url": json.dumps(topo_data)
-                                            }).eq("id", sandbox_farm_id).execute()
-                                        else:
-                                            supabase.table("farms").update({
-                                                "background_image_url": raw_topo_string
-                                            }).eq("id", sandbox_farm_id).execute()
-                                    except Exception:
-                                        pass
-                                        
-                                    st.cache_resource.clear()
-                                    st.success("🎉 Sandbox configuration successfully duplicated! Check the project menu list directory.")
-                                    time.sleep(1.5)
-                                    st.rerun()
+                                # 2. Trigger server-side lightning-fast replication for structures
+                                supabase.rpc("duplicate_solar_farm_structures", {
+                                    "parent_id": parent_farm_id, 
+                                    "sandbox_id": sandbox_farm_id
+                                }).execute()
+                                
+                                st.cache_resource.clear()
+                                st.success("🎉 Cloud Database cloned 100% identically with zero truncation!")
+                                time.sleep(1.5)
+                                st.rerun()
                         except Exception as err:
-                            st.error(f"Sandbox duplication rejected: {str(err)}")
+                            st.error(f"Cloud cloning rejected: {str(err)}")
             
             st.write("---")
             st.subheader("📢 Field Deployment Release")

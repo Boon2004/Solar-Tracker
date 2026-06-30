@@ -261,7 +261,7 @@ else:
                             
                             if new_farm_response.data:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
-                                parent_structures = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("id").execute().data
+                                parent_structures = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("min_r").order("min_c").execute().data
                                 
                                 if parent_structures:
                                     sandbox_structures = []
@@ -410,7 +410,8 @@ else:
         offset = 0
         while True:
             try:
-                res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("id").range(offset, offset + limit - 1).execute().data
+                # FIX: Order spatially by row and column instead of by database ID
+                res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
                 if not res: break
                 all_data.extend(res)
                 if len(res) < limit: break

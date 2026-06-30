@@ -1874,23 +1874,45 @@ else:
             submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
 
         if submit_triggered:
+            # 1. Fallback Defaults: Guard against empty/missing context tokens safely
+            safe_farm_id = str(st.session_state.active_site_id) if st.session_state.get("active_site_id") else ""
+            safe_aspect = str(selected_crew_aspect) if selected_crew_aspect else "pegging"
+            safe_zone = str(active_zone_profile) if active_zone_profile else "Global"
+            safe_date_str = str(current_date_str) if current_date_str else str(date.today())
+            
+            # 2. Prevent Float-to-Int payload truncation errors explicitly
             try:
-                safe_target = int(math.floor(target_runrate))
-                safe_deviation = int(installed_today_count - safe_target)
+                safe_target = int(math.floor(float(target_runrate or 0.0)))
+            except Exception:
+                safe_target = 0
                 
-                supabase.table("daily_progress_logs").upsert({
-                    "farm_id": str(st.session_state.active_site_id),
-                    "aspect": str(selected_crew_aspect),
-                    "zone": str(active_zone_profile),
-                    "log_date": str(current_date_str),
-                    "target_units": safe_target,
-                    "installed_units": int(installed_today_count),
-                    "deviation": safe_deviation,
-                    "remark": str(updated_remark_note)
-                }).execute()
-                
-                st.success("Log entries updated cleanly!")
-                time.sleep(0.5)
-                st.rerun()
-            except Exception as db_err:
-                st.error(f"Cloud update rejected: {str(db_err)}")
+            safe_installed = int(installed_today_count) if installed_today_count is not None else 0
+            safe_deviation = safe_installed - safe_target
+            safe_remark = str(updated_remark_note).strip() if updated_remark_note else ""
+
+            # 3. Create explicit payload container mapping
+            sync_payload = {
+                "farm_id": safe_farm_id,
+                "aspect": safe_aspect,
+                "zone": safe_zone,
+                "log_date": safe_date_str,
+                "target_units": safe_target,
+                "installed_units": safe_installed,
+                "deviation": int(safe_deviation),
+                "remark": safe_remark
+            }
+
+            # 4. Fire protected transaction query loop block
+            if not safe_farm_id:
+                st.error("❌ Session State Mismatch: Active Project Farm ID is invalid or missing.")
+            else:
+                try:
+                    supabase.table("daily_progress_logs").upsert(sync_payload).execute()
+                    st.success("🎉 Log entries updated cleanly!")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as db_err:
+                    st.error("🚨 Database Engine Rejected Transaction Payload!")
+                    st.warning(" Review data types payload sent below:")
+                    st.json(sync_payload)
+                    st.code(str(db_err))

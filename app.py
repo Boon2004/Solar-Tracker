@@ -746,7 +746,7 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # 1. Isolate the distinct structural layouts from your database matrix
+            # Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -759,6 +759,7 @@ else:
                         "type_string": l_type,
                         "h_cells": h_cells,
                         "w_cells": w_cells,
+                        "sample_block_id": block.get("id"),
                         "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
                     }
 
@@ -766,7 +767,7 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # 2. UPPER SECTION: Show ONLY the individual layout boxes with current saved points (No heavy multi-row map lag)
+                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -774,37 +775,54 @@ else:
                     with top_cols[idx]:
                         st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
                         
-                        # Render a lightweight canvas showing exactly ONE isolated block frame using current saved database values
                         saved_pts = data["points_per_unit"]
                         h_px = int(data["h_cells"] * 25)
                         w_px = int(data["w_cells"] * 35)
                         
+                        # Dynamically derive rows and columns from total points for standard layouts
+                        if saved_pts == 12:
+                            saved_rows, saved_cols = 4, 3
+                        elif saved_pts == 6:
+                            saved_rows, saved_cols = 2, 3
+                        else:
+                            # Fallback guess factors if custom total points are found
+                            saved_cols = math.ceil(math.sqrt(saved_pts))
+                            saved_rows = math.ceil(saved_pts / saved_cols) if saved_cols > 0 else 1
+
                         html_current_view = f"""
                         <div style="background:#0f172a; padding:10px; border-radius:8px; text-align:center; font-family:sans-serif;">
                             <canvas id="saved_canvas_{idx}" width="300" height="180" style="background:#020617; border:2px solid #22c55e; border-radius:6px;"></canvas>
-                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Saved Base Capacity: {saved_pts} Pins</div>
+                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Saved Base Capacity: {saved_pts} Pins ({saved_rows}x{saved_cols} Grid)</div>
                         </div>
                         <script>
                             (function() {{
                                 const canvas = document.getElementById("saved_canvas_{idx}");
                                 const ctx = canvas.getContext('2d');
-                                const totalPts = {saved_pts};
+                                const rows = {saved_rows};
+                                const cols = {saved_cols};
                                 const boxW = {w_px}; const boxH = {h_px};
                                 const bx = (canvas.width / 2) - (boxW / 2); const by = (canvas.height / 2) - (boxH / 2);
                                 
                                 ctx.fillStyle = '#1e293b'; ctx.fillRect(bx, by, boxW, boxH);
                                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, boxW, boxH);
                                 
-                                let sides = Math.ceil(Math.sqrt(totalPts));
-                                let ptIdx = 0;
-                                ctx.fillStyle = '#22c55e';
-                                for(let r=0; r<sides; r++) {{
-                                    for(let c=0; c<sides; c++) {{
-                                        if(ptIdx >= totalPts) break;
-                                        let px = (sides === 1) ? bx + (boxW/2) : bx + (boxW / (sides + 1)) * (c + 1);
-                                        let py = (sides === 1) ? by + (boxH/2) : by + (boxH / (sides + 1)) * (r + 1);
-                                        ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI*2); ctx.fill();
-                                        ptIdx++;
+                                if(rows > 0 && cols > 0) {{
+                                    const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
+                                    const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
+                                    
+                                    for(let r = 0; r < rows; r++) {{
+                                        for(let c = 0; c < cols; c++) {{
+                                            let px = (cols === 1) ? bx + (boxW / 2) : bx + (c * colGap);
+                                            let py = (rows === 1) ? by + (boxH / 2) : by + (r * rowGap);
+                                            
+                                            ctx.fillStyle = '#22c55e';
+                                            ctx.beginPath();
+                                            ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+                                            ctx.fill();
+                                            ctx.strokeStyle = '#ffffff';
+                                            ctx.lineWidth = 1;
+                                            ctx.stroke();
+                                        }}
                                     }}
                                 }}
                             }})();
@@ -814,7 +832,7 @@ else:
 
                 st.write("---")
                 
-                # 3. LOWER SECTION: Standard Interactive Template Editor Selector Matrix
+                # LOWER SECTION: Interactive Template Editor Selector Matrix
                 st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
                 selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 

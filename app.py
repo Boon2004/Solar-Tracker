@@ -306,6 +306,7 @@ else:
                                         if raw_topo_string.startswith("{"):
                                             topo_data = json.loads(raw_topo_string)
                                             
+                                            # 1. Remap the structural string groups keys
                                             if "stringGroups" in topo_data:
                                                 new_string_groups = {}
                                                 for old_key, inv_value in topo_data["stringGroups"].items():
@@ -318,12 +319,38 @@ else:
                                                         new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                                 topo_data["stringGroups"] = new_string_groups
                                             
-                                            # Update cloned farm with real cloned topology mapping strings
+                                            # 2. FIX: Recalculate physical Inverter coordinates so they snap perfectly onto the new blocks
+                                            if "inverters" in topo_data and parent_structures and inserted_structures_fleet:
+                                                for inv in topo_data["inverters"]:
+                                                    # Find the original anchor structure block linked to this inverter
+                                                    # by checking which parent block contained its original (x, y) point
+                                                    CELL = 14
+                                                    matching_parent_block = None
+                                                    for p_struct in parent_structures:
+                                                        px1 = p_struct["min_c"] * CELL
+                                                        px2 = (p_struct["max_c"] + 1) * CELL
+                                                        py1 = p_struct["min_r"] * CELL
+                                                        py2 = (p_struct["max_r"] + 1) * CELL
+                                                        
+                                                        if px1 <= inv["x"] <= px2 and py1 <= inv["y"] <= py2:
+                                                            matching_parent_block = p_struct
+                                                            break
+                                                    
+                                                    # If found, snap the inverter coordinates directly onto the center of the newly cloned block
+                                                    if matching_parent_block:
+                                                        old_id_str = str(matching_parent_block["id"])
+                                                        if old_id_str in id_mapping_dictionary:
+                                                            new_id_val = int(id_mapping_dictionary[old_id_str])
+                                                            new_block = next((nb for nb in inserted_structures_fleet if nb["id"] == new_id_val), None)
+                                                            if new_block:
+                                                                inv["x"] = (new_block["min_c"] * CELL) + (((new_block["max_c"] - new_block["min_c"] + 1) * CELL) / 2)
+                                                                inv["y"] = (new_block["min_r"] * CELL) + (((new_block["max_r"] - new_block["min_r"] + 1) * CELL) / 2)
+                                            
+                                            # Update cloned farm metadata with clean topologies and correctly placed nodes
                                             supabase.table("farms").update({
                                                 "background_image_url": json.dumps(topo_data)
                                             }).eq("id", sandbox_farm_id).execute()
                                         else:
-                                            # Copy over standard base64 raw canvas maps if not a string topology object
                                             supabase.table("farms").update({
                                                 "background_image_url": raw_topo_string
                                             }).eq("id", sandbox_farm_id).execute()

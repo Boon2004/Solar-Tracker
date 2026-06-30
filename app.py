@@ -254,7 +254,7 @@ else:
                                 "max_rows": int(parent_farm.get("max_rows", 100)),
                                 "max_cols": int(parent_farm.get("max_cols", 150)),
                                 "is_published": False,
-                                "background_image_url": "{}"
+                                "background_image_url": "{}" # Initial placeholder
                             }
                             
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
@@ -278,10 +278,10 @@ else:
                                             "structure_type": str(struct.get("structure_type", "single_3x9")),
                                             "assigned_zone": str(struct.get("assigned_zone", "Unassigned")),
                                             "section_group": int(struct.get("section_group")) if struct.get("section_group") is not None else None,
-                                            "pegging_status": "pending",
-                                            "piling_status": "pending",
-                                            "mounting_status": "pending",
-                                            "modules_status": "pending"
+                                            "pegging_status": str(struct.get("pegging_status", "pending")),
+                                            "piling_status": str(struct.get("piling_status", "pending")),
+                                            "mounting_status": str(struct.get("mounting_status", "pending")),
+                                            "modules_status": str(struct.get("modules_status", "pending"))
                                         }
                                         sandbox_structures.append(cloned_struct)
                                     
@@ -292,8 +292,9 @@ else:
                                         if res_batch.data:
                                             inserted_structures_fleet.extend(res_batch.data)
                                     
+                                    # Fix: Link parents to children properly for topology string groups mapping
                                     for old_s, new_s in zip(parent_structures, inserted_structures_fleet):
-                                        id_mapping_dictionary[str(old_s["id"])] = int(new_s["id"])
+                                        id_mapping_dictionary[str(old_s["id"])] = str(new_s["id"])
                                     
                                     try:
                                         if raw_topo_string.startswith("{"):
@@ -311,8 +312,14 @@ else:
                                                         new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                                 topo_data["stringGroups"] = new_string_groups
                                             
+                                            # Update cloned farm with real cloned topology mapping strings
                                             supabase.table("farms").update({
                                                 "background_image_url": json.dumps(topo_data)
+                                            }).eq("id", sandbox_farm_id).execute()
+                                        else:
+                                            # Copy over standard base64 raw canvas maps if not a string topology object
+                                            supabase.table("farms").update({
+                                                "background_image_url": raw_topo_string
                                             }).eq("id", sandbox_farm_id).execute()
                                     except Exception:
                                         pass

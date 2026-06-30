@@ -293,8 +293,14 @@ else:
                                             inserted_structures_fleet.extend(res_batch.data)
                                     
                                     # Fix: Link parents to children properly for topology string groups mapping
-                                    for old_s, new_s in zip(parent_structures, inserted_structures_fleet):
-                                        id_mapping_dictionary[str(old_s["id"])] = str(new_s["id"])
+                                    for old_s in parent_structures:
+                                        # Match child to parent explicitly using unique physical grid coordinates
+                                        match = next((new_s for new_s in inserted_structures_fleet 
+                                                        if new_s["table_label"] == str(old_s["table_label"]) 
+                                                        and int(new_s["min_r"]) == int(old_s["min_r"]) 
+                                                        and int(new_s["min_c"]) == int(old_s["min_c"])), None)
+                                        if match:
+                                            id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
                                     
                                     try:
                                         if raw_topo_string.startswith("{"):

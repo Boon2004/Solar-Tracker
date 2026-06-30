@@ -1580,3 +1580,72 @@ else:
                             if pl["existing_id"]: supabase.table("daily_progress_log").update(db_payload).eq("id", pl["existing_id"]).execute()
                             else: supabase.table("daily_progress_log").insert(db_payload).execute()
                         st.success("🎉 Workspace ledger tables updated completely!"); time.sleep(0.5); st.rerun()
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Transmission protocol transaction failed: {str(e)}")
+
+        # --- AFTER MIDNIGHT AUTOLOCK COLOR & TIME-TRAVEL STATE PARSER ---
+        # This section checks and updates the color-rendering rules based on midnight shifts
+        # Yellow items roll over to permanent locked green fields
+        today_str = str(date.today())
+        for block in active_table_data:
+            needs_update = False
+            update_payload = {}
+            
+            for state_key in ["pegging", "piling", "modules"]:
+                state_field = f"{state_key if state_key != 'modules' else 'modules'}_state"
+                arr = block.get(state_field) or []
+                item_changed = False
+                for item in arr:
+                    # If status is logged as temporary yellow staging but date has passed midnight
+                    if item.get("status") == "completed_staged" and item.get("date") != today_str:
+                        item["status"] = "completed"
+                        item_changed = True
+                        needs_update = True
+                if item_changed:
+                    update_payload[state_field] = arr
+
+            for status_key in ["mounting", "inverter_struct", "inverter", "transformer_station", "dc_cabling", "ac_cabling"]:
+                db_status_field = f"{status_key}_status" if status_key == "mounting" else f"{status_key if 'struct' in status_key or 'cabling' in status_key else status_key + '_status'}"
+                db_date_field = f"{status_key}_date" # Assume matching layout tracking dates fields exist
+                
+                if block.get(db_status_field) == "completed_staged" and block.get(db_date_field) != today_str:
+                    update_payload[db_status_field] = "completed"
+                    needs_update = True
+            
+            if needs_update:
+                try:
+                    supabase.table("structures").update(update_payload).eq("id", block["id"]).execute()
+                except Exception:
+                    pass
+                    # --- DYNAMIC CUSTOM TABS RENDERER ---
+        # Appends all user-instantiated tabs built dynamically via the Admin Panel Deck
+        for c_idx, ct_name in enumerate(st.session_state.custom_tabs):
+            # Calculate tab index offset matching standard array properties keys rules
+            tab_offset = len(crew_aspect_keys) + c_idx
+            with crew_tabs[tab_offset]:
+                st.markdown(f"#### Live Crew Field View Grid Framework: 🛠️ **{ct_name.upper()}**")
+                
+                # Render standard baseline grid tracking map for custom built layers
+                components.html(inject_crew_tracking_map(f"custom_{ct_name}", b64_json_data, min_c, max_c, min_r, max_r), height=640)
+                
+                # Build ledger target lines matrices rows for custom aspect tracking columns
+                custom_submissions_index = {}
+                for zone in all_zones_list:
+                    zone_blocks = [b for b in active_table_data if b.get("assigned_zone", "Unassigned") == zone]
+                    if not zone_blocks and zone != "Unassigned": continue
+                    
+                    st.markdown(f"###### 📍 Production Row Metrics: `{zone.upper()}`")
+                    col_c1, col_l2, col_l3, col_l4, col_l5 = st.columns([2, 2, 2, 2, 4])
+                    
+                    with col_c1: st.text_input("Log Date:", value=str(op_date), disabled=True, key=f"dt_custom_{ct_name}_{zone}")
+                    with col_l2: st.number_input("Target Per Day:", value=0, disabled=True, key=f"tgt_custom_{ct_name}_{zone}")
+                    
+                    is_row_locked = False if (st.session_state.is_admin_mode and st.session_state.time_travel_date) or (op_date == date.today()) else True
+                    
+                    with col_l3: crew_installed_num = st.number_input("Installed Today Amount:", min_value=0, value=0, disabled=is_row_locked, key=f"ins_custom_{ct_name}_{zone}")
+                    with col_l4: st.text_input("Calculated Deviation Variance:", value="0 Pts", disabled=True, key=f"dev_custom_{ct_name}_{zone}")
+                    with col_l5: crew_remark_txt = st.text_input("Field Crew Remark Notes Line:", value="", disabled=is_row_locked, key=f"rem_custom_{ct_name}_{zone}")
+                    
+                st.button("💾 Save and Update Custom Table Records Matrix Snapshot", key=f"save_custom_ledger_{ct_name}", type="primary", use_container_width=True)

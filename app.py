@@ -776,12 +776,10 @@ else:
                         st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
                         
                         enc_val = data["encoded_value"]
-                        # Decode custom rows and columns directly from the stored multiplier value
                         if enc_val > 100:
                             saved_rows = int(enc_val // 100)
                             saved_cols = int(enc_val % 100)
                         else:
-                            # Fallback support legacy integers safely
                             if enc_val == 12: saved_rows, saved_cols = 3, 4
                             elif enc_val == 6: saved_rows, saved_cols = 2, 3
                             else: saved_rows, saved_cols = 4, 3
@@ -857,15 +855,12 @@ else:
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
                         with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
                             try:
-                                # Encode compound rows and columns integer signature directly into the database field
                                 encoded_group_signature = int((row_pts * 100) + col_pts)
-                                
                                 supabase.table("structures").update({
                                     "section_group": encoded_group_signature
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                # Flush layout memory resource pipelines to accurately reflect fresh fetches on map loops
                                 st.cache_resource.clear()
                                 st.success("Updated fleet configuration profiles cleanly!")
                                 time.sleep(0.5)
@@ -999,137 +994,6 @@ else:
                     let startX = 0, startY = 0, currX = 0, currY = 0;
                     let selectedInverterIndexForRouting = null;
                     let lassoSelectedInvertersList = [];
-
-                    canvas.addEventListener("contextmenu", e => e.preventDefault());
-
-                    function getActiveTool() {
-                        return document.querySelector('input[name="topo_tool"]:checked').value;
-                    }
-
-                    function getCapacityColor(stringCount) {
-                        if (stringCount <= 0) return "#1e293b";
-                        const palette = [
-                            "#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", 
-                            "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"
-                        ];
-                        return palette[(stringCount - 1) % palette.length];
-                    }
-
-                    function isInverterPlaced(invId) {
-                        return gridTopo.inverters.some(i => i.id === parseInt(invId));
-                    }
-
-                    function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-
-                        gridTopo.inverters.forEach(inv => {
-                            if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
-                                let xf = gridTopo.transformers[inv.transformerId];
-                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)"; ctx.lineWidth = 2.0; ctx.beginPath();
-                                ctx.moveTo(inv.x, inv.y); ctx.lineTo(xf.x, xf.y); ctx.stroke();
-                            }
-                        });
-
-                        let counts = {};
-                        Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
-
-                        // 1. Core structural background fills
-                        independentStrings.forEach(s => {
-                            let x = s.min_c * CELL; let y = s.min_r * CELL;
-                            let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            
-                            ctx.fillStyle = linkedInv ? (isInverterPlaced(linkedInv) ? getCapacityColor(counts[linkedInv]) : "#d97706") : "#1e293b";
-                            ctx.fillRect(x, y, w, h);
-                            
-                            if (!linkedInv) {
-                                ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                            }
-                        });
-
-                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
-                        let inverterCellsMap = {};
-                        independentStrings.forEach(s => {
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv) return;
-                            if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
-                            inverterCellsMap[linkedInv].push(s);
-                        });
-
-                        Object.keys(inverterCellsMap).forEach(invId => {
-                            let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff0000"; 
-                            ctx.lineWidth = 4.0;
-                            ctx.lineJoin = "miter";
-
-                            cellBlocks.forEach(b => {
-                                let x = b.min_c * CELL;
-                                let y = b.min_r * CELL;
-                                let w = (b.max_c - b.min_c + 1) * CELL;
-                                let h = (b.max_r - b.min_r + 1) * CELL;
-
-                                let topShared = cellBlocks.some(other => b !== other && b.min_r > other.min_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (b.min_r - other.max_r <= 5 || other.parentId === b.parentId));
-                                let bottomShared = cellBlocks.some(other => b !== other && b.max_r < other.max_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (other.min_r - b.max_r <= 5 || other.parentId === b.parentId));
-                                let leftShared = cellBlocks.some(other => b !== other && b.min_c > other.min_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (b.min_c - other.max_c <= 5));
-                                let rightShared = cellBlocks.some(other => b !== other && b.max_c < other.max_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (other.min_c - b.max_c <= 5));
-
-                                ctx.beginPath();
-                                if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
-                                if (!bottomShared) { ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); }
-                                if (!leftShared) { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
-                                if (!rightShared) { ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); }
-                                ctx.stroke();
-                            });
-                        });
-
-                        // 3. String component tokens data overlays
-                        independentStrings.forEach(s => {
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv) return;
-                            let x = s.min_c * CELL; let y = s.min_r * CELL;
-                            ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(x + 2, y + 2, 35, 11);
-                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 7px sans-serif";
-                            ctx.fillText("I-" + linkedInv, x + 4, y + 10);
-                        });
-
-                        gridTopo.inverters.forEach(inv => {
-                            let strCount = counts[inv.id] || 0;
-                            let tsPrefix = inv.transformerId !== null && gridTopo.transformers[inv.transformerId] ? "TS" + (inv.transformerId + 1) + "-" : "";
-                            let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
-                            let countText = strCount + " STRINGS";
-
-                            ctx.font = "bold 9px sans-serif";
-                            let badgeW = Math.max(ctx.measureText(titleText).width + 12, ctx.measureText(countText).width + 12, 65);
-                            let badgeH = 26; let bx = inv.x - (badgeW / 2); let by = inv.y - (badgeH / 2);
-
-                            ctx.fillStyle = "#ff0000"; ctx.fillRect(bx, by, badgeW, badgeH / 2);
-                            ctx.fillStyle = getCapacityColor(strCount); ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
-                            ctx.fillStyle = "#ffffff"; ctx.textAlign = "center";
-                            ctx.fillText(titleText, inv.x, by + 9); ctx.fillText(countText, inv.x, by + 21);
-
-                            ctx.strokeStyle = lassoSelectedInvertersList.includes(inv.id) ? "#facc15" : "#ffffff";
-                            ctx.lineWidth = lassoSelectedInvertersList.includes(inv.id) ? 3.5 : 1; ctx.strokeRect(bx, by, badgeW, badgeH);
-                        });
-
-                        gridTopo.transformers.forEach((t, i) => {
-                            ctx.fillStyle = "#ff1744"; ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
-                            ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
-                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
-                            ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
-                        });
-
-                        ctx.restore();
-
-                        if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "route")) {
-                            ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; ctx.lineWidth = 1.5;
-                            ctx.fillStyle = getActiveTool() === "string" ? "rgba(167, 139, 250, 0.2)" : "rgba(56, 189, 248, 0.2)";
-                            ctx.fillRect(startX, startY, currX - startX, currY - startY); ctx.strokeRect(startX, startY, currX - startX, currY - startY);
-                        }
-                    }
-
-                    function getMouseLocation(e) { const rect = canvas.getBoundingClientRect(); return { x: e.clientX - rect.left, y: e.clientY - rect.top }; }
-                    function transformToWorldSpace(p) { return { x: (p.x - offsetX) / scale, y: (p.y - offsetY) / scale }; }
 
                     canvas.addEventListener("mousedown", e => {
                         const m = getMouseLocation(e); const world = transformToWorldSpace(m); const tool = getActiveTool();
@@ -1336,10 +1200,9 @@ else:
                 st.markdown("**Global Inverter Breakdown by String Capacities Configuration Tally:**")
                 g_bucket_rows = []
                 for b_name, inv_badge_list in global_capacity_buckets.items():
-                    # Strictly list sorted array tokens out sequentially
                     sorted_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
                     g_bucket_rows.append({
-                        "Loading Capacity Model": b_name,
+                        "String Loading Distribution Capacity": b_name,
                         "Total Combined Inverters Tally": len(sorted_inv_badges),
                         "Numerical Sequence Mapped Inverters": ", ".join(sorted_inv_badges)
                     })
@@ -1412,16 +1275,17 @@ else:
                                 zone_inv_string_distribution[associated_inv] = zone_inv_string_distribution.get(associated_inv, 0) + 1
                     
                     zone_capacity_buckets = {}
+                    distinct_zone_inverters_set = set()
                     for inv_id, s_count in zone_inv_string_distribution.items():
                         bucket_key = f"{s_count} Strings Loading Channel"
                         if bucket_key not in zone_capacity_buckets:
                             zone_capacity_buckets[bucket_key] = []
                         zone_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
+                        distinct_zone_inverters_set.add(inv_id)
                         
                     if zone_capacity_buckets:
                         z_bucket_rows = []
                         for b_name, inv_badge_list in zone_capacity_buckets.items():
-                            # STRICT NUMERICAL SORTING MATCH FOR INTERNAL TOKENS BREAKDOWNS
                             sorted_zone_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
                             z_bucket_rows.append({
                                 "String Load Concentration Density": b_name,
@@ -1430,11 +1294,12 @@ else:
                             })
                         st.table(z_bucket_rows)
                     else:
-                        st.caption("No custom string topologies or electrical node wires are lassoed into this zone index bounds yet.")
+                        st.caption("No custom string topographies or electrical node wires are lassoed into this zone index bounds yet.")
                         
-                    col_z1, col_z2 = st.columns(2)
-                    with col_z1: st.metric(f"Total Trackers assigned to {zone_name.upper()}", f"{z_total_trackers} Units")
-                    with col_z2: st.metric(f"Total Pegging Pinpoints inside {zone_name.upper()}", f"{z_total_pegging_points} Coordinates")
+                    col_z1, col_z2, col_z3 = st.columns(3)
+                    with col_z1: st.metric(f"Total Tracker Blocks ({zone_name})", f"{z_total_trackers} Units")
+                    with col_z2: st.metric(f"Total Pegging Pinpoints ({zone_name})", f"{z_total_pegging_points} Coordinates")
+                    with col_z3: st.metric(f"Total Inverter Entities ({zone_name})", f"{len(distinct_zone_inverters_set)} INVs")
 
             st.write("---")
             # ==================================================================
@@ -1603,15 +1468,6 @@ else:
                 })();
             </script>
             """
-            html_crew_map = html_crew_map.replace("__JSON_DATA_B64__", b64_data)\
-                                         .replace("LAYER_KEY", str(layer_key)) \
-                                         .replace("MIN_C_VAL", str(min_c)) \
-                                         .replace("MAX_C_VAL", str(max_c)) \
-                                         .replace("MIN_R_VAL", str(min_r)) \
-                                         .replace("MAX_R_VAL", str(max_r)) \
-                                         .replace("TODAY_STR_VAL", today_str) \
-                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL) \
-                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
             return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):

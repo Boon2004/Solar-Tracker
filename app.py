@@ -743,152 +743,125 @@ else:
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: PEGGING & PILING CUSTOMIZER ---
-        with setup_tabs[1]:
+       with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            st.markdown("#### 📊 Current View of Pegging & Pillar Points Fleet-Wide")
-            unique_structures_summary = {}
+            # Group unique structural layouts present in the active farm dataset
+            layout_types = {}
             for block in active_table_data:
-                stype = block.get("structure_type", "unknown")
-                if stype not in unique_structures_summary:
-                    unique_structures_summary[stype] = {
-                        "count": 0,
+                h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
+                w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
+                l_type = block.get("structure_type", "single_3x9")
+                layout_key = f"{l_type} ({h_cells}x{w_cells} grid template)"
+                
+                if layout_key not in layout_types:
+                    layout_types[layout_key] = {
+                        "type_string": l_type,
+                        "h_cells": h_cells,
+                        "w_cells": w_cells,
                         "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
                     }
-                unique_structures_summary[stype]["count"] += 1
+
+            st.markdown("#### 🗺️ Extracted Fleet Blueprint Layout Models")
+            st.caption("The system has dynamically isolated your architecture templates below. Adjust their values to update point targets across the entire farm footprint.")
+
+            # Generate side-by-side preview panels for only the layouts found in the project
+            layout_columns = st.columns(max(len(layout_types), 2))
             
-            overview_rows = []
-            grand_total_points = 0
-            for stype, sdata in unique_structures_summary.items():
-                tot_pts = sdata["count"] * sdata["points_per_unit"]
-                grand_total_points += tot_pts
-                overview_rows.append({
-                    "Structure Architecture Pattern": stype.upper(),
-                    "Total Trackers Placed": sdata["count"],
-                    "Assigned Pinpoints per Unit": sdata["points_per_unit"],
-                    "Aggregate Phase Coordinates Total": tot_pts
-                })
-            st.table(overview_rows)
-            st.metric("Total Cumulative Structural Piling Pinpoints Registered", f"{grand_total_points} Coordinates")
-            
-            st.markdown("#### 🗺️ Fleet-Wide Live Coordinate Preview Interactive Matrix Plot")
-            
-            html_global_piling_preview = """
-            <div style="background:#0f172a; padding:12px; border-radius:12px; text-align:center; font-family:sans-serif; color:#f8fafc; position:relative;">
-                <div style="font-size:12px; margin-bottom:6px; color:#94a3b8;">Holistic Microscale Internal Component Pins Coordination Index Chart (Click+Drag/Scroll to navigate layout)</div>
-                <div id="piling_preview_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #f43f5e; padding: 6px 12px; border-radius: 4px; font-size: 11px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold; text-align: left;"></div>
-                <canvas id="global_piling_canvas" width="1000" height="400" style="background:#020617; border:1px solid #1e293b; border-radius:6px; display:block; margin:0 auto;"></canvas>
-            </div>
-            <script>
-                (function(){
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("global_piling_canvas");
-                    const ctx = canvas.getContext("2d");
-                    const tooltip = document.getElementById("piling_preview_tooltip");
-                    const CELL = 22;
+            for idx, (layout_label, layout_data) in enumerate(layout_types.items()):
+                state_prefix = f"layout_cfg_{layout_label}"
+                undo_stack_key = f"undo_{state_prefix}"
+                
+                if undo_stack_key not in st.session_state: st.session_state[undo_stack_key] = []
+                if f"{state_prefix}_rows" not in st.session_state: st.session_state[f"{state_prefix}_rows"] = 4
+                if f"{state_prefix}_cols" not in st.session_state: st.session_state[f"{state_prefix}_cols"] = 3
+                
+                with layout_columns[idx % len(layout_columns)]:
+                    st.info(f"📐 **{layout_data['type_string'].upper()}**")
+                    st.caption(f"Dimensions: {layout_data['w_cells']}x{layout_data['h_cells']} cell matrix")
                     
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    let mapW = (maxX - minX + 1) * CELL;
-                    let mapH = (maxY - minY + 1) * CELL;
+                    row_pts = st.number_input(
+                        "Array Pins per Row:", 
+                        min_value=1, max_value=20, 
+                        key=f"{state_prefix}_rows"
+                    )
+                    col_pts = st.number_input(
+                        "Array Pins per Column:", 
+                        min_value=1, max_value=20, 
+                        key=f"{state_prefix}_cols"
+                    )
                     
-                    let scale = Math.min((canvas.width - 60) / mapW, (canvas.height - 60) / mapH);
-                    if (scale <= 0 || !isFinite(scale)) scale = 0.3;
-                    let offsetX = (canvas.width / 2) - (mapW * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapH * scale / 2) - (minY * CELL * scale);
+                    total_calculated_points = row_pts * col_pts
+                    st.metric(
+                        label="Resulting Formations", 
+                        value=f"{total_calculated_points} Pts / Block",
+                        delta=f"Active Saved Base: {layout_data['points_per_unit']} Pts"
+                    )
                     
-                    let isPanning = false;
-                    let startX = 0, startY = 0;
+                    if st.button("💾 Apply Pattern Globally", key=f"btn_save_{state_prefix}", type="primary", use_container_width=True):
+                        st.session_state[undo_stack_key].append({
+                            "timestamp": datetime.now().strftime("%H:%M:%S")
+                        })
+                        with st.spinner("Broadcasting alignment arrays..."):
+                            try:
+                                supabase.table("structures").update({
+                                    "section_group": int(total_calculated_points)
+                                }).eq("farm_id", st.session_state.active_site_id)\
+                                  .eq("structure_type", layout_data["type_string"]).execute()
+                                
+                                st.success("Updated profile configurations!")
+                                time.sleep(0.8)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Sync issue: {str(e)}")
+                                
+                    # Interactive Dynamic Micro Matrix Grid Blueprint Preview Render
+                    h_px = int(layout_data["h_cells"] * 25)
+                    w_px = int(layout_data["w_cells"] * 35)
                     
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-                    
-                    function draw() {
-                        ctx.clearRect(0,0,canvas.width,canvas.height);
-                        ctx.save(); ctx.translate(offsetX,oy = offsetY); ctx.scale(scale,scale);
-                        
-                        blocks.forEach(b => {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillStyle = "#1e293b";
-                            ctx.fillRect(x,y,w,h);
-                            ctx.strokeStyle = "rgba(56,189,248,0.35)";
-                            ctx.lineWidth = 0.75;
-                            ctx.strokeRect(x,y,w,h);
+                    html_micro_template = f"""
+                    <div style="background:#0f172a; padding:12px; border-radius:10px; text-align:center; font-family:sans-serif; margin-top:10px;">
+                        <canvas id="micro_canvas_{idx}" width="320" height="200" style="background:#020617; border:1px dashed #38bdf8; border-radius:6px;"></canvas>
+                    </div>
+                    <script>
+                        (function() {{
+                            const canvas = document.getElementById("micro_canvas_{idx}");
+                            const ctx = canvas.getContext('2d');
+                            const rows = {row_pts};
+                            const cols = {col_pts};
+                            const boxW = {w_px}; const boxH = {h_px};
+                            const bx = (canvas.width / 2) - (boxW / 2);
+                            const by = (canvas.height / 2) - (boxH / 2);
                             
-                            let ptsCount = b.section_group || 12;
-                            let sides = Math.ceil(Math.sqrt(ptsCount));
-                            let idx = 0;
+                            ctx.fillStyle = '#1e293b';
+                            ctx.fillRect(bx, by, boxW, boxH);
+                            ctx.strokeStyle = '#38bdf8';
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeRect(bx, by, boxW, boxH);
                             
-                            ctx.fillStyle = "#f43f5e";
-                            for (let r=0; r<sides; r++) {
-                                for (let c=0; c<sides; c++) {
-                                    if (idx >= ptsCount) break;
-                                    let px = x + (w / (sides + 1)) * (c + 1);
-                                    let py = y + (h / (sides + 1)) * (r + 1);
-                                    ctx.beginPath();
-                                    ctx.arc(px, py, 1.8, 0, Math.PI*2);
-                                    ctx.fill();
-                                    idx++;
-                                }
-                            }
-                        });
-                        ctx.restore();
-                    }
-                    
-                    canvas.addEventListener('mousedown', (e) => {
-                        isPanning = true;
-                        startX = e.clientX - offsetX;
-                        startY = e.clientY - offsetY;
-                    });
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left;
-                        const mY = e.clientY - rect.top;
-                        if (isPanning) {
-                            offsetX = e.clientX - startX;
-                            offsetY = e.clientY - startY;
-                            draw();
-                            tooltip.style.display = "none";
-                            return;
-                        }
-                        let worldX = (mX - offsetX) / scale;
-                        let worldY = (mY - offsetY) / scale;
-                        let found = null;
-                        for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
-                                found = b; break;
-                            }
-                        }
-                        if (found) {
-                            tooltip.style.display = "block";
-                            tooltip.style.left = (mX + 15) + "px";
-                            tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `<b>Tracker ID:</b> ${found.table_label}<br><b>Pattern Layout:</b> ${found.structure_type.toUpperCase()}<br><b>Registered Pins Count:</b> ${found.section_group || 12} Pins`;
-                        } else {
-                            tooltip.style.display = "none";
-                        }
-                    });
-                    canvas.addEventListener('mouseup', () => { isPanning = false; });
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault();
-                        const rect = canvas.getBoundingClientRect();
-                        const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        const gridX = (mX - offsetX) / scale; const gridY = (mY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.02, Math.min(scale, 10));
-                        offsetX = mX - gridX * scale; offsetY = mY - gridY * scale; draw();
-                    }, { passive: false });
-                    
-                    draw();
-                })();
-            </script>
-            """
-            html_global_piling_preview = html_global_piling_preview.replace("__JSON_DATA_B64__", b64_json_data)\
-                                                                   .replace("MIN_C_VAL", str(min_c))\
-                                                                   .replace("MAX_C_VAL", str(max_c))\
-                                                                   .replace("MIN_R_VAL", str(min_r))\
-                                                                   .replace("MAX_R_VAL", str(max_r))
-            components.html(html_global_piling_preview, height=440)
+                            if(rows > 0 && cols > 0) {{
+                                const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
+                                const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
+                                
+                                for(let r = 0; r < rows; r++) {{
+                                    for(let c = 0; c < cols; c++) {{
+                                        let px = (cols === 1) ? bx + (boxW / 2) : bx + (c * colGap);
+                                        let py = (rows === 1) ? by + (boxH / 2) : by + (r * rowGap);
+                                        
+                                        ctx.fillStyle = '#f43f5e';
+                                        ctx.beginPath();
+                                        ctx.arc(px, py, 4, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        ctx.strokeStyle = '#ffffff';
+                                        ctx.lineWidth = 1;
+                                        ctx.stroke();
+                                    }}
+                                }}
+                            }}
+                        }})();
+                    </script>
+                    """
+                    components.html(html_micro_template, height=240)
             st.write("---")
 
             layout_types = {}

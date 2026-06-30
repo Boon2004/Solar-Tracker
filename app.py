@@ -164,7 +164,7 @@ if st.session_state.active_site_id is None:
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                                 "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
-                                                "section_group": int(table_counter),
+                                                "section_group": 12, # System configuration default setup allocation metrics
                                                 "pegging_status": "pending", "piling_status": "pending", 
                                                 "mounting_status": "pending", "modules_status": "pending"
                                             })
@@ -208,7 +208,6 @@ else:
     site_is_published = current_farm_record.get("is_published", False)
     site_bg_img = current_farm_record.get("background_image_url", "")
 
-    # Clean header with exit button on the right
     col_h1, col_h2 = st.columns([8, 2])
     with col_h1: 
         st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
@@ -221,7 +220,6 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         
-        # 1. If not admin, show the password lock form
         if not st.session_state.is_admin_mode:
             with st.form("admin_upgrade_form", clear_on_submit=True):
                 adm_pass = st.text_input("Upgrade to Admin Mode:", type="password")
@@ -231,12 +229,9 @@ else:
                         st.rerun()
                     else: 
                         st.error("Incorrect Password.")
-        
-        # 2. If unlocked admin, show the admin tools AND the Duplicator expansion panel
         else:
             st.success("⚡ Admin Permissions Active")
             
-            # --- 🧪 THE WORKSPACE DUPLICATOR PANEL (SAFE INSIDE ADMIN NEST) ---
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
                 st.markdown("#### Create an Isolated Testing Sandbox")
@@ -250,10 +245,8 @@ else:
                             parent_farm = current_farm_record
                             parent_farm_id = st.session_state.active_site_id
                             
-                            # 1. Read parent topology metadata object safely
                             raw_topo_string = parent_farm.get("background_image_url") or "{}"
                             
-                            # 2. Forge the new sandbox database slot entry
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": parent_farm.get("admin_password", "ok"),
@@ -261,20 +254,18 @@ else:
                                 "max_rows": int(parent_farm.get("max_rows", 100)),
                                 "max_cols": int(parent_farm.get("max_cols", 150)),
                                 "is_published": False,
-                                "background_image_url": "{}" # Will be populated dynamically below
+                                "background_image_url": "{}"
                             }
                             
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
                             
                             if new_farm_response.data:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
-                                
-                                # 3. Fetch every parsed component array fleet explicitly order-matched
                                 parent_structures = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("id").execute().data
                                 
                                 if parent_structures:
                                     sandbox_structures = []
-                                    id_mapping_dictionary = {} # Maps old IDs to new sequential trackers to fix string paths
+                                    id_mapping_dictionary = {}
                                     
                                     for struct in parent_structures:
                                         cloned_struct = {
@@ -286,7 +277,6 @@ else:
                                             "max_c": int(struct.get("max_c")),
                                             "structure_type": str(struct.get("structure_type", "single_3x9")),
                                             "assigned_zone": str(struct.get("assigned_zone", "Unassigned")),
-                                            # 🟢 FIXES HOLES: Preserves exact structural group sorting identifiers
                                             "section_group": int(struct.get("section_group")) if struct.get("section_group") is not None else None,
                                             "pegging_status": "pending",
                                             "piling_status": "pending",
@@ -295,7 +285,6 @@ else:
                                         }
                                         sandbox_structures.append(cloned_struct)
                                     
-                                    # 4. Push structural batches to cloud data loops cleanly
                                     inserted_structures_fleet = []
                                     for idx in range(0, len(sandbox_structures), 200):
                                         batch = sandbox_structures[idx:idx+200]
@@ -303,22 +292,16 @@ else:
                                         if res_batch.data:
                                             inserted_structures_fleet.extend(res_batch.data)
                                     
-                                    # 5. Build ID tracking schema translation dictionary
-                                    # This links the old data tracker indices to their fresh database copies
                                     for old_s, new_s in zip(parent_structures, inserted_structures_fleet):
                                         id_mapping_dictionary[str(old_s["id"])] = int(new_s["id"])
                                     
-                                    # 6. 🔌 RE-STRINGS TOPOLOGY IN THE SANDBOX CONTAINER
-                                    # Translates old layout nodes into your cloned sandbox framework IDs
                                     try:
                                         if raw_topo_string.startswith("{"):
                                             topo_data = json.loads(raw_topo_string)
                                             
-                                            # Re-map electrical string stringGroup definitions cleanly
                                             if "stringGroups" in topo_data:
                                                 new_string_groups = {}
                                                 for old_key, inv_value in topo_data["stringGroups"].items():
-                                                    # Extract root numeric components from composite string keys (e.g., '142_N')
                                                     parts = old_key.split("_")
                                                     old_base_id = parts[0]
                                                     suffix = f"_{parts[1]}" if len(parts) > 1 else ""
@@ -328,12 +311,11 @@ else:
                                                         new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                                 topo_data["stringGroups"] = new_string_groups
                                             
-                                            # Re-save configuration blueprint safely back to server sandbox metadata slot
                                             supabase.table("farms").update({
                                                 "background_image_url": json.dumps(topo_data)
                                             }).eq("id", sandbox_farm_id).execute()
                                     except Exception:
-                                        pass # Fallback elegantly if topology string configuration is blank
+                                        pass
                                         
                                     st.cache_data.clear()
                                     st.success("🎉 Sandbox configuration successfully duplicated! Check the project menu list directory.")
@@ -342,7 +324,6 @@ else:
                         except Exception as err:
                             st.error(f"Sandbox duplication rejected: {str(err)}")
             
-            # --- STANDARD ADMIN RELEASE ACTIONS ---
             st.write("---")
             st.subheader("📢 Field Deployment Release")
             if not site_is_published:
@@ -451,7 +432,8 @@ else:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
             "📌 Pegging & Piling Customizer",
-            "🛰️ Unified Layout Planner & Topology Workspace"
+            "🛰️ Unified Layout Planner & Topology Workspace",
+            "📊 Executive Analytical Summary"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
@@ -764,6 +746,33 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
+            # --- REQUIREMENT 5 (PART A): HOLISTIC FLEET OVERVIEW MATRIX TABLE ---
+            st.markdown("#### 📊 Current View of Pegging & Pillar Points Fleet-Wide")
+            unique_structures_summary = {}
+            for block in active_table_data:
+                stype = block.get("structure_type", "unknown")
+                if stype not in unique_structures_summary:
+                    unique_structures_summary[stype] = {
+                        "count": 0,
+                        "points_per_unit": block.get("section_group") if block.get("section_group") is not None else 12
+                    }
+                unique_structures_summary[stype]["count"] += 1
+            
+            overview_rows = []
+            grand_total_points = 0
+            for stype, sdata in unique_structures_summary.items():
+                tot_pts = sdata["count"] * sdata["points_per_unit"]
+                grand_total_points += tot_pts
+                overview_rows.append({
+                    "Structure Architecture Pattern": stype.upper(),
+                    "Total Trackers Placed": sdata["count"],
+                    "Assigned Pinpoints per Unit": sdata["points_per_unit"],
+                    "Aggregate Phase Coordinates Total": tot_pts
+                })
+            st.table(overview_rows)
+            st.metric("Total Cumulative Structural Piling Pinpoints Registered", f"{grand_total_points} Coordinates")
+            st.write("---")
+
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -925,7 +934,8 @@ else:
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Click / Lasso Strings</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverter ➔ Xfrmr</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inv to MVS</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="lasso_route"> 🎯 Lasso Route Inverters</label>
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
@@ -1027,8 +1037,8 @@ else:
                         gridTopo.inverters.forEach(inv => {
                             if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 let xf = gridTopo.transformers[inv.transformerId];
-                                ctx.strokeStyle = "rgba(255,255,255,0.4)";
-                                ctx.lineWidth = 1.5;
+                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
+                                ctx.lineWidth = 2.0;
                                 ctx.beginPath();
                                 ctx.moveTo(inv.x, inv.y);
                                 ctx.lineTo(xf.x, xf.y);
@@ -1039,6 +1049,7 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
+                        // REQUIREMENT 1: CLEAR MULTI-STRING ALIGNMENT LABELS DRAWN WITH DISTINCT SEPARATION BORDERS
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1047,16 +1058,16 @@ else:
                             if (linkedInv) {
                                 if (isInverterPlaced(linkedInv)) {
                                     ctx.fillStyle = getCapacityColor(counts[linkedInv]); 
-                                    ctx.strokeStyle = getCapacityColor(counts[linkedInv]);
-                                    ctx.lineWidth = 1.5;
+                                    ctx.strokeStyle = "#ffffff";
+                                    ctx.lineWidth = 1.25;
                                 } else {
                                     ctx.fillStyle = "#d97706";
                                     ctx.strokeStyle = "#fbbf24";
-                                    ctx.lineWidth = 2;
+                                    ctx.lineWidth = 1.5;
                                 }
                             } else {
                                 ctx.fillStyle = "#1e293b"; 
-                                ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+                                ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
                                 ctx.lineWidth = 0.5;
                             }
                             
@@ -1121,9 +1132,10 @@ else:
 
                         ctx.restore();
 
-                        if (isSelecting && getActiveTool() === "string") {
-                            ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 1.5;
-                            ctx.fillStyle = 'rgba(167, 139, 250, 0.2)';
+                        if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "lasso_route")) {
+                            ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; 
+                            ctx.lineWidth = 1.5;
+                            ctx.fillStyle = getActiveTool() === "string" ? "rgba(167, 139, 250, 0.2)" : "rgba(56, 189, 248, 0.2)";
                             ctx.fillRect(startX, startY, currX - startX, currY - startY);
                             ctx.strokeRect(startX, startY, currX - startX, currY - startY);
                         }
@@ -1144,6 +1156,16 @@ else:
                         const tool = getActiveTool();
 
                         if (e.button === 2) {
+                            // REQUIREMENT 3: SINGLE IN-FLIGHT TRANSFORMER REMOVAL LOOP ENGINE WITHOUT BLANKING POPULATIONS
+                            if (tool === "transformer") {
+                                if (gridTopo.transformers.length > 0) {
+                                    let poppedIdx = gridTopo.transformers.length - 1;
+                                    gridTopo.transformers.pop();
+                                    gridTopo.inverters.forEach(i => { if (i.transformerId === poppedIdx) i.transformerId = null; });
+                                    draw();
+                                }
+                                return;
+                            }
                             if (tool === "inverter") {
                                 gridTopo.inverters = gridTopo.inverters.filter(inv => {
                                     let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
@@ -1153,16 +1175,6 @@ else:
                                         });
                                     }
                                     return !isHit;
-                                });
-                                draw(); return;
-                            }
-                            if (tool === "transformer") {
-                                gridTopo.transformers = gridTopo.transformers.filter((t, idx) => {
-                                    let match = Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25;
-                                    if (match) {
-                                        gridTopo.inverters.forEach(i => { if (i.transformerId === idx) i.transformerId = null; });
-                                    }
-                                    return !match;
                                 });
                                 draw(); return;
                             }
@@ -1179,7 +1191,7 @@ else:
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
                             canvas.style.cursor = "move";
-                        } else if (tool === "string") {
+                        } else if (tool === "string" || tool === "lasso_route") {
                             isSelecting = true;
                             startX = m.x; startY = m.y;
                             currX = m.x; currY = m.y;
@@ -1220,7 +1232,7 @@ else:
                             if (invIdx !== -1) {
                                 selectedInverterIndexForRouting = invIdx;
                                 tooltip.style.display = "block";
-                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer box station destination node.";
+                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer station destination box.";
                             } else if (selectedInverterIndexForRouting !== null) {
                                 let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
                                 if (xfmrIdx !== -1) {
@@ -1249,11 +1261,18 @@ else:
 
                         gridTopo.transformers.forEach((t, index) => {
                             if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
-                                let connectedInvs = gridTopo.inverters.filter(i => i.transformerId === index).map(i => "INV " + i.id).join(", ");
+                                // REQUIREMENT 4: SORT INVERTERS IN INCREASING ASCENDING ORDER SMOOTHLY
+                                let connectedInvsList = gridTopo.inverters
+                                    .filter(i => i.transformerId === index)
+                                    .map(i => i.id)
+                                    .sort((a, b) => a - b)
+                                    .map(id => "INV " + id)
+                                    .join(", ");
+
                                 tooltip.style.display = "block";
                                 tooltip.style.left = (m.x + 15) + "px";
                                 tooltip.style.top = (m.y + 15) + "px";
-                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${index + 1}<br>Fed by Inverters: [ ${connectedInvs || 'None'} ]`;
+                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${index + 1}<br>Fed by Inverters: [ ${connectedInvsList || 'None'} ]`;
                                 matchFound = true;
                             }
                         });
@@ -1300,16 +1319,40 @@ else:
                     canvas.addEventListener("mouseup", e => {
                         if (e.button === 2) { isPanning = false; canvas.style.cursor = "default"; return; }
                         if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
+                        
                         if (isSelecting) {
                             isSelecting = false;
+                            canvas.style.cursor = "default";
                             const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
 
                             let boxX1 = Math.min(p1.x, p2.x), boxX2 = Math.max(p1.x, p2.x);
                             let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
-                            
                             let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
+                            
+                            // REQUIREMENT 2 (PART C): LASSO ROUTING SELECTION FOR MULTIPLE INVERTERS
+                            if (getActiveTool() === "lasso_route") {
+                                if (totalDragDistance > 5) {
+                                    let targetedInverters = gridTopo.inverters.filter(inv => 
+                                        inv.x >= boxX1 && inv.x <= boxX2 && inv.y >= boxY1 && inv.y <= boxY2
+                                    );
+                                    
+                                    if (targetedInverters.length > 0) {
+                                        let destinationXfmrIdx = gridTopo.transformers.findIndex(t => 
+                                            Math.sqrt(Math.pow(p2.x - t.x, 2) + Math.pow(p2.y - t.y, 2)) <= 40
+                                        );
+                                        if (destinationXfmrIdx !== -1) {
+                                            targetedInverters.forEach(inv => {
+                                                inv.transformerId = destinationXfmrIdx;
+                                            });
+                                        }
+                                    }
+                                }
+                                draw();
+                                return;
+                            }
+
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
                             let isLassoSelection = totalDragDistance > 5;
                             
@@ -1327,10 +1370,7 @@ else:
                             if (boxSelected.length > 0) {
                                 boxSelected.forEach(el => {
                                     let currentAssign = gridTopo.stringGroups[el.id];
-                                    
-                                    if (currentAssign && currentAssign !== activeInv) {
-                                        return; 
-                                    }
+                                    if (currentAssign && currentAssign !== activeInv) return;
 
                                     if (isLassoSelection) {
                                         gridTopo.stringGroups[el.id] = activeInv;
@@ -1406,19 +1446,84 @@ else:
             
             components.html(html_topology_workspace, height=660)
 
+        # --- REQUIREMENT 6: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
+        with setup_tabs[3]:
+            st.markdown("### 📊 Executive Analytical Dashboard Summary")
+            
+            try:
+                topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception:
+                topo_meta = {}
+                
+            inverters_list = topo_meta.get("inverters", [])
+            transformers_list = topo_meta.get("transformers", [])
+            string_groups = topo_meta.get("stringGroups", {})
+            
+            # 1. Total Cells / Trackers counts categorized by structure type layout
+            st.markdown("#### 🪵 Tracker Distribution Frameworks")
+            layout_counts = {}
+            for block in active_table_data:
+                l_type = block.get("structure_type", "single_3x9")
+                layout_counts[l_type] = layout_counts.get(l_type, 0) + 1
+                
+            col_an1, col_an2 = st.columns(2)
+            with col_an1:
+                for k, v in layout_counts.items():
+                    st.metric(f"Total Model Placements [{k.upper()}]", f"{v} Blocks")
+            with col_an2:
+                st.metric("Total Overall Farm Tracker Units Fleet", f"{len(active_table_data)} Units")
+                
+            st.write("---")
+            
+            # 2. Stringing Capacities calculations matching requested groups
+            st.markdown("#### ⚡ Electrical Inverter Influx String Capacity Metrics")
+            inv_string_distribution = {}
+            for str_id, inv_id in string_groups.items():
+                inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
+                
+            capacity_buckets = {}
+            for inv_id, s_count in inv_string_distribution.items():
+                bucket_key = f"{s_count} Strings Configuration"
+                capacity_buckets[bucket_key] = capacity_buckets.get(bucket_key, 0) + 1
+                
+            if capacity_buckets:
+                c_cols = st.columns(min(len(capacity_buckets), 4))
+                for idx, (b_name, b_count) in enumerate(capacity_buckets.items()):
+                    with c_cols[idx % len(c_cols)]:
+                        st.metric(b_name, f"{b_count} Inverters")
+            else:
+                st.info("No strings have been dynamically linked to active inverter tokens yet.")
+                
+            st.write("---")
+            
+            # 3. Transformer Stations analytics with sorted routing list
+            st.markdown("#### 🏪 Transformer Station (MVS) Interconnection Registries")
+            st.metric("Total Active Transformer Stations (MVS Pool)", f"{len(transformers_list)} Hubs")
+            
+            ts_summary_table = []
+            for ts_idx, ts_obj in enumerate(transformers_list):
+                connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
+                connected_invs.sort()
+                inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
+                
+                ts_summary_table.append({
+                    "Transformer Hub Location ID": f"TS {ts_idx + 1}",
+                    "Aggregated Inverters Count": len(connected_invs),
+                    "Sorted Inverters Interconnected Pool": inv_string_labels
+                })
+            st.table(ts_summary_table)
+
     else:
         # ==============================================================================
         # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
         # ==============================================================================
-        
-        # 🔒 LOCK OUT LOCKOUT FOR INSTALERS IF WORKSPACE HAS NOT BEEN DEPLOYED LIVE BY ADMIN
         if not site_is_published:
             st.error("🛑 **Access Restricted:** The operational blueprint for this site layout has not been deployed or finalized by the administrator yet.")
             st.info("ℹ️ Field crews will gain tracker workspace mapping capability once the admin team formally authorizes a live deployment package from the control panel.")
             
             if st.button("🔄 Check Deployment Synchronization Status", type="primary"):
                 st.rerun()
-            st.stop()  # Abort all subsequent runtime rendering of crew tracking tabs completely
+            st.stop()
             
         if site_bg_img and not site_bg_img.startswith("{"):
             st.markdown("### 🗺️ Master Blueprint Reference Layout")
@@ -1438,7 +1543,7 @@ else:
                     ⚙️ <b>Crew Controls:</b> 
                     <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
                     <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
-                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp;
+                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp; 
                     <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                     <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
                 </div>

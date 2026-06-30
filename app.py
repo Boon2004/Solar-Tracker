@@ -995,6 +995,137 @@ else:
                     let selectedInverterIndexForRouting = null;
                     let lassoSelectedInvertersList = [];
 
+                    canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+                    function getActiveTool() {
+                        return document.querySelector('input[name="topo_tool"]:checked').value;
+                    }
+
+                    function getCapacityColor(stringCount) {
+                        if (stringCount <= 0) return "#1e293b";
+                        const palette = [
+                            "#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", 
+                            "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"
+                        ];
+                        return palette[(stringCount - 1) % palette.length];
+                    }
+
+                    function isInverterPlaced(invId) {
+                        return gridTopo.inverters.some(i => i.id === parseInt(invId));
+                    }
+
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+
+                        gridTopo.inverters.forEach(inv => {
+                            if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
+                                let xf = gridTopo.transformers[inv.transformerId];
+                                ctx.strokeStyle = "rgba(56, 189, 248, 0.85)"; ctx.lineWidth = 2.0; ctx.beginPath();
+                                ctx.moveTo(inv.x, inv.y); ctx.lineTo(xf.x, xf.y); ctx.stroke();
+                            }
+                        });
+
+                        let counts = {};
+                        Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
+
+                        // 1. Core structural background fills
+                        independentStrings.forEach(s => {
+                            let x = s.min_c * CELL; let y = s.min_r * CELL;
+                            let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            
+                            ctx.fillStyle = linkedInv ? (isInverterPlaced(linkedInv) ? getCapacityColor(counts[linkedInv]) : "#d97706") : "#1e293b";
+                            ctx.fillRect(x, y, w, h);
+                            
+                            if (!linkedInv) {
+                                ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            }
+                        });
+
+                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
+                        let inverterCellsMap = {};
+                        independentStrings.forEach(s => {
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            if (!linkedInv) return;
+                            if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
+                            inverterCellsMap[linkedInv].push(s);
+                        });
+
+                        Object.keys(inverterCellsMap).forEach(invId => {
+                            let cellBlocks = inverterCellsMap[invId];
+                            ctx.strokeStyle = "#ff0000"; 
+                            ctx.lineWidth = 4.0;
+                            ctx.lineJoin = "miter";
+
+                            cellBlocks.forEach(b => {
+                                let x = b.min_c * CELL;
+                                let y = b.min_r * CELL;
+                                let w = (b.max_c - b.min_c + 1) * CELL;
+                                let h = (b.max_r - b.min_r + 1) * CELL;
+
+                                let topShared = cellBlocks.some(other => b !== other && b.min_r > other.min_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (b.min_r - other.max_r <= 5 || other.parentId === b.parentId));
+                                let bottomShared = cellBlocks.some(other => b !== other && b.max_r < other.max_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (other.min_r - b.max_r <= 5 || other.parentId === b.parentId));
+                                let leftShared = cellBlocks.some(other => b !== other && b.min_c > other.min_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (b.min_c - other.max_c <= 5));
+                                let rightShared = cellBlocks.some(other => b !== other && b.max_c < other.max_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (other.min_c - b.max_c <= 5));
+
+                                ctx.beginPath();
+                                if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
+                                if (!bottomShared) { ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); }
+                                if (!leftShared) { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
+                                if (!rightShared) { ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); }
+                                ctx.stroke();
+                            });
+                        });
+
+                        // 3. String component tokens data overlays
+                        independentStrings.forEach(s => {
+                            let linkedInv = gridTopo.stringGroups[s.id];
+                            if (!linkedInv) return;
+                            let x = s.min_c * CELL; let y = s.min_r * CELL;
+                            ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(x + 2, y + 2, 35, 11);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 7px sans-serif";
+                            ctx.fillText("I-" + linkedInv, x + 4, y + 10);
+                        });
+
+                        gridTopo.inverters.forEach(inv => {
+                            let strCount = counts[inv.id] || 0;
+                            let tsPrefix = inv.transformerId !== null && gridTopo.transformers[inv.transformerId] ? "TS" + (inv.transformerId + 1) + "-" : "";
+                            let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
+                            let countText = strCount + " STRINGS";
+
+                            ctx.font = "bold 9px sans-serif";
+                            let badgeW = Math.max(ctx.measureText(titleText).width + 12, ctx.measureText(countText).width + 12, 65);
+                            let badgeH = 26; let bx = inv.x - (badgeW / 2); let by = inv.y - (badgeH / 2);
+
+                            ctx.fillStyle = "#ff0000"; ctx.fillRect(bx, by, badgeW, badgeH / 2);
+                            ctx.fillStyle = getCapacityColor(strCount); ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
+                            ctx.fillStyle = "#ffffff"; ctx.textAlign = "center";
+                            ctx.fillText(titleText, inv.x, by + 9); ctx.fillText(countText, inv.x, by + 21);
+
+                            ctx.strokeStyle = lassoSelectedInvertersList.includes(inv.id) ? "#facc15" : "#ffffff";
+                            ctx.lineWidth = lassoSelectedInvertersList.includes(inv.id) ? 3.5 : 1; ctx.strokeRect(bx, by, badgeW, badgeH);
+                        });
+
+                        gridTopo.transformers.forEach((t, i) => {
+                            ctx.fillStyle = "#ff1744"; ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
+                            ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+                            ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
+                        });
+
+                        ctx.restore();
+
+                        if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "route")) {
+                            ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; ctx.lineWidth = 1.5;
+                            ctx.fillStyle = getActiveTool() === "string" ? "rgba(167, 139, 250, 0.2)" : "rgba(56, 189, 248, 0.2)";
+                            ctx.fillRect(startX, startY, currX - startX, currY - startY); ctx.strokeRect(startX, startY, currX - startX, currY - startY);
+                        }
+                    }
+
+                    function getMouseLocation(e) { const rect = canvas.getBoundingClientRect(); return { x: e.clientX - rect.left, y: e.clientY - rect.top }; }
+                    function transformToWorldSpace(p) { return { x: (p.x - offsetX) / scale, y: (p.y - offsetY) / scale }; }
+
                     canvas.addEventListener("mousedown", e => {
                         const m = getMouseLocation(e); const world = transformToWorldSpace(m); const tool = getActiveTool();
 
@@ -1005,31 +1136,39 @@ else:
                                     gridTopo.transformers.splice(tIdx, 1);
                                     gridTopo.inverters.forEach(i => { if (i.transformerId === tIdx) i.transformerId = null; else if (i.transformerId > tIdx) i.transformerId -= 1; });
                                 }
-                            } else if (tool === "inverter") {
-                                gridTopo.inverters = gridTopo.inverters.filter(inv => {
-                                    let hit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
-                                    if (hit) { Object.keys(gridTopo.stringGroups).forEach(k => { if (gridTopo.stringGroups[k] === inv.id) delete gridTopo.stringGroups[k]; }); }
-                                    return !hit;
-                                });
-                            } else {
-                                isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
+                                draw();
+                                return;
                             }
-                            draw(); return;
+                            if (tool === "inverter") {
+                                gridTopo.inverters = gridTopo.inverters.filter(inv => {
+                                    let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
+                                    if (isHit) {
+                                        Object.keys(gridTopo.stringGroups).forEach(key => {
+                                            if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key];
+                                        });
+                                    }
+                                    return !isHit;
+                                });
+                                draw(); return;
+                            }
+                            
+                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
+                            return;
                         }
 
                         if (tool === "pan") {
                             isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
                         } else if (tool === "string" || tool === "route") {
                             if (tool === "route") {
-                                let cInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
-                                if (cInv) {
-                                    if (lassoSelectedInvertersList.includes(cInv.id)) { lassoSelectedInvertersList = lassoSelectedInvertersList.filter(id => id !== cInv.id); }
-                                    else { lassoSelectedInvertersList.push(cInv.id); }
+                                let clickedInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
+                                if (clickedInv) {
+                                    if (lassoSelectedInvertersList.includes(clickedInv.id)) { lassoSelectedInvertersList = lassoSelectedInvertersList.filter(id => id !== clickedInv.id); }
+                                    else { lassoSelectedInvertersList.push(clickedInv.id); }
                                     draw(); return;
                                 }
-                                let cXfmr = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
-                                if (cXfmr !== -1 && lassoSelectedInvertersList.length > 0) {
-                                    gridTopo.inverters.forEach(inv => { if (lassoSelectedInvertersList.includes(inv.id)) inv.transformerId = cXfmr; });
+                                let clickedXfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
+                                if (clickedXfmrIdx !== -1 && lassoSelectedInvertersList.length > 0) {
+                                    gridTopo.inverters.forEach(inv => { if (lassoSelectedInvertersList.includes(inv.id)) inv.transformerId = clickedXfmrIdx; });
                                     lassoSelectedInvertersList = []; draw(); return;
                                 }
                             }
@@ -1081,41 +1220,25 @@ else:
 
                     canvas.addEventListener("mouseup", e => {
                         if (e.button === 2 || isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
-                        
                         if (isSelecting) {
-                            isSelecting = false; 
-                            canvas.style.cursor = "default"; 
-                            const mUp = getMouseLocation(e);
+                            isSelecting = false; const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
-                            
-                            let x1 = Math.min(p1.x, p2.x);
-                            let x2 = Math.max(p1.x, p2.x);
-                            let y1 = Math.min(p1.y, p2.y);
-                            let y2 = Math.max(p1.y, p2.y);
+                            let x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x), y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
                             let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
 
                             if (getActiveTool() === "route") {
                                 if (dist > 5) {
-                                    gridTopo.inverters.forEach(inv => { 
-                                        if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { 
-                                            if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); 
-                                        } 
-                                    });
+                                    gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });
                                 }
-                                draw(); 
-                                return;
+                                draw(); return;
                             }
 
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
                             let isLassoSelection = dist > 5;
-                            
                             let boxSelected = independentStrings.filter(s => {
-                                let cx = s.min_c * CELL; 
-                                let cy = s.min_r * CELL;
-                                let cw = (s.max_c - s.min_c + 1) * CELL; 
-                                let ch = (s.max_r - s.min_r + 1) * CELL;
-                                
+                                let cx = s.min_c * CELL; let cy = s.min_r * CELL;
+                                let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
                                 if (!isLassoSelection) {
                                     return (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
                                 } else {
@@ -1123,18 +1246,19 @@ else:
                                 }
                             });
                             
-                            boxSelected.forEach(s => { 
-                                if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { 
-                                    if (!isLassoSelection && gridTopo.stringGroups[s.id] === activeInv) {
-                                        delete gridTopo.stringGroups[s.id]; 
-                                    } else {
-                                        gridTopo.stringGroups[s.id] = activeInv; 
-                                    }
-                                } 
-                            });
+                            boxSelected.forEach(s => { if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { if (!isLassoSelection && gridTopo.stringGroups[s.id] === activeInv) delete gridTopo.stringGroups[s.id]; else gridTopo.stringGroups[s.id] = activeInv; } });
                             draw();
                         }
                     });
+
+                    canvas.addEventListener("wheel", e => {
+                        e.preventDefault(); const m = getMouseLocation(e); const world = transformToWorldSpace(m);
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                        offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
+                    }, { passive: false });
+
+                    draw();
+                })();
             </script>
             """
             html_topology_workspace = html_topology_workspace.replace("__JSON_DATA_B64__", b64_json_data)\

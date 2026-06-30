@@ -1397,6 +1397,7 @@ else:
         # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
         with setup_tabs[3]:
             st.markdown("## 📊 Executive Analytical Summary Dashboard Panel")
+            st.write("---")
             
             try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
             except Exception: topo_meta = {}
@@ -1408,18 +1409,16 @@ else:
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
             
-            # ==================================================================
-            # LEVEL 1: WHOLE PLANT HOLISTIC SUMMARY OVERVIEW
-            # ==================================================================
-            st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
-            
+            # Compute Core Structural Dataset Parameters
             layout_analysis = {}
+            zone_module_counts = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
             grand_total_actual_modules = 0  
             
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
+                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
                 enc_val = block.get("section_group") if block.get("section_group") is not None else 403
                 
                 if enc_val > 100:
@@ -1429,7 +1428,7 @@ else:
                 else:
                     pins_per_unit = 12; r_f = 4; c_f = 3
                 
-                # Dynamically calculate modules for this specific tracker cell geometry
+                # Dynamic panel dimensions tracker math
                 grid_rows = int(block["max_r"] - block["min_r"] + 1)
                 grid_cols = int(block["max_c"] - block["min_c"] + 1)
                 modules_per_tracker = int(grid_rows * grid_cols)
@@ -1437,144 +1436,106 @@ else:
                 if l_type not in layout_analysis:
                     layout_analysis[l_type] = {
                         "tracker_count": 0, "pins_per_unit": pins_per_unit,
-                        "matrix_shape": f"{r_f} Rows × {c_f} Columns", "total_pins": 0,
-                        "total_modules": 0
+                        "matrix_shape": f"{r_f}×{c_f}", "total_pins": 0, "total_modules": 0
                     }
                     
                 layout_analysis[l_type]["tracker_count"] += 1
                 layout_analysis[l_type]["total_pins"] += pins_per_unit
                 layout_analysis[l_type]["total_modules"] += modules_per_tracker
                 
+                if z_name not in zone_module_counts:
+                    zone_module_counts[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
+                zone_module_counts[z_name]["trackers"] += 1
+                zone_module_counts[z_name]["pins"] += pins_per_unit
+                zone_module_counts[z_name]["modules"] += modules_per_tracker
+                
                 grand_total_trackers += 1
                 grand_total_pegging_points += pins_per_unit
                 grand_total_actual_modules += modules_per_tracker
 
-            # Render original structural layout summary
-            summary_metrics_rows = []
-            for l_name, metrics in layout_analysis.items():
-                summary_metrics_rows.append({
-                    "Structure Architecture Pattern": l_name.upper(),
-                    "Total Trackers Installed": metrics["tracker_count"],
-                    "Matrix Shape Proportions": metrics["matrix_shape"],
-                    "Pins Configured Per Unit": f"{metrics['pins_per_unit']} Pts",
-                    "Aggregate Pegging Pinpoints Total": f"{metrics['total_pins']} Pts"
-                })
-            st.table(summary_metrics_rows)
+            # ==================================================================
+            # LEVEL 1: WHOLE PLANT KEY PERFORMANCE METRICS CARD DECK
+            # ==================================================================
+            st.subheader("🏭 LEVEL 1: Whole Plant Fleet Summary")
             
-            # --- NEW ADJACENT MODULE BOX PANEL BREAKDOWN ---
-            st.markdown("#### 📦 Regional Module Allocation Breakdown")
+            col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+            with col_p1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
+            with col_p2: st.metric("📌 Total Pegging Pins", f"{grand_total_pegging_points} Pts")
+            with col_p3: st.metric("📦 Total PV Modules", f"{grand_total_actual_modules} Panels")
+            with col_p4: st.metric("⚡ Active Inverter Hubs", f"{len(inverters_list)} INVs")
             
-            # Group module totals by zone for the summary card array
-            zone_module_counts = {}
-            for block in active_table_data:
-                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
-                g_rows = int(block["max_r"] - block["min_r"] + 1)
-                g_cols = int(block["max_c"] - block["min_c"] + 1)
+            st.write("")
+            
+            # Split Layout: Architectural Breakdown Left | Regional Allocation Cards Right
+            split_cols = st.columns([5, 5])
+            
+            with split_cols[0]:
+                st.markdown("**Structural Pattern Breakdowns**")
+                summary_metrics_rows = []
+                for l_name, metrics in layout_analysis.items():
+                    summary_metrics_rows.append({
+                        "Architecture": l_name.upper(),
+                        "Trackers": f"{metrics['tracker_count']} Units",
+                        "Matrix": metrics["matrix_shape"],
+                        "Pins/Unit": f"{metrics['pins_per_unit']} Pts",
+                        "Total Panels": f"{metrics['total_modules']} Modules"
+                    })
+                st.table(summary_metrics_rows)
                 
-                if z_name not in zone_module_counts:
-                    zone_module_counts[z_name] = 0
-                zone_module_counts[z_name] += int(g_rows * g_cols)
-            
-            # Dynamically split zone module summaries into visual columns
-            zone_cols = st.columns(len(zone_module_counts) if zone_module_counts else 1)
-            for idx, (z_key, z_val) in enumerate(sorted(zone_module_counts.items())):
-                with zone_cols[idx]:
-                    st.metric(f"📦 Total Modules ({z_key})", f"{z_val} Panels")
-            
-            st.markdown("---")
-            
-            col_plant1, col_plant2, col_plant3, col_plant4 = st.columns(4)
-            with col_plant1: st.metric("Plant Total Tracker Tables", f"{grand_total_trackers} Units")
-            with col_plant2: st.metric("Plant Total Pegging Pins", f"{grand_total_pegging_points} Pts")
-            with col_plant3: st.metric("Plant Total Actual PV Modules", f"{grand_total_actual_modules} Panels")
-            with col_plant4: st.metric("Plant Active Inverter Hubs", f"{len(inverters_list)} INVs")
-            
+            with split_cols[1]:
+                st.markdown("**Dynamic Modules Count by Zone**")
+                # Group modules inside adjacent stacked miniature subcards columns cleanly
+                sub_cards = st.columns(len(zone_module_counts) if zone_module_counts else 1)
+                for idx, z_key in enumerate(sorted(zone_module_counts.keys())):
+                    with sub_cards[idx]:
+                        st.info(f"**{z_key.upper()}**\n\n🔹 `{zone_module_counts[z_key]['trackers']}` Trackers\n\n🔹 `{zone_module_counts[z_key]['modules']}` Panels")
+
+            # Inline configuration capacity tracker log logic
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
-                bucket_key = f"{s_count} Strings Loading Capacity"
+                bucket_key = f"{s_count} Strings Load"
                 if bucket_key not in global_capacity_buckets:
                     global_capacity_buckets[bucket_key] = []
                 global_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
                 
             if global_capacity_buckets:
-                st.markdown("**Global Inverter Breakdown by String Capacities Configuration Tally:**")
+                st.write("")
+                st.markdown("**Inverter Loading Configuration Breakdown Ledger**")
                 g_bucket_rows = []
                 for b_name, inv_badge_list in global_capacity_buckets.items():
                     sorted_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
                     g_bucket_rows.append({
                         "String Loading Distribution Capacity": b_name,
-                        "Total Combined Inverters Tally": len(sorted_inv_badges),
-                        "Numerical Sequence Mapped Inverters": ", ".join(sorted_inv_badges)
+                        "Inverters Total Tally": len(sorted_inv_badges),
+                        "Mapped Inverter Sequence Pool": ", ".join(sorted_inv_badges)
                     })
                 st.table(g_bucket_rows)
             
             st.write("---")
             
             # ==================================================================
-            # LEVEL 2: GRANULAR ZONE LEVEL METRICS DECK
+            # LEVEL 2: REGIONAL ZONE COMPONENT ALLOCATION METRICS BREAKDOWN
             # ==================================================================
-            st.subheader("🗺️ LEVEL 2: Granular Zone Level Operations Breakdown")
+            st.subheader("🗺️ LEVEL 2: Regional Zone Operations Summary Ledger")
             
-            zone_analysis = {}
-            grand_total_trackers = 0
-            grand_total_pegging_points = 0
-            grand_total_actual_modules = 0  
-            
-            for block in active_table_data:
-                b_zone = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
-                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
-                
-                if enc_val > 100:
-                    r_f = int(enc_val // 100)
-                    c_f = int(enc_val % 100)
-                    pins_per_unit = int(r_f * c_f)
-                else:
-                    pins_per_unit = 12; r_f = 4; c_f = 3
-                
-                grid_rows = int(block["max_r"] - block["min_r"] + 1)
-                grid_cols = int(block["max_c"] - block["min_c"] + 1)
-                modules_per_tracker = int(grid_rows * grid_cols)
-                
-                if b_zone not in zone_analysis:
-                    zone_analysis[b_zone] = {
-                        "tracker_count": 0,
-                        "total_pins": 0,
-                        "total_modules": 0
-                    }
-                    
-                zone_analysis[b_zone]["tracker_count"] += 1
-                zone_analysis[b_zone]["total_pins"] += pins_per_unit
-                zone_analysis[b_zone]["total_modules"] += modules_per_tracker
-                
-                grand_total_trackers += 1
-                grand_total_pegging_points += pins_per_unit
-                grand_total_actual_modules += modules_per_tracker
-
             zone_metrics_rows = []
-            for zone_name in sorted(zone_analysis.keys()):
-                metrics = zone_analysis[zone_name]
+            for zone_name in sorted(zone_module_counts.keys()):
+                metrics = zone_module_counts[zone_name]
                 zone_metrics_rows.append({
                     "Zone Sector Area": str(zone_name).upper(),
-                    "Total Tracker Tables": metrics["tracker_count"],
-                    "Pegging Pinpoints Total": f"{metrics['total_pins']} Pts",
-                    "Total PV Modules (Panels)": f"{metrics['total_modules']} Modules"
+                    "Total Tracker Tables": f"{metrics['trackers']} Units",
+                    "Pegging Pinpoints Total": f"{metrics['pins']} Pts",
+                    "Total PV Modules (Panels)": f"{metrics['modules']} Panels"
                 })
-                
-            st.markdown("#### 🗺️ Regional Zone Component Allocation Metrics Breakdown")
             st.table(zone_metrics_rows)
             
-            st.markdown("#### 🌐 Plant-Wide Grand Totals Summary")
-            col_plant1, col_plant2, col_plant3, col_plant4 = st.columns(4)
-            with col_plant1: st.metric("Plant Total Tracker Tables", f"{grand_total_trackers} Units")
-            with col_plant2: st.metric("Plant Total Pegging Pins", f"{grand_total_pegging_points} Pts")
-            with col_plant3: st.metric("Plant Total Actual PV Modules", f"{grand_total_actual_modules} Panels")
-            with col_plant4: st.metric("Plant Active Inverter Hubs", f"{len(inverters_list)} INVs")
+            st.write("---")
             
             # ==================================================================
-            # LEVEL 3: MVS TRANSFORMER STATION POOL ASSIGNATION MATRIX
+            # LEVEL 3: MVS TRANSFORMER STATION INTERCONNECTION REGISTRY
             # ==================================================================
-            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Fleet Interconnection Registries")
-            st.metric("Total Active Transformer Medium Voltage Stations Registered", f"{len(transformers_list)} Station Hubs")
+            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Interconnections")
+            st.write(f"**Total Medium Voltage Infrastructure Pool:** `{len(transformers_list)} Active Stations Registered`")
             
             ts_summary_table = []
             for ts_idx, ts_obj in enumerate(transformers_list):
@@ -1583,9 +1544,9 @@ else:
                 inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
                 
                 ts_summary_table.append({
-                    "Transformer Hub Location ID": f"TS {ts_idx + 1}",
-                    "Aggregated Inverters Count": len(connected_invs),
-                    "Sorted Inverters Interconnected Pool": inv_string_labels
+                    "Transformer Location ID": f"TS {ts_idx + 1}",
+                    "Interconnected Inverters Count": len(connected_invs),
+                    "Routed Inverter Hub Sub-Pool": inv_string_labels
                 })
             st.table(ts_summary_table)
         

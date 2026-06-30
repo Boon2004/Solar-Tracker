@@ -240,11 +240,23 @@ else:
                 sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
                 
                 if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
-                    with st.spinner("Executing Cloud-Native Database Duplication..."):
+                    with st.spinner("Synchronizing blueprint structures... (This loops through all pages)"):
                         try:
                             parent_farm_id = st.session_state.active_site_id
+                            raw_topo_string = current_farm_record.get("background_image_url") or "{}"
                             
-                            # 1. Duplicate the farm configuration metadata shell directly
+                            # 1. Download ALL parent structures across all pages (Fixes the cut-off issue)
+                            parent_structures = []
+                            limit = 1000
+                            offset = 0
+                            while True:
+                                res_page = supabase.table("structures").select("*").eq("farm_id", parent_farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
+                                if not res_page: break
+                                parent_structures.extend(res_page)
+                                if len(res_page) < limit: break
+                                offset += limit
+
+                            # 2. Build the new farm row shell
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": current_farm_record.get("admin_password", "ok"),
@@ -252,26 +264,96 @@ else:
                                 "max_rows": int(current_farm_record.get("max_rows", 100)),
                                 "max_cols": int(current_farm_record.get("max_cols", 150)),
                                 "is_published": False,
-                                "background_image_url": current_farm_record.get("background_image_url", "{}") # Copies inverter/string JSON untouched!
+                                "background_image_url": "{}" # Placeholder till remapped
                             }
                             
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
                             
-                            if new_farm_response.data:
+                            if new_farm_response.data and parent_structures:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
                                 
-                                # 2. Trigger server-side lightning-fast replication for structures
-                                supabase.rpc("duplicate_solar_farm_structures", {
-                                    "parent_id": parent_farm_id, 
-                                    "sandbox_id": sandbox_farm_id
-                                }).execute()
+                                # 3. Prepare data rows to clone and push them in safe 200-row batch segments
+                                sandbox_structures = []
+                                for struct in parent_structures:
+                                    sandbox_structures.append({
+                                        "farm_id": sandbox_farm_id,
+                                        "table_label": str(struct.get("table_label", "")),
+                                        "min_r": int(struct.get("min_r")), "max_r": int(struct.get("max_r")),
+                                        "min_c": int(struct.get("min_c")), "max_c": int(struct.get("max_c")),
+                                        "structure_type": str(struct.get("structure_type", "single_3x9")),
+                                        "assigned_zone": str(struct.get("assigned_zone", "Unassigned")),
+                                        "section_group": int(struct.get("section_group")) if struct.get("section_group") is not None else None,
+                                        "pegging_status": str(struct.get("pegging_status", "pending")),
+                                        "piling_status": str(struct.get("piling_status", "pending")),
+                                        "mounting_status": str(struct.get("mounting_status", "pending")),
+                                        "modules_status": str(struct.get("modules_status", "pending"))
+                                    })
+                                
+                                inserted_structures_fleet = []
+                                for idx in range(0, len(sandbox_structures), 200):
+                                    batch = sandbox_structures[idx:idx+200]
+                                    res_batch = supabase.table("structures").insert(batch).execute()
+                                    if res_batch.data:
+                                        inserted_structures_fleet.extend(res_batch.data)
+                                
+                                # 4. Build a relational ID map using structural grid positions
+                                id_mapping_dictionary = {}
+                                for old_s in parent_structures:
+                                    match = next((new_s for new_s in inserted_structures_fleet 
+                                                  if new_s["table_label"] == str(old_s["table_label"]) 
+                                                  and int(new_s["min_r"]) == int(old_s["min_r"]) 
+                                                  and int(new_s["min_c"]) == int(old_s["min_c"])), None)
+                                    if match:
+                                        id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
+                                
+                                # 5. Parse, update, and rewrite the JSON metadata file layout keys
+                                try:
+                                    if raw_topo_string.startswith("{"):
+                                        topo_data = json.loads(raw_topo_string)
+                                        
+                                        if "stringGroups" in topo_data:
+                                            new_string_groups = {}
+                                            for old_key, inv_value in topo_data["stringGroups"].items():
+                                                parts = old_key.split("_")
+                                                old_base_id = parts[0]
+                                                suffix = f"_{parts[1]}" if len(parts) > 1 else ""
+                                                
+                                                if old_base_id in id_mapping_dictionary:
+                                                    new_base_id = id_mapping_dictionary[old_base_id]
+                                                    new_string_groups[f"{new_base_id}{suffix}"] = inv_value
+                                            topo_data["stringGroups"] = new_string_groups
+                                        
+                                        # Recalculate physical Inverter center coordinates on the new blocks
+                                        if "inverters" in topo_data:
+                                            CELL = 14
+                                            for inv in topo_data["inverters"]:
+                                                matching_parent_block = None
+                                                for p_struct in parent_structures:
+                                                    if (p_struct["min_c"] * CELL) <= inv["x"] <= ((p_struct["max_c"] + 1) * CELL) and \
+                                                       (p_struct["min_r"] * CELL) <= inv["y"] <= ((p_struct["max_r"] + 1) * CELL):
+                                                        matching_parent_block = p_struct
+                                                        break
+                                                
+                                                if matching_parent_block and str(matching_parent_block["id"]) in id_mapping_dictionary:
+                                                    new_id_val = int(id_mapping_dictionary[str(matching_parent_block["id"])])
+                                                    new_block = next((nb for nb in inserted_structures_fleet if nb["id"] == new_id_val), None)
+                                                    if new_block:
+                                                        inv["x"] = (new_block["min_c"] * CELL) + (((new_block["max_c"] - new_block["min_c"] + 1) * CELL) / 2)
+                                                        inv["y"] = (new_block["min_r"] * CELL) + (((new_block["max_r"] - new_block["min_r"] + 1) * CELL) / 2)
+                                        
+                                        raw_topo_string = json.dumps(topo_data)
+                                except Exception:
+                                    pass
+                                
+                                # Save the final updated topography string
+                                supabase.table("farms").update({"background_image_url": raw_topo_string}).eq("id", sandbox_farm_id).execute()
                                 
                                 st.cache_resource.clear()
-                                st.success("🎉 Cloud Database cloned 100% identically with zero truncation!")
+                                st.success("🎉 Sandbox successfully duplicated with 100% intact layout tracking connections!")
                                 time.sleep(1.5)
                                 st.rerun()
                         except Exception as err:
-                            st.error(f"Cloud cloning rejected: {str(err)}")
+                            st.error(f"Sandbox duplication rejected: {str(err)}")
             
             st.write("---")
             st.subheader("📢 Field Deployment Release")

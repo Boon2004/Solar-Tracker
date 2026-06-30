@@ -535,7 +535,7 @@ else:
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
 
                         blocks.forEach(b => {
                             let isStaged = stagedBlockIds.includes(b.id);

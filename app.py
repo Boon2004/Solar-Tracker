@@ -45,7 +45,16 @@ def get_operational_system_date(farm_record):
 
 def calculate_network_working_days(start, end):
     if start > end: return 0
-    return (end - start).days + 1
+    
+    working_days = 0
+    current_date = start
+    while current_date <= end:
+        # weekday() returns 0 for Monday ... 5 for Saturday, 6 for Sunday
+        if current_date.weekday() < 5:
+            working_days += 1
+        current_date += timedelta(days=14 if isinstance(current_date, datetime) else 1)
+        
+    return working_days
 
 def fetch_farms_directory():
     try:

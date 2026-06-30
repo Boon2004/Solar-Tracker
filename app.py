@@ -1490,34 +1490,45 @@ else:
             
             st.subheader("🗺️ LEVEL 2: Regional Zone Operations Summary Ledger")
             
+            # Spatial Matching Engine: Calculate which zone boundary encloses each inverter node
+            zone_inverters_map = {z: [] for z in zone_module_counts.keys()}
+            CELL = 14
+            for inv in inverters_list:
+                inv_id = inv.get("id")
+                inv_x = inv.get("x", 0)
+                inv_y = inv.get("y", 0)
+                
+                # Identify enclosing spatial coordinate boundaries
+                matched_zone = "Unassigned"
+                for b in active_table_data:
+                    if (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and \
+                       (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL):
+                        matched_zone = b.get("assigned_zone") if b.get("assigned_zone") else "Unassigned"
+                        break
+                
+                if matched_zone not in zone_inverters_map:
+                    zone_inverters_map[matched_zone] = []
+                zone_inverters_map[matched_zone].append(inv_id)
+
+            # Build the updated regional configuration ledger table rows
             zone_metrics_rows = []
             for zone_name in sorted(zone_module_counts.keys()):
                 metrics = zone_module_counts[zone_name]
+                
+                # Fetch and format inverters loaded inside this zone boundary
+                assigned_inv_ids = sorted(zone_inverters_map.get(zone_name, []))
+                inv_count_tally = len(assigned_inv_ids)
+                inv_sequence_pool = ", ".join([f"INV #{i}" for i in assigned_inv_ids]) if assigned_inv_ids else "None Routed"
+                
                 zone_metrics_rows.append({
                     "Zone Sector Area": str(zone_name).upper(),
                     "Total Tracker Tables": f"{metrics['trackers']} Units",
                     "Pegging Pinpoints Total": f"{metrics['pins']} Pts",
-                    "Total PV Modules (Panels)": f"{metrics['modules']} Panels"
+                    "Total PV Modules (Panels)": f"{metrics['modules']} Panels",
+                    "Active Inverters Count": f"{inv_count_tally} INVs",
+                    "Numerical Sequence Inverters Pool": inv_sequence_pool
                 })
             st.table(zone_metrics_rows)
-            
-            st.write("---")
-            
-            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Interconnections")
-            st.write(f"**Total Medium Voltage Infrastructure Pool:** `{len(transformers_list)} Active Stations Registered`")
-            
-            ts_summary_table = []
-            for ts_idx, ts_obj in enumerate(transformers_list):
-                connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
-                connected_invs.sort()
-                inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
-                
-                ts_summary_table.append({
-                    "Transformer Location ID": f"TS {ts_idx + 1}",
-                    "Interconnected Inverters Count": len(connected_invs),
-                    "Routed Inverter Hub Sub-Pool": inv_string_labels
-                })
-            st.table(ts_summary_table)
         
         # --- STAGE 5: SCHEDULERS & TARGETS MANAGER ---
         with setup_tabs[4]:

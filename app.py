@@ -1032,7 +1032,7 @@ else:
                                     }}
                                 }}
                             }}
-                        }}})();
+                        }})();
                     </script>
                     """
                     components.html(html_micro_template, height=360)

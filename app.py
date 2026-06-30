@@ -1252,28 +1252,66 @@ else:
         # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
         with setup_tabs[3]:
             st.markdown("### 📊 Executive Analytical Dashboard Summary")
-            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
-            except Exception: topo_meta = {}
+            
+            try:
+                topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception:
+                topo_meta = {}
+                
             inverters_list = topo_meta.get("inverters", [])
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
             
-            st.markdown("#### 🪵 Tracker Distribution Frameworks")
-            layout_counts = {}
+            st.markdown("#### 🪵 Tracker & Pinpoint Fleet Distributions")
+            
+            # Group distributions, counts, and point aggregates by structure architecture layout type
+            layout_analysis = {}
+            grand_total_trackers = 0
+            grand_total_pegging_points = 0
+            
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
-                layout_counts[l_type] = layout_counts.get(l_type, 0) + 1
+                pins_per_unit = block.get("section_group") if block.get("section_group") is not None else 12
                 
-            col_an1, col_an2 = st.columns(2)
-            with col_an1:
-                for k, v in layout_counts.items(): st.metric(f"Total Model Placements [{k.upper()}]", f"{v} Blocks")
-            with col_an2:
-                st.metric("Total Overall Farm Tracker Units Fleet", f"{len(active_table_data)} Units")
+                if l_type not in layout_analysis:
+                    layout_analysis[l_type] = {
+                        "tracker_count": 0,
+                        "pins_per_unit": pins_per_unit,
+                        "total_pins": 0
+                    }
+                
+                layout_analysis[l_type]["tracker_count"] += 1
+                layout_analysis[l_type]["total_pins"] += pins_per_unit
+                
+                grand_total_trackers += 1
+                grand_total_pegging_points += pins_per_unit
+
+            # Build data grid representation matrix rows
+            summary_metrics_rows = []
+            for l_name, metrics in layout_analysis.items():
+                summary_metrics_rows.append({
+                    "Structure Architecture Pattern": l_name.upper(),
+                    "Total Trackers Installed": metrics["tracker_count"],
+                    "Pins Configured Per Unit": f"{metrics['pins_per_unit']} Pts",
+                    "Aggregate Pegging Pinpoints Total": f"{metrics['total_pins']} Pts"
+                })
+                
+            # Display granular structured data breaks
+            st.table(summary_metrics_rows)
+            
+            # Macro cumulative asset totals cards
+            col_totals1, col_cols2 = st.columns(2)
+            with col_totals1:
+                st.metric("Total Overall Farm Tracker Units Fleet", f"{grand_total_trackers} Units")
+            with col_cols2:
+                st.metric("Total Cumulative Structural Pinpoints Registered", f"{grand_total_pegging_points} Coordinates")
                 
             st.write("---")
+            
             st.markdown("#### ⚡ Electrical Inverter Influx String Capacity Metrics")
             inv_string_distribution = {}
-            for str_id, inv_id in string_groups.items(): inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
+            for str_id, inv_id in string_groups.items():
+                inv_string_distribution[inv_id] = inv_string_distribution.get(inv_id, 0) + 1
                 
             capacity_buckets = {}
             for inv_id, s_count in inv_string_distribution.items():
@@ -1283,11 +1321,13 @@ else:
             if capacity_buckets:
                 c_cols = st.columns(min(len(capacity_buckets), 4))
                 for idx, (b_name, b_count) in enumerate(capacity_buckets.items()):
-                    with c_cols[idx % len(c_cols)]: st.metric(b_name, f"{b_count} Inverters")
+                    with c_cols[idx % len(c_cols)]:
+                        st.metric(b_name, f"{b_count} Inverters")
             else:
                 st.info("No strings have been dynamically linked to active inverter tokens yet.")
                 
             st.write("---")
+            
             st.markdown("#### 🏪 Transformer Station (MVS) Interconnection Registries")
             st.metric("Total Active Transformer Stations (MVS Pool)", f"{len(transformers_list)} Hubs")
             
@@ -1296,6 +1336,7 @@ else:
                 connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
                 connected_invs.sort()
                 inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
+                
                 ts_summary_table.append({
                     "Transformer Hub Location ID": f"TS {ts_idx + 1}",
                     "Aggregated Inverters Count": len(connected_invs),

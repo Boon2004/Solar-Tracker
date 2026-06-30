@@ -743,10 +743,9 @@ else:
             components.html(html_zone_engine, height=700)
 
         # --- STAGE 2: PEGGING & PILING CUSTOMIZER ---
-       with setup_tabs[1]:
+        with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Group unique structural layouts present in the active farm dataset
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -763,9 +762,7 @@ else:
                     }
 
             st.markdown("#### 🗺️ Extracted Fleet Blueprint Layout Models")
-            st.caption("The system has dynamically isolated your architecture templates below. Adjust their values to update point targets across the entire farm footprint.")
-
-            # Generate side-by-side preview panels for only the layouts found in the project
+            
             layout_columns = st.columns(max(len(layout_types), 2))
             
             for idx, (layout_label, layout_data) in enumerate(layout_types.items()):
@@ -815,7 +812,6 @@ else:
                             except Exception as e:
                                 st.error(f"Sync issue: {str(e)}")
                                 
-                    # Interactive Dynamic Micro Matrix Grid Blueprint Preview Render
                     h_px = int(layout_data["h_cells"] * 25)
                     w_px = int(layout_data["w_cells"] * 35)
                     
@@ -858,157 +854,10 @@ else:
                                     }}
                                 }}
                             }}
-                        }})();
+                        }}))();
                     </script>
                     """
                     components.html(html_micro_template, height=240)
-            st.write("---")
-
-            layout_types = {}
-            for block in active_table_data:
-                h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
-                w_cells = block.get("max_c", 1) - block.get("min_c", 1) + 1
-                layout_key = f"{block.get('structure_type', 'unknown')} ({h_cells}x{w_cells} grid layout)"
-                
-                if layout_key not in layout_types:
-                    layout_types[layout_key] = {
-                        "type_string": block.get("structure_type"),
-                        "h_cells": h_cells,
-                        "w_cells": w_cells,
-                        "sample_block_id": block.get("id")
-                    }
-
-            layout_options = list(layout_types.keys())
-            
-            if not layout_options:
-                st.info("No layout pattern distributions extracted from metrics base structure.")
-            else:
-                selected_layout_label = st.selectbox(
-                    "Select Layout Architecture Template Matrix to Customize:", 
-                    layout_options
-                )
-                
-                target_layout = layout_types[selected_layout_label]
-                state_prefix = f"layout_cfg_{selected_layout_label}"
-                undo_stack_key = f"undo_{state_prefix}"
-                
-                if undo_stack_key not in st.session_state:
-                    st.session_state[undo_stack_key] = []
-                
-                if f"{state_prefix}_rows" not in st.session_state:
-                    st.session_state[f"{state_prefix}_rows"] = 4
-                if f"{state_prefix}_cols" not in st.session_state:
-                    st.session_state[f"{state_prefix}_cols"] = 3
-
-                col_inputs, col_actions = st.columns([4, 6])
-                
-                with col_inputs:
-                    st.markdown("#### 📏 Target Coordination Point Formations")
-                    row_pts = st.number_input(
-                        "Array Points per Row Count:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_rows"
-                    )
-                    col_pts = st.number_input(
-                        "Array Points per Column Count:", 
-                        min_value=1, max_value=20, 
-                        key=f"{state_prefix}_cols"
-                    )
-                    
-                    total_calculated_points = row_pts * col_pts
-                    st.metric(label="Calculated Placement Target Pin Points Fleet-wide", value=f"{total_calculated_points} Pts / Unit")
-                    
-                    if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
-                        current_snapshot = {
-                            "label": selected_layout_label,
-                            "rows": row_pts,
-                            "cols": col_pts,
-                            "timestamp": datetime.now().strftime("%H:%M:%S")
-                        }
-                        st.session_state[undo_stack_key].append(current_snapshot)
-                        
-                        with st.spinner("Broadcasting component layout mapping changes to Supabase ecosystem..."):
-                            try:
-                                supabase.table("structures").update({
-                                    "section_group": int(total_calculated_points)
-                                }).eq("farm_id", st.session_state.active_site_id)\
-                                  .eq("structure_type", target_layout["type_string"]).execute()
-                                
-                                st.success(f"Successfully deployed structural profile pattern updates globally to all {selected_layout_label} installations!")
-                                time.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Transmission mutation failed: {str(e)}")
-
-                    if st.session_state[undo_stack_key]:
-                        last_action = st.session_state[undo_stack_key][-1]
-                        if st.button(f"↩️ Undo Structural Change (Revert {last_action['timestamp']})", type="secondary", use_container_width=True):
-                            st.session_state[undo_stack_key].pop()
-                            st.info("Reverted system variable parameters profile to snapshot tracking defaults. Rerunning layout...")
-                            time.sleep(0.5)
-                            st.rerun()
-                    else:
-                        st.caption("No dynamic change history snapshots available in this session cluster.")
-
-                with col_actions:
-                    st.markdown("#### 🛰️ Matrix Blueprint Grid Previewer")
-                    
-                    h_px = int(target_layout["h_cells"] * 25)
-                    w_px = int(target_layout["w_cells"] * 35)
-                    
-                    html_micro_template = f"""
-                    <div style="background:#0f172a; padding:18px; border-radius:12px; text-align:center; font-family:sans-serif;">
-                        <div style="margin-bottom: 10px; font-size:13px; color:#94a3b8;">
-                            Blueprint Bounds: <span style="color:#38bdf8; font-weight:bold;">{target_layout["w_cells"]}x{target_layout["h_cells"]} Grid Matrix Block</span>
-                        </div>
-                        <canvas id="micro_canvas" width="450" height="280" style="background:#020617; border:2px dashed #38bdf8; border-radius:8px;"></canvas>
-                    </div>
-                    <script>
-                        (function() {{
-                            const canvas = document.getElementById("micro_canvas");
-                            const ctx = canvas.getContext('2d');
-                            
-                            const rows = {row_pts};
-                            const cols = {col_pts};
-                            
-                            const boxW = {w_px};
-                            const boxH = {h_px};
-                            const bx = (canvas.width / 2) - (boxW / 2);
-                            const by = (canvas.height / 2) - (boxH / 2);
-                            
-                            ctx.fillStyle = '#1e293b';
-                            ctx.fillRect(bx, by, boxW, boxH);
-                            ctx.strokeStyle = '#38bdf8';
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(bx, by, boxW, boxH);
-                            
-                            if(rows > 0 && cols > 0) {{
-                                const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
-                                const colGap = (cols === 1) ? boxW / 2 : boxW / (cols - 1);
-                                
-                                for(let r = 0; r < rows; r++) {{
-                                    for(let c = 0; c < cols; c++) {{
-                                        let px = (rows === 1) ? bx + (boxW / 2) : bx + (c * colGap);
-                                        let py = (cols === 1) ? by + (boxH / 2) : by + (r * rowGap);
-                                        
-                                        if(rows === 1) py = by + (boxH / 2);
-                                        if(cols === 1) px = bx + (boxW / 2);
-
-                                        ctx.fillStyle = '#f43f5e';
-                                        ctx.beginPath();
-                                        ctx.arc(px, py, 5, 0, Math.PI * 2);
-                                        ctx.fill();
-                                        
-                                        ctx.strokeStyle = '#ffffff';
-                                        ctx.lineWidth = 1;
-                                        ctx.stroke();
-                                    }}
-                                }}
-                            }}
-                        }})();
-                    </script>
-                    """
-                    components.html(html_micro_template, height=360)
 
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
@@ -1025,8 +874,7 @@ else:
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Click / Lasso Strings</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inv to MVS</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="lasso_route"> 🎯 Lasso Route Inverters</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverter to MVS (Click or Drag Lasso)</label>
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
@@ -1158,15 +1006,18 @@ else:
                             
                             ctx.fillRect(x, y, w, h);
                             
-                            // STRING CONTURE BOUNDARIES & COLOR REACTION FOR SHARED BLOCKS
                             if (linkedInv) {
-                                ctx.strokeStyle = "#22d3ee"; 
-                                ctx.lineWidth = 1.75;
+                                ctx.strokeStyle = getCapacityColor(counts[linkedInv]); 
+                                ctx.lineWidth = 2.0; 
+                                ctx.strokeRect(x + 1, y + 1, w - 2, h - 2); 
+                                ctx.strokeStyle = "#ffffff";
+                                ctx.lineWidth = 0.75;
+                                ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
                             } else {
                                 ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
                                 ctx.lineWidth = 0.5;
+                                ctx.strokeRect(x, y, w, h);
                             }
-                            ctx.strokeRect(x, y, w, h);
 
                             if (linkedInv) {
                                 ctx.fillStyle = "rgba(0,0,0,0.85)";
@@ -1206,7 +1057,6 @@ else:
                             ctx.fillText(titleText, inv.x, by + 9);
                             ctx.fillText(countText, inv.x, by + 21);
 
-                            // Lasso Highlights
                             if (lassoSelectedInvertersList.includes(inv.id)) {
                                 ctx.strokeStyle = "#facc15";
                                 ctx.lineWidth = 3.5;
@@ -1232,7 +1082,7 @@ else:
 
                         ctx.restore();
 
-                        if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "lasso_route")) {
+                        if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "route")) {
                             ctx.strokeStyle = getActiveTool() === "string" ? "#a78bfa" : "#38bdf8"; 
                             ctx.lineWidth = 1.5;
                             ctx.fillStyle = getActiveTool() === "string" ? "rgba(167, 139, 250, 0.2)" : "rgba(56, 189, 248, 0.2)";
@@ -1296,9 +1146,8 @@ else:
                             startX = e.clientX - offsetX;
                             startY = e.clientY - offsetY;
                             canvas.style.cursor = "move";
-                        } else if (tool === "string" || tool === "lasso_route") {
-                            // Check single click selection/cancel logic first inside lasso_route tool
-                            if (tool === "lasso_route") {
+                        } else if (tool === "string" || tool === "route") {
+                            if (tool === "route") {
                                 let clickedInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
                                 if (clickedInv) {
                                     if (lassoSelectedInvertersList.includes(clickedInv.id)) {
@@ -1310,7 +1159,6 @@ else:
                                     return;
                                 }
                                 
-                                // Route to transformer station logic
                                 let clickedXfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
                                 if (clickedXfmrIdx !== -1 && lassoSelectedInvertersList.length > 0) {
                                     gridTopo.inverters.forEach(inv => {
@@ -1357,20 +1205,6 @@ else:
                             if (!hitString) {
                                 gridTopo.transformers.push({ x: world.x, y: world.y });
                                 draw();
-                            }
-                        } else if (tool === "route") {
-                            let invIdx = gridTopo.inverters.findIndex(i => Math.sqrt(Math.pow(world.x - i.x, 2) + Math.pow(world.y - i.y, 2)) <= 25);
-                            if (invIdx !== -1) {
-                                selectedInverterIndexForRouting = invIdx;
-                                tooltip.style.display = "block";
-                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer station box.";
-                            } else if (selectedInverterIndexForRouting !== null) {
-                                let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
-                                if (xfmrIdx !== -1) {
-                                    gridTopo.inverters[selectedInverterIndexForRouting].transformerId = xfmrIdx;
-                                    selectedInverterIndexForRouting = null;
-                                    draw();
-                                }
                             }
                         }
                     });
@@ -1461,8 +1295,7 @@ else:
                             let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
                             let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
                             
-                            // LASSO TOOL HIGHLIGHT MUTATION
-                            if (getActiveTool() === "lasso_route") {
+                            if (getActiveTool() === "route") {
                                 if (totalDragDistance > 5) {
                                     gridTopo.inverters.forEach(inv => {
                                         if (inv.x >= boxX1 && inv.x <= boxX2 && inv.y >= boxY1 && inv.y <= boxY2) {
@@ -1582,7 +1415,7 @@ else:
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
             
-            st.markdown("#### #### 📊 Current View of Pegging & Pillar Points Fleet-Wide Tracker Distribution Frameworks")
+            st.markdown("#### 🪵 Tracker Distribution Frameworks")
             layout_counts = {}
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")

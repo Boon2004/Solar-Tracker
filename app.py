@@ -1621,17 +1621,14 @@ else:
             elif selected_sched_aspect in ["mounting", "dc_cabling"]:
                 total_elements_count = len(active_table_data)
             elif selected_sched_aspect == "modules":
-                # Matches the exact pattern layout criteria found inside your summaries
-                for b in active_table_data:
-                    l_type = b.get("structure_type", "single_3x9")
-                    
-                    # Multiply structural tables by true physical panel distributions
-                    if l_type == "double_6x9":
-                        panel_density = 54  # 6 rows x 9 columns of modules
-                    else:
-                        panel_density = 27  # 3 rows x 9 columns of modules
+                    for b in zone_filtered_blocks:
+                        # Dynamically measure the physical grid layout footprint matrix
+                        grid_rows = int(b["max_r"] - b["min_r"] + 1)
+                        grid_cols = int(b["max_c"] - b["min_c"] + 1)
                         
-                    total_elements_count += panel_density
+                        # Determine panel density multiplier on the fly based on geometry
+                        panel_density = grid_rows * grid_cols
+                        zone_specific_element_count += panel_density
             elif selected_sched_aspect in ["inverter_structure", "inverter"]:
                 total_elements_count = len(topo_meta_obj.get("inverters", []))
             elif selected_sched_aspect in ["transformer", "ac_cabling"]:
@@ -1719,8 +1716,23 @@ else:
 
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:
+                st.markdown("---")
                 st.markdown("#### 📋 Active Operational Run-Sheets Master Calendar Configuration Profiles")
                 st.table(saved_schedules_res)
+                
+                # Render the standalone target wipe utility form panel
+                with st.form("admin_schedule_reset_form"):
+                    st.markdown("##### 🚨 Danger Zone: Reset Active Schedules")
+                    st.caption("This action completely clears out all assigned start dates, end dates, and target metrics for this project site layout.")
+                    
+                    if st.form_submit_button("⚠️ Reset & Clear All Active Milestones", type="primary"):
+                        try:
+                            supabase.table("project_schedules").delete().eq("farm_id", str(st.session_state.active_site_id)).execute()
+                            st.success("All scheduling timelines and targets have been successfully cleared!")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as reset_err:
+                            st.error(f"Failed to reset milestone timelines: {str(reset_err)}")
 
         # APPEND TAB 5 AT THE BOTTOM OF THE ADMIN CODE BLOCK:
         with setup_tabs[5]:

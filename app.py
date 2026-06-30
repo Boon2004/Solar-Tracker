@@ -49,10 +49,9 @@ def calculate_network_working_days(start, end):
     working_days = 0
     current_date = start
     while current_date <= end:
-        # weekday() returns 0 for Monday ... 5 for Saturday, 6 for Sunday
         if current_date.weekday() < 5:
             working_days += 1
-        current_date += timedelta(days=14 if isinstance(current_date, datetime) else 1)
+        current_date += timedelta(days=1)
         
     return working_days
 
@@ -94,24 +93,20 @@ if st.session_state.active_site_id is None:
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     
-                    # Initialize confirmation gate if not present
                     if "confirm_purge_gate" not in st.session_state:
                         st.session_state.confirm_purge_gate = False
                     if "purge_target_selected" not in st.session_state:
                         st.session_state.purge_target_selected = ""
 
-                    # If they changed the dropdown selection, reset the confirmation gate for safety
                     if st.session_state.purge_target_selected != wipe_target:
                         st.session_state.confirm_purge_gate = False
                         st.session_state.purge_target_selected = wipe_target
 
                     if not st.session_state.confirm_purge_gate:
-                        # Initial click button
                         if st.button("💥 Purge Cloud Data Records", type="primary"):
                             st.session_state.confirm_purge_gate = True
                             st.rerun()
                     else:
-                        # Revealed confirmation menu block after the initial click
                         st.error(f"🚨 **CRITICAL WARNING:** Are you sure you want to delete layout parameters for **{wipe_target}**? This cannot be undone.")
                         
                         col_purge1, col_purge2 = st.columns(2)
@@ -125,7 +120,6 @@ if st.session_state.active_site_id is None:
                                             supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                             st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
                                             
-                                            # Reset gate conditions
                                             st.session_state.confirm_purge_gate = False
                                             st.cache_resource.clear()
                                             time.sleep(1)
@@ -254,11 +248,9 @@ if st.session_state.active_site_id is None:
                     st.session_state.active_site_id = target_site_record["id"]
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
-                    
-                    # FIX: Instantly lock developer panel when entering a layout workspace
                     st.session_state.dev_unlocked = False 
-                    
                     st.rerun()
+
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING PLATFORM COMMAND CENTER
 # ==============================================================================
@@ -267,7 +259,6 @@ else:
     site_is_published = current_farm_record.get("is_published", False)
     site_bg_img = current_farm_record.get("background_image_url", "")
 
-    # Clean execution timestamp retrieval assignment
     current_system_date = get_operational_system_date(current_farm_record)
     current_date_str = str(current_system_date)
 
@@ -277,7 +268,6 @@ else:
     with st.sidebar:
         st.header("🔐 Workspace Clearances")
         
-        # Render credential panel input matrix ONLY if not currently authenticated
         if not st.session_state.is_admin_mode:
             with st.form("sidebar_management_credential_verification_form"):
                 admin_pass_input = st.text_input(
@@ -288,8 +278,7 @@ else:
                 submit_clearance = st.form_submit_button("Verify Clearance")
                 
                 if submit_clearance:
-                    # Replace "admin123" with your custom project security access password string if needed
-                    if admin_pass_input == "admin123":
+                    if admin_pass_input == str(st.session_state.admin_key_match):
                         st.session_state.is_admin_mode = True
                         st.success("Clearance authorized!")
                         time.sleep(0.4)
@@ -297,11 +286,9 @@ else:
                     else:
                         st.error("Invalid credentials block.")
                         
-        # Render administrative configuration widgets if authorized
         if st.session_state.is_admin_mode:
             st.success("⚡ Admin Permissions Active")
             
-            # Global operational app dark/light mode toggle
             app_theme = st.radio(
                 "Visual Dashboard Workspace Theme Profile:", 
                 ["Dark Mode", "Light Mode"], 
@@ -309,40 +296,13 @@ else:
             )
             
             st.markdown("---")
-            # Global operational simulation time-travel anchor widget
             current_system_date = st.date_input(
                 "Select System Operation Date Window:", 
-                value=current_system_date if 'current_system_date' in locals() else date.today(),
+                value=current_system_date,
                 help="Alters active calendar timeline perspectives for reporting shift segments."
             )
             current_date_str = str(current_system_date)
 
-    # ==============================================================================
-    # 🛰️ MAIN DASHBOARD APEX HEADER INTERFACE PANEL 
-    # ==============================================================================
-    col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: 
-        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
-    with col_h2:
-        if st.button("🚪 Exit Site", use_container_width=True): 
-            st.session_state.active_site_id = None
-            st.session_state.is_admin_mode = False
-            st.rerun()
-            
-    # Clean default theme tracking context state if admin toggle is hidden
-    col_h1, col_h2 = st.columns([8, 2])
-    with col_h1: 
-        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
-    with col_h2:
-        if st.button("🚪 Exit Site", use_container_width=True): 
-            st.session_state.active_site_id = None
-            st.session_state.is_admin_mode = False
-            st.rerun()
-            
-    # Clean default theme tracking context state if admin toggle is hidden
-    if not st.session_state.is_admin_mode:
-        app_theme = "Dark Mode"
-            
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
                 st.markdown("#### Create an Isolated Testing Sandbox")
@@ -356,7 +316,6 @@ else:
                             parent_farm_id = st.session_state.active_site_id
                             raw_topo_string = current_farm_record.get("background_image_url") or "{}"
                             
-                            # 1. Download ALL parent structures completely across pages
                             parent_structures = []
                             limit = 1000
                             offset = 0
@@ -367,7 +326,6 @@ else:
                                 if len(res_page) < limit: break
                                 offset += limit
 
-                            # 2. Instantiate the new farm master profile row
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": current_farm_record.get("admin_password", "ok"),
@@ -383,7 +341,6 @@ else:
                             if new_farm_response.data and parent_structures:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
                                 
-                                # 3. Replicate all structural components properties completely
                                 sandbox_structures = []
                                 for struct in parent_structures:
                                     sandbox_structures.append({
@@ -407,7 +364,6 @@ else:
                                     if res_batch.data:
                                         inserted_structures_fleet.extend(res_batch.data)
                                 
-                                # 4. Relational tracking index mapper dictionary
                                 id_mapping_dictionary = {}
                                 for old_s in parent_structures:
                                     match = next((new_s for new_s in inserted_structures_fleet 
@@ -417,29 +373,25 @@ else:
                                     if match:
                                         id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
                                 
-                                # 5. Parse, update, and validate string, inverter, and TS topographies
                                 try:
                                     if raw_topo_string.startswith("{"):
                                         topo_data = json.loads(raw_topo_string)
                                         
-                                        # Map panels IDs to strings channels
                                         if "stringGroups" in topo_data:
                                             new_string_groups = {}
                                             for old_key, inv_value in topo_data["stringGroups"].items():
                                                 parts = old_key.split("_")
                                                 old_base_id = parts[0]
-                                                suffix = f"_{parts[1]}" if len(parts) > 1 else ""
+                                                suffix = f"_{parts[1 Menn]}" if len(parts) > 1 else ""
                                                 
                                                 if old_base_id in id_mapping_dictionary:
                                                     new_base_id = id_mapping_dictionary[old_base_id]
                                                     new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                             topo_data["stringGroups"] = new_string_groups
                                         
-                                        # Recalculate Inverters positioning and protect TS relational references
                                         if "inverters" in topo_data:
                                             CELL = 14
                                             for inv in topo_data["inverters"]:
-                                                # Ensure transformer relationships default back safely to null instead of breaking if indices shifted
                                                 if "transformerId" in inv and inv["transformerId"] is not None:
                                                     if "transformers" in topo_data and (inv["transformerId"] >= len(topo_data["transformers"]) or inv["transformerId"] < 0):
                                                         inv["transformerId"] = None
@@ -462,7 +414,6 @@ else:
                                 except Exception:
                                     pass
                                 
-                                # Write corrected structure back to cloud database
                                 supabase.table("farms").update({"background_image_url": raw_topo_string}).eq("id", sandbox_farm_id).execute()
                                 
                                 st.cache_resource.clear()
@@ -536,6 +487,21 @@ else:
                 st.session_state.is_admin_mode = False
                 st.rerun()
 
+    # ==============================================================================
+    # 🛰️ MAIN DASHBOARD APEX HEADER INTERFACE PANEL 
+    # ==============================================================================
+    col_h1, col_h2 = st.columns([8, 2])
+    with col_h1: 
+        st.subheader(f"📍 Boon Solar Farm Tracking System — {st.session_state.active_site_name}")
+    with col_h2:
+        if st.button("🚪 Exit Site", use_container_width=True): 
+            st.session_state.active_site_id = None
+            st.session_state.is_admin_mode = False
+            st.rerun()
+            
+    if not st.session_state.is_admin_mode:
+        app_theme = "Dark Mode"
+
     if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
         st.rerun()
 
@@ -544,7 +510,6 @@ else:
         limit = 1000; offset = 0
         while True:
             try:
-                # UPDATE THIS LINE WITH THE NEW .order() CLAUSES:
                 res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
                 if not res: break
                 all_data.extend(res)
@@ -556,7 +521,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     if not active_table_data:
-        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet. Use the control configuration page above to import structural data files.")
+        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet.")
         st.stop()
 
     min_r = min([b.get("min_r", 1) for b in active_table_data])
@@ -582,7 +547,7 @@ else:
             "📌 Pegging & Piling Customizer",
             "🛰️ Unified Layout Planner & Topology Workspace",
             "📊 Executive Analytical Summary",
-            "📅 Schedulers & Targets Manager",  # <-- New Tab 4
+            "📅 Schedulers & Targets Manager",  
             "📈 Historical Progress Audit Log"
         ])
         
@@ -896,7 +861,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -917,7 +881,6 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -983,7 +946,6 @@ else:
 
                 st.write("---")
                 
-                # LOWER SECTION: Interactive Template Editor Selector Matrix
                 st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
                 selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 
@@ -1078,8 +1040,6 @@ else:
                         <input type="number" id="topo_inv_token" value="20" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
-                        
-                        
                         <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:10px 0px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; font-size:13px; line-height:normal; height:auto;">💾 Save Topologies</button>
                     </div>
 
@@ -1176,7 +1136,6 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1190,7 +1149,6 @@ else:
                             }
                         });
 
-                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
                         let inverterCellsMap = {};
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
@@ -1225,7 +1183,6 @@ else:
                             });
                         });
 
-                        // 3. String component tokens data overlays
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
                             if (!linkedInv) return;
@@ -1435,7 +1392,6 @@ else:
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
             
-            # Compute Core Structural Dataset Parameters
             layout_analysis = {}
             zone_module_counts = {}
             grand_total_trackers = 0
@@ -1454,7 +1410,6 @@ else:
                 else:
                     pins_per_unit = 12; r_f = 4; c_f = 3
                 
-                # Dynamic panel dimensions tracker math
                 grid_rows = int(block["max_r"] - block["min_r"] + 1)
                 grid_cols = int(block["max_c"] - block["min_c"] + 1)
                 modules_per_tracker = int(grid_rows * grid_cols)
@@ -1479,9 +1434,6 @@ else:
                 grand_total_pegging_points += pins_per_unit
                 grand_total_actual_modules += modules_per_tracker
 
-            # ==================================================================
-            # LEVEL 1: WHOLE PLANT KEY PERFORMANCE METRICS CARD DECK
-            # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Fleet Summary")
             
             col_p1, col_p2, col_p3, col_p4 = st.columns(4)
@@ -1492,7 +1444,6 @@ else:
             
             st.write("")
             
-            # Split Layout: Architectural Breakdown Left | Regional Allocation Cards Right
             split_cols = st.columns([5, 5])
             
             with split_cols[0]:
@@ -1510,13 +1461,11 @@ else:
                 
             with split_cols[1]:
                 st.markdown("**Dynamic Modules Count by Zone**")
-                # Group modules inside adjacent stacked miniature subcards columns cleanly
                 sub_cards = st.columns(len(zone_module_counts) if zone_module_counts else 1)
                 for idx, z_key in enumerate(sorted(zone_module_counts.keys())):
                     with sub_cards[idx]:
                         st.info(f"**{z_key.upper()}**\n\n🔹 `{zone_module_counts[z_key]['trackers']}` Trackers\n\n🔹 `{zone_module_counts[z_key]['modules']}` Panels")
 
-            # Inline configuration capacity tracker log logic
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
                 bucket_key = f"{s_count} Strings Load"
@@ -1539,9 +1488,6 @@ else:
             
             st.write("---")
             
-            # ==================================================================
-            # LEVEL 2: REGIONAL ZONE COMPONENT ALLOCATION METRICS BREAKDOWN
-            # ==================================================================
             st.subheader("🗺️ LEVEL 2: Regional Zone Operations Summary Ledger")
             
             zone_metrics_rows = []
@@ -1556,9 +1502,7 @@ else:
             st.table(zone_metrics_rows)
             
             st.write("---")
-            # ==================================================================
-            # LEVEL 3: MVS TRANSFORMER STATION INTERCONNECTION REGISTRY
-            # ==================================================================
+            
             st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Interconnections")
             st.write(f"**Total Medium Voltage Infrastructure Pool:** `{len(transformers_list)} Active Stations Registered`")
             
@@ -1575,6 +1519,7 @@ else:
                 })
             st.table(ts_summary_table)
         
+        # --- STAGE 5: SCHEDULERS & TARGETS MANAGER ---
         with setup_tabs[4]:
             st.markdown("### 📅 Production Scheduling Timeline & Daily Run-Rate Targeting Deck")
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
@@ -1675,6 +1620,7 @@ else:
                         except Exception as reset_err:
                             st.error(f"Failed to reset milestone timelines: {str(reset_err)}")
 
+        # --- STAGE 6: HISTORICAL PROGRESS AUDIT LOGS ---
         with setup_tabs[5]:
             st.markdown("### 📈 Historical Operations Playback & Audit Engine Logs")
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
@@ -1688,10 +1634,10 @@ else:
             else:
                 st.caption("No written field entry logs found matching this evaluation criteria configuration profile window context.")
 
+    # ==============================================================================
+    # 👷 LIVE PRODUCTION CREW WORKSPACE MAPPING DASHBOARDS
+    # ==============================================================================
     else:
-        # ==============================================================================
-        # 👷 LIVE PRODUCTION CREW WORKSPACE MAPPING DASHBOARDS
-        # ==============================================================================
         st.markdown("### 🛰️ Live Production Crew Workspace Mapping Dashboards")
         
         aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
@@ -1700,7 +1646,6 @@ else:
         active_zone_profile = "Global" if selected_crew_aspect == "transformer" else "Zone A"
         schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).execute().data
         
-        # Guard Execution Scope: Lockout interface entirely if admin has not initialized schedule parameters
         if not schedule_meta:
             st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
             st.info("This deployment map layer will automatically activate as soon as milestones are published in the Admin control suite.")
@@ -1711,7 +1656,6 @@ else:
 
         st.markdown(f"#### 🛰️ Active Map Layer Profile View: `{selected_crew_aspect.upper()}`")
         
-        # Theme declaration safely evaluated before HTML context binds
         is_light_theme = "true" if app_theme == "Light Mode" else "false"
         
         html_execution_engine = """
@@ -1909,7 +1853,7 @@ else:
                 
                 supabase.table("daily_progress_logs").upsert({
                     "farm_id": str(st.session_state.active_site_id),
-                    "aspect": str(selected_crew_aspect),
+                    "aspect": safe_aspect if 'safe_aspect' in locals() else str(selected_crew_aspect),
                     "zone": str(active_zone_profile),
                     "log_date": str(current_date_str),
                     "target_units": safe_target,

@@ -25,18 +25,13 @@ st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 # --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
 st.markdown("""
     <style>
-    /* 1. Target and hide the entire sub-container that holds GitHub and the Edit buttons */
     div[data-testid="stAppToolbar"] > div:has(a),
     div[data-testid="stAppToolbar"] div[class*="stActionButton"]:not(:has(button[data-testid="stActionButtonDropdown"])) {
         display: none !important;
     }
-
-    /* 2. Target any loose anchor tags (links) inside the toolbar and kill them */
     div[data-testid="stAppToolbar"] a {
         display: none !important;
     }
-
-    /* 3. Strict structural exception: Force the three-dots popover wrapper to remain visible */
     div[data-testid="stAppToolbar"] div:has(button[data-testid="stActionButtonDropdown"]),
     button[data-testid="stActionButtonDropdown"] {
         display: inline-flex !important;
@@ -50,6 +45,7 @@ if "is_admin_mode" not in st.session_state: st.session_state.is_admin_mode = Fal
 if "managed_zones" not in st.session_state: 
     st.session_state.managed_zones = ["Zone A", "Zone B", "Zone C", "Unassigned"]
 if "custom_tabs" not in st.session_state: st.session_state.custom_tabs = []
+if "time_travel_date" not in st.session_state: st.session_state.time_travel_date = None
 
 def fetch_farms_directory():
     try:
@@ -59,6 +55,35 @@ def fetch_farms_directory():
 
 all_registered_farms = fetch_farms_directory()
 farm_options = [f["name"] for f in all_registered_farms]
+
+# Helper to identify current target operational window context date
+def get_operational_date():
+    if st.session_state.is_admin_mode and st.session_state.time_travel_date:
+        return st.session_state.time_travel_date
+    return date.today()
+
+# Helper to calculate working business days (Mon-Fri) within active dates bounds
+def calculate_working_days(start: date, end: date) -> int:
+    if start > end: return 0
+    days = 0
+    curr = start
+    while curr <= end:
+        if curr.weekday() < 5: days += 1
+        curr += timedelta(days=1)
+    return max(days, 1)
+
+# Mapping indices metadata constants
+aspects_dictionary = {
+    "pegging": "📌 Pegging Phase",
+    "piling": "🪵 Piling Operations",
+    "mounting": "🏗️ Mounting Structures",
+    "module": "☀️ PV Module Tracking",
+    "inverter_struct": "🔧 Inverter Structure",
+    "inverter": "⚡ Inverter Node",
+    "transformer_station": "🏪 Transformer Station",
+    "dc_cabling": "🔌 DC Cabling Interconnect",
+    "ac_cabling": "🔗 AC Cabling Tie"
+}
 
 # ==============================================================================
 # 🏡 MAIN ENTRY SITE GATEWAY
@@ -89,24 +114,20 @@ if st.session_state.active_site_id is None:
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     
-                    # Initialize confirmation gate if not present
                     if "confirm_purge_gate" not in st.session_state:
                         st.session_state.confirm_purge_gate = False
                     if "purge_target_selected" not in st.session_state:
                         st.session_state.purge_target_selected = ""
 
-                    # If they changed the dropdown selection, reset the confirmation gate for safety
                     if st.session_state.purge_target_selected != wipe_target:
                         st.session_state.confirm_purge_gate = False
                         st.session_state.purge_target_selected = wipe_target
 
                     if not st.session_state.confirm_purge_gate:
-                        # Initial click button
                         if st.button("💥 Purge Cloud Data Records", type="primary"):
                             st.session_state.confirm_purge_gate = True
                             st.rerun()
                     else:
-                        # Revealed confirmation menu block after the initial click
                         st.error(f"🚨 **CRITICAL WARNING:** Are you sure you want to delete layout parameters for **{wipe_target}**? This cannot be undone.")
                         
                         col_purge1, col_purge2 = st.columns(2)
@@ -117,10 +138,11 @@ if st.session_state.active_site_id is None:
                                         target_farm = next((f for f in all_registered_farms if f["name"] == wipe_target), None)
                                         if target_farm:
                                             supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
+                                            supabase.table("aspect_schedules").delete().eq("farm_id", target_farm["id"]).execute()
+                                            supabase.table("daily_progress_log").delete().eq("farm_id", target_farm["id"]).execute()
                                             supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                             st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
                                             
-                                            # Reset gate conditions
                                             st.session_state.confirm_purge_gate = False
                                             st.cache_resource.clear()
                                             time.sleep(1)
@@ -249,15 +271,26 @@ if st.session_state.active_site_id is None:
                     st.session_state.active_site_id = target_site_record["id"]
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
-                    
-                    # FIX: Instantly lock developer panel when entering a layout workspace
                     st.session_state.dev_unlocked = False 
-                    
                     st.rerun()
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING PLATFORM COMMAND CENTER
 # ==============================================================================
 else:
+    def load_site_isolated_tables(farm_id):
+        all_data = []
+        limit = 1000
+        offset = 0
+        while True:
+            try:
+                res = supabase.table("structures").select("*, pegging_pins_state, piling_pins_state, modules_state, inverter_struct_status, inverter_status, transformer_status, dc_cabling_status, ac_cabling_status").eq("farm_id", farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
+                if not res: break
+                all_data.extend(res)
+                if len(res) < limit: break
+                offset += limit
+            except Exception: break
+        return all_data
+
     current_farm_record = supabase.table("farms").select("*").eq("id", st.session_state.active_site_id).execute().data[0]
     site_is_published = current_farm_record.get("is_published", False)
     site_bg_img = current_farm_record.get("background_image_url", "")
@@ -269,6 +302,7 @@ else:
         if st.button("🚪 Exit Site", use_container_width=True): 
             st.session_state.active_site_id = None
             st.session_state.is_admin_mode = False
+            st.session_state.time_travel_date = None
             st.rerun()
             
     with st.sidebar:
@@ -286,6 +320,15 @@ else:
         else:
             st.success("⚡ Admin Permissions Active")
             
+            # --- TIME TRAVEL OVERRIDE WIDGET PANEL ---
+            st.markdown("---")
+            st.subheader("🕒 Historic Late Entry Adjuster")
+            tt_flag = st.checkbox("Unlock Temporal State Backfills", value=(st.session_state.time_travel_date is not None))
+            if tt_flag:
+                st.session_state.time_travel_date = st.date_input("Target History Entry Window:", value=st.session_state.time_travel_date if st.session_state.time_travel_date else date.today())
+            else:
+                st.session_state.time_travel_date = None
+            
             st.write("---")
             with st.expander("🧪 Dynamic Workspace Duplicator", expanded=False):
                 st.markdown("#### Create an Isolated Testing Sandbox")
@@ -299,7 +342,6 @@ else:
                             parent_farm_id = st.session_state.active_site_id
                             raw_topo_string = current_farm_record.get("background_image_url") or "{}"
                             
-                            # 1. Download ALL parent structures completely across pages
                             parent_structures = []
                             limit = 1000
                             offset = 0
@@ -310,7 +352,6 @@ else:
                                 if len(res_page) < limit: break
                                 offset += limit
 
-                            # 2. Instantiate the new farm master profile row
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": current_farm_record.get("admin_password", "ok"),
@@ -326,7 +367,6 @@ else:
                             if new_farm_response.data and parent_structures:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
                                 
-                                # 3. Replicate all structural components properties completely
                                 sandbox_structures = []
                                 for struct in parent_structures:
                                     sandbox_structures.append({
@@ -350,7 +390,6 @@ else:
                                     if res_batch.data:
                                         inserted_structures_fleet.extend(res_batch.data)
                                 
-                                # 4. Relational tracking index mapper dictionary
                                 id_mapping_dictionary = {}
                                 for old_s in parent_structures:
                                     match = next((new_s for new_s in inserted_structures_fleet 
@@ -360,12 +399,10 @@ else:
                                     if match:
                                         id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
                                 
-                                # 5. Parse, update, and validate string, inverter, and TS topographies
                                 try:
                                     if raw_topo_string.startswith("{"):
                                         topo_data = json.loads(raw_topo_string)
                                         
-                                        # Map panels IDs to strings channels
                                         if "stringGroups" in topo_data:
                                             new_string_groups = {}
                                             for old_key, inv_value in topo_data["stringGroups"].items():
@@ -378,11 +415,9 @@ else:
                                                     new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                             topo_data["stringGroups"] = new_string_groups
                                         
-                                        # Recalculate Inverters positioning and protect TS relational references
                                         if "inverters" in topo_data:
                                             CELL = 14
                                             for inv in topo_data["inverters"]:
-                                                # Ensure transformer relationships default back safely to null instead of breaking if indices shifted
                                                 if "transformerId" in inv and inv["transformerId"] is not None:
                                                     if "transformers" in topo_data and (inv["transformerId"] >= len(topo_data["transformers"]) or inv["transformerId"] < 0):
                                                         inv["transformerId"] = None
@@ -402,12 +437,9 @@ else:
                                                         inv["y"] = (new_block["min_r"] * CELL) + (((new_block["max_r"] - new_block["min_r"] + 1) * CELL) / 2)
                                                         
                                         raw_topo_string = json.dumps(topo_data)
-                                except Exception:
-                                    pass
+                                except Exception: pass
                                 
-                                # Write corrected structure back to cloud database
                                 supabase.table("farms").update({"background_image_url": raw_topo_string}).eq("id", sandbox_farm_id).execute()
-                                
                                 st.cache_resource.clear()
                                 st.success("🎉 100% Perfect Clone Created! Panels, Inverters, Strings, and TS Hubs are identical.")
                                 time.sleep(1.5)
@@ -477,25 +509,11 @@ else:
                     
             if st.button("🔒 Revoke Admin Clearances", use_container_width=True): 
                 st.session_state.is_admin_mode = False
+                st.session_state.time_travel_date = None
                 st.rerun()
 
     if st.button("🔄 Reload Workspace Map from Database", type="secondary"):
         st.rerun()
-
-    def load_site_isolated_tables(farm_id):
-        all_data = []
-        limit = 1000
-        offset = 0
-        while True:
-            try:
-                # FIX: Order spatially by row and column instead of by database ID
-                res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
-                if not res: break
-                all_data.extend(res)
-                if len(res) < limit: break
-                offset += limit
-            except Exception: break
-        return all_data
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
@@ -520,12 +538,17 @@ else:
     
     clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
 
+    # ==============================================================================
+    # 👑 REGION A: ADMIN WORKSPACE LAYOUT & MANAGEMENT tabs
+    # ==============================================================================
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
             "🖼️ Base Overview & Zone Assignation", 
             "📌 Pegging & Piling Customizer",
             "🛰️ Unified Layout Planner & Topology Workspace",
-            "📊 Executive Analytical Summary"
+            "📊 Executive Analytical Summary",
+            "🗓️ Aspect Timeline Master Scheduler",
+            "📈 Progress History & Log Viewer"
         ])
         
         # --- STAGE 1: SETUPS OVERVIEW & ZONE ASSIGNATION ---
@@ -838,7 +861,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -859,7 +881,6 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -924,8 +945,6 @@ else:
                         components.html(html_current_view, height=220)
 
                 st.write("---")
-                
-                # LOWER SECTION: Interactive Template Editor Selector Matrix
                 st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
                 selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 
@@ -936,7 +955,6 @@ else:
                 if f"{state_prefix}_cols" not in st.session_state: st.session_state[f"{state_prefix}_cols"] = 4
 
                 col_inputs, col_actions = st.columns([4, 6])
-                
                 with col_inputs:
                     row_pts = st.number_input("Array Points per Row Count (Rows stacked vertically):", min_value=1, max_value=20, key=f"{state_prefix}_rows")
                     col_pts = st.number_input("Array Points per Column Count (Columns lined horizontally):", min_value=1, max_value=20, key=f"{state_prefix}_cols")
@@ -950,13 +968,11 @@ else:
                                 encoded_group_signature = int((row_pts * 100) + col_pts)
                                 supabase.table("structures").update({
                                     "section_group": encoded_group_signature
-                                }).eq("farm_id", st.session_state.active_site_id)\
-                                  .eq("structure_type", target_layout["type_string"]).execute()
+                                }).eq("farm_id", st.session_state.active_site_id).eq("structure_type", target_layout["type_string"]).execute()
                                 
                                 st.cache_resource.clear()
                                 st.success("Updated fleet configuration profiles cleanly!")
-                                time.sleep(0.5)
-                                st.rerun()
+                                time.sleep(0.5); st.rerun()
                             except Exception as e:
                                 st.error(f"Transmission mutation failure occurred: {str(e)}")
 
@@ -1000,7 +1016,6 @@ else:
         # --- STAGE 3: UNIFIED LAYOUT PLANNER & DC TOPOLOGY WORKSPACE ---
         with setup_tabs[2]:
             st.markdown("### 🔌 Microscale Grid Infrastructure Topologies, Stringing & Drop Station Routing")
-            
             stored_metadata_string = current_farm_record.get("background_image_url") if (current_farm_record.get("background_image_url") and current_farm_record.get("background_image_url").startswith("{")) else "{}"
             
             html_topology_workspace = """
@@ -1013,30 +1028,23 @@ else:
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverters to MVS (Click / Drag Lasso)</label>
-                        
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
                         <label style="font-size:11px; color:#94a3b8;">Target Inverter ID #:</label>
                         <input type="number" id="topo_inv_token" value="20" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
-                        
                         <hr style="border-color:#1e293b; margin:14px 0;">
-                        
-                        
                         <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:10px 0px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; font-size:13px; line-height:normal; height:auto;">💾 Save Topologies</button>
                     </div>
-
                     <div style="position:relative;">
                         <div id="topo_tooltip" style="position:absolute; display:none; background:rgba(15,23,42,0.95); border:1px solid #38bdf8; padding:8px; border-radius:4px; font-size:12px; pointer-events:none; z-index:99999; color:#f8fafc; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
                         <canvas id="topo_canvas" width="1120" height="600" style="background:#020617; border-radius:8px; border:1px solid #1e293b; display:block;"></canvas>
                     </div>
                 </div>
             </div>
-
             <script>
                 (function() {
                     const databaseStructures = JSON.parse(atob("__JSON_DATA_B64__"));
                     let gridTopo = JSON.parse(atob("__TOPOLOGY_METADATA_B64__"));
-                    
                     if (!gridTopo.inverters) gridTopo.inverters = [];
                     if (!gridTopo.transformers) gridTopo.transformers = [];
                     if (!gridTopo.stringGroups) gridTopo.stringGroups = {};
@@ -1081,27 +1089,17 @@ else:
 
                     let isPanning = false, isSelecting = false;
                     let startX = 0, startY = 0, currX = 0, currY = 0;
-                    let selectedInverterIndexForRouting = null;
                     let lassoSelectedInvertersList = [];
 
                     canvas.addEventListener("contextmenu", e => e.preventDefault());
-
-                    function getActiveTool() {
-                        return document.querySelector('input[name="topo_tool"]:checked').value;
-                    }
+                    function getActiveTool() { return document.querySelector('input[name="topo_tool"]:checked').value; }
 
                     function getCapacityColor(stringCount) {
                         if (stringCount <= 0) return "#1e293b";
-                        const palette = [
-                            "#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", 
-                            "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"
-                        ];
+                        const palette = ["#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"];
                         return palette[(stringCount - 1) % palette.length];
                     }
-
-                    function isInverterPlaced(invId) {
-                        return gridTopo.inverters.some(i => i.id === parseInt(invId));
-                    }
+                    function isInverterPlaced(invId) { return gridTopo.inverters.some(i => i.id === parseInt(invId)); }
 
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1118,63 +1116,13 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
                             let linkedInv = gridTopo.stringGroups[s.id];
-                            
                             ctx.fillStyle = linkedInv ? (isInverterPlaced(linkedInv) ? getCapacityColor(counts[linkedInv]) : "#d97706") : "#1e293b";
                             ctx.fillRect(x, y, w, h);
-                            
-                            if (!linkedInv) {
-                                ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                            }
-                        });
-
-                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
-                        let inverterCellsMap = {};
-                        independentStrings.forEach(s => {
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv) return;
-                            if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
-                            inverterCellsMap[linkedInv].push(s);
-                        });
-
-                        Object.keys(inverterCellsMap).forEach(invId => {
-                            let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff0000"; 
-                            ctx.lineWidth = 4.0;
-                            ctx.lineJoin = "miter";
-
-                            cellBlocks.forEach(b => {
-                                let x = b.min_c * CELL;
-                                let y = b.min_r * CELL;
-                                let w = (b.max_c - b.min_c + 1) * CELL;
-                                let h = (b.max_r - b.min_r + 1) * CELL;
-
-                                let topShared = cellBlocks.some(other => b !== other && b.min_r > other.min_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (b.min_r - other.max_r <= 5 || other.parentId === b.parentId));
-                                let bottomShared = cellBlocks.some(other => b !== other && b.max_r < other.max_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (other.min_r - b.max_r <= 5 || other.parentId === b.parentId));
-                                let leftShared = cellBlocks.some(other => b !== other && b.min_c > other.min_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (b.min_c - other.max_c <= 5));
-                                let rightShared = cellBlocks.some(other => b !== other && b.max_c < other.max_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (other.min_c - b.max_c <= 5));
-
-                                ctx.beginPath();
-                                if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
-                                if (!bottomShared) { ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); }
-                                if (!leftShared) { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
-                                if (!rightShared) { ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); }
-                                ctx.stroke();
-                            });
-                        });
-
-                        // 3. String component tokens data overlays
-                        independentStrings.forEach(s => {
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv) return;
-                            let x = s.min_c * CELL; let y = s.min_r * CELL;
-                            ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(x + 2, y + 2, 35, 11);
-                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 7px sans-serif";
-                            ctx.fillText("I-" + linkedInv, x + 4, y + 10);
+                            if (!linkedInv) { ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h); }
                         });
 
                         gridTopo.inverters.forEach(inv => {
@@ -1182,16 +1130,13 @@ else:
                             let tsPrefix = inv.transformerId !== null && gridTopo.transformers[inv.transformerId] ? "TS" + (inv.transformerId + 1) + "-" : "";
                             let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
                             let countText = strCount + " STRINGS";
-
                             ctx.font = "bold 9px sans-serif";
                             let badgeW = Math.max(ctx.measureText(titleText).width + 12, ctx.measureText(countText).width + 12, 65);
                             let badgeH = 26; let bx = inv.x - (badgeW / 2); let by = inv.y - (badgeH / 2);
-
                             ctx.fillStyle = "#ff0000"; ctx.fillRect(bx, by, badgeW, badgeH / 2);
                             ctx.fillStyle = getCapacityColor(strCount); ctx.fillRect(bx, by + (badgeH / 2), badgeW, badgeH / 2);
                             ctx.fillStyle = "#ffffff"; ctx.textAlign = "center";
                             ctx.fillText(titleText, inv.x, by + 9); ctx.fillText(countText, inv.x, by + 21);
-
                             ctx.strokeStyle = lassoSelectedInvertersList.includes(inv.id) ? "#facc15" : "#ffffff";
                             ctx.lineWidth = lassoSelectedInvertersList.includes(inv.id) ? 3.5 : 1; ctx.strokeRect(bx, by, badgeW, badgeH);
                         });
@@ -1202,7 +1147,6 @@ else:
                             ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
                             ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
                         });
-
                         ctx.restore();
 
                         if (isSelecting && (getActiveTool() === "string" || getActiveTool() === "route")) {
@@ -1217,7 +1161,6 @@ else:
 
                     canvas.addEventListener("mousedown", e => {
                         const m = getMouseLocation(e); const world = transformToWorldSpace(m); const tool = getActiveTool();
-
                         if (e.button === 2) {
                             if (tool === "transformer") {
                                 let tIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
@@ -1225,29 +1168,21 @@ else:
                                     gridTopo.transformers.splice(tIdx, 1);
                                     gridTopo.inverters.forEach(i => { if (i.transformerId === tIdx) i.transformerId = null; else if (i.transformerId > tIdx) i.transformerId -= 1; });
                                 }
-                                draw();
-                                return;
+                                draw(); return;
                             }
                             if (tool === "inverter") {
                                 gridTopo.inverters = gridTopo.inverters.filter(inv => {
                                     let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
-                                    if (isHit) {
-                                        Object.keys(gridTopo.stringGroups).forEach(key => {
-                                            if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key];
-                                        });
-                                    }
+                                    if (isHit) { Object.keys(gridTopo.stringGroups).forEach(key => { if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key]; }); }
                                     return !isHit;
                                 });
                                 draw(); return;
                             }
-                            
-                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
-                            return;
+                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move"; return;
                         }
 
-                        if (tool === "pan") {
-                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
-                        } else if (tool === "string" || tool === "route") {
+                        if (tool === "pan") { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move"; }
+                        else if (tool === "string" || tool === "route") {
                             if (tool === "route") {
                                 let clickedInv = gridTopo.inverters.find(inv => Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25);
                                 if (clickedInv) {
@@ -1280,30 +1215,7 @@ else:
                         const m = getMouseLocation(e); const world = transformToWorldSpace(m);
                         if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); return; }
                         else if (isSelecting) { currX = m.x; currY = m.y; draw(); return; }
-
                         let match = false;
-                        gridTopo.transformers.forEach((t, idx) => {
-                            if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
-                                let list = gridTopo.inverters.filter(i => i.transformerId === idx).map(i => "INV " + i.id).join(", ");
-                                tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
-                                tooltip.innerHTML = `<b>🏪 Transformer Hub</b><br>Station: TS ${idx+1}<br>Fed by: [ ${list || 'None'} ]`; match = true;
-                            }
-                        });
-                        if (!match) {
-                            gridTopo.inverters.forEach(inv => {
-                                if (Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 25) {
-                                    tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
-                                    tooltip.innerHTML = `<b>⚡ Inverter Node</b><br>ID: ##${inv.id}<br>Route: ${inv.transformerId !== null ? 'TS ' + (inv.transformerId+1) : 'Unassigned'}`; match = true;
-                                }
-                            });
-                        }
-                        if (!match) {
-                            let s = independentStrings.find(s => world.x >= s.min_c*CELL && world.x <= (s.max_c+1)*CELL && world.y >= s.min_r*CELL && world.y <= (s.max_r+1)*CELL);
-                            if (s) {
-                                tooltip.style.display = "block"; tooltip.style.left = (m.x+15)+"px"; tooltip.style.top = (m.y+15)+"px";
-                                tooltip.innerHTML = `<b>☀️ String Table</b><br>Label: ${s.label}<br>Inverter: ${gridTopo.stringGroups[s.id] || 'None'}`; match = true;
-                            }
-                        }
                         if (!match) tooltip.style.display = "none";
                     });
 
@@ -1317,27 +1229,28 @@ else:
                             let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
 
                             if (getActiveTool() === "route") {
-                                if (dist > 5) {
-                                    gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });
-                                }
+                                if (dist > 5) { gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } }); }
                                 draw(); return;
                             }
-
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
                             let isLassoSelection = dist > 5;
                             let boxSelected = independentStrings.filter(s => {
                                 let cx = s.min_c * CELL; let cy = s.min_r * CELL;
                                 let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
-                                if (!isLassoSelection) {
-                                    return (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
-                                } else {
-                                    return (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2);
-                                }
+                                return isLassoSelection ? (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) : (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
                             });
-                            
                             boxSelected.forEach(s => { if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { if (!isLassoSelection && gridTopo.stringGroups[s.id] === activeInv) delete gridTopo.stringGroups[s.id]; else gridTopo.stringGroups[s.id] = activeInv; } });
                             draw();
                         }
+                    });
+
+                    document.getElementById("btn_topo_save").addEventListener("click", async () => {
+                        await fetch("SUPABASE_URL_VAL/rest/v1/farms?id=eq.ACTIVE_SITE_ID_VAL", {
+                            method: "PATCH",
+                            headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                            body: JSON.stringify({ "background_image_url": json.dumps(gridTopo) })
+                        });
+                        alert("Topologies committed safely!");
                     });
 
                     canvas.addEventListener("wheel", e => {
@@ -1345,27 +1258,21 @@ else:
                         scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
                         offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
-
                     draw();
                 })();
             </script>
             """
             html_topology_workspace = html_topology_workspace.replace("__JSON_DATA_B64__", b64_json_data)\
                                                              .replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(stored_metadata_string.encode("utf-8")).decode("utf-8"))\
-                                                             .replace("MIN_C_VAL", str(min_c))\
-                                                             .replace("MAX_C_VAL", str(max_c))\
-                                                             .replace("MIN_R_VAL", str(min_r))\
-                                                             .replace("MAX_R_VAL", str(max_r))\
-                                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
-                                                             .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                                             .replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c))\
+                                                             .replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))\
+                                                             .replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
                                                              .replace("ACTIVE_SITE_ID_VAL", str(st.session_state.active_site_id))
-            
             components.html(html_topology_workspace, height=660)
 
-        # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
+        # --- STAGE 4: EXECUTIVE SUMMARY TAB ---
         with setup_tabs[3]:
             st.markdown("## 📊 Executive Analytical Summary Dashboard Panel")
-            
             try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
             except Exception: topo_meta = {}
             inverters_list = topo_meta.get("inverters", [])
@@ -1376,11 +1283,7 @@ else:
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
             
-            # ==================================================================
-            # LEVEL 1: WHOLE PLANT HOLISTIC SUMMARY OVERVIEW
-            # ==================================================================
-            st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
-            
+            st.subheader("Whole Plant Operational Fleet Totals")
             layout_analysis = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
@@ -1388,184 +1291,84 @@ else:
             for block in active_table_data:
                 l_type = block.get("structure_type", "single_3x9")
                 enc_val = block.get("section_group") if block.get("section_group") is not None else 403
-                
-                if enc_val > 100:
-                    r_f = int(enc_val // 100)
-                    c_f = int(enc_val % 100)
-                    pins_per_unit = int(r_f * c_f)
-                else:
-                    if enc_val == 12: pins_per_unit, r_f, c_f = 12, 3, 4
-                    elif enc_val == 6: pins_per_unit, r_f, c_f = 6, 2, 3
-                    else: pins_per_unit, r_f, c_f = 12, 4, 3
+                pins_per_unit = (int(enc_val // 100) * int(enc_val % 100)) if enc_val > 100 else 12
                 
                 if l_type not in layout_analysis:
-                    layout_analysis[l_type] = {
-                        "tracker_count": 0,
-                        "pins_per_unit": pins_per_unit,
-                        "matrix_shape": f"{r_f} Rows × {c_f} Columns",
-                        "total_pins": 0
-                    }
+                    layout_analysis[l_type] = {"tracker_count": 0, "total_pins": 0}
                 layout_analysis[l_type]["tracker_count"] += 1
                 layout_analysis[l_type]["total_pins"] += pins_per_unit
                 grand_total_trackers += 1
                 grand_total_pegging_points += pins_per_unit
 
-            summary_metrics_rows = []
-            for l_name, metrics in layout_analysis.items():
-                summary_metrics_rows.append({
-                    "Structure Architecture Pattern": l_name.upper(),
-                    "Total Trackers Installed": metrics["tracker_count"],
-                    "Matrix Shape Proportions": metrics["matrix_shape"],
-                    "Pins Configured Per Unit": f"{metrics['pins_per_unit']} Pts",
-                    "Aggregate Pegging Pinpoints Total": f"{metrics['total_pins']} Pts"
-                })
-            st.table(summary_metrics_rows)
+            st.metric("Total Tracker Structures", f"{grand_total_trackers} Units")
+
+        # --- STAGE 5: ASPECT TIMELINE MASTER SCHEDULER ---
+        with setup_tabs[4]:
+            st.markdown("### 🗓️ Project Scheduling Timeline Assignation Deck")
+            sched_res = supabase.table("aspect_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            schedules_index = {(item["zone_label"], item["aspect_key"]): item for item in sched_res}
             
-            col_plant1, col_plant2, col_plant3 = st.columns(3)
-            with col_plant1: st.metric("Plant Total Tracker Structures Installed", f"{grand_total_trackers} Units")
-            with col_plant2: st.metric("Plant Total Configured Pegging Pinpoints", f"{grand_total_pegging_points} Coordinates")
-            with col_plant3: st.metric("Plant Active Transrelation Inverter Hubs", f"{len(inverters_list)} INVs")
-            
-            global_capacity_buckets = {}
-            for inv_id, s_count in global_inv_string_distribution.items():
-                bucket_key = f"{s_count} Strings Loading Capacity"
-                if bucket_key not in global_capacity_buckets:
-                    global_capacity_buckets[bucket_key] = []
-                global_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
+            with st.form("scheduling_batch_form"):
+                col_sch1, col_sch2 = st.columns(2)
+                with col_sch1: select_sz = st.selectbox("Target Operations Zone Registry:", st.session_state.managed_zones)
+                with col_sch2: select_sa = st.selectbox("Target Construction Aspect Phase:", list(aspects_dictionary.keys()), format_func=lambda x: aspects_dictionary[x])
                 
-            if global_capacity_buckets:
-                st.markdown("**Global Inverter Breakdown by String Capacities Configuration Tally:**")
-                g_bucket_rows = []
-                for b_name, inv_badge_list in global_capacity_buckets.items():
-                    sorted_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
-                    g_bucket_rows.append({
-                        "String Loading Distribution Capacity": b_name,
-                        "Total Combined Inverters Tally": len(sorted_inv_badges),
-                        "Numerical Sequence Mapped Inverters": ", ".join(sorted_inv_badges)
+                match_existing = schedules_index.get((select_sz, select_sa), {})
+                default_start = datetime.strptime(match_existing["start_date"], "%Y-%m-%d").date() if match_existing else date.today()
+                default_end = datetime.strptime(match_existing["end_date"], "%Y-%m-%d").date() if match_existing else date.today() + timedelta(days=14)
+                
+                col_dp1, col_dp2 = st.columns(2)
+                with col_dp1: val_start = st.date_input("Scheduled Commencement Date:", value=default_start, key="sch_start")
+                with col_dp2: val_end = st.date_input("Scheduled Target Finalization Date:", value=default_end, key="sch_end")
+                
+                if st.form_submit_button("💾 Synchronize Operational Schedule Bounds"):
+                    payload = {
+                        "farm_id": st.session_state.active_site_id, "zone_label": select_sz,
+                        "aspect_key": select_sa, "start_date": str(val_start), "end_date": str(val_end)
+                    }
+                    if match_existing: supabase.table("aspect_schedules").update(payload).eq("id", match_existing["id"]).execute()
+                    else: supabase.table("aspect_schedules").insert(payload).execute()
+                    st.success("Timeline schedule metrics written down cleanly!")
+                    time.sleep(0.5); st.rerun()
+
+            if sched_res:
+                st.markdown("#### Active Production Pipeline Matrix Targets Summary")
+                sched_table_summary = []
+                for s in sched_res:
+                    w_days = calculate_working_days(datetime.strptime(s["start_date"], "%Y-%m-%d").date(), datetime.strptime(s["end_date"], "%Y-%m-%d").date())
+                    sched_table_summary.append({
+                        "Zone Allocation Target": s["zone_label"],
+                        "Aspect Pipeline Stage": s["aspect_key"].upper(),
+                        "Commencement Bounds Date": s["start_date"],
+                        "Target Delivery Boundary": s["end_date"],
+                        "Calculated Productive Working Days": f"{w_days} Days"
                     })
-                st.table(g_bucket_rows)
-            
-            st.write("---")
-            
-            # ==================================================================
-            # LEVEL 2: GRANULAR ZONE LEVEL METRICS DECK
-            # ==================================================================
-            st.subheader("🗺️ LEVEL 2: Granular Zone Level Operations Breakdown")
-            
-            zone_clusters = {}
-            for block in active_table_data:
-                zn = block.get("assigned_zone", "Unassigned")
-                if zn not in zone_clusters: zone_clusters[zn] = []
-                zone_clusters[zn].append(block)
-                
-            for zone_name, zone_blocks in zone_clusters.items():
-                with st.expander(f"📍 Operational Breakdown Summary Deck — {zone_name.upper()}", expanded=True):
-                    z_layout_analysis = {}
-                    z_total_trackers = 0
-                    z_total_pegging_points = 0
-                    
-                    for b in zone_blocks:
-                        l_type = b.get("structure_type", "single_3x9")
-                        enc_val = b.get("section_group") if b.get("section_group") is not None else 403
-                        
-                        if enc_val > 100:
-                            r_f = int(enc_val // 100)
-                            c_f = int(enc_val % 100)
-                            pins_per_unit = int(r_f * c_f)
-                        else:
-                            if enc_val == 12: pins_per_unit, r_f, c_f = 12, 3, 4
-                            elif enc_val == 6: pins_per_unit, r_f, c_f = 6, 2, 3
-                            else: pins_per_unit, r_f, c_f = 12, 4, 3
-                            
-                        if l_type not in z_layout_analysis:
-                            z_layout_analysis[l_type] = {
-                                "count": 0,
-                                "shape": f"{r_f}x{c_f} Grid",
-                                "pins_per_unit": pins_per_unit,
-                                "accumulated_pins": 0
-                            }
-                        z_layout_analysis[l_type]["count"] += 1
-                        z_layout_analysis[l_type]["accumulated_pins"] += pins_per_unit
-                        z_total_trackers += 1
-                        z_total_pegging_points += pins_per_unit
+                st.table(sched_table_summary)
 
-                    z_summary_rows = []
-                    for name, m in z_layout_analysis.items():
-                        z_summary_rows.append({
-                            "Tracker Model Category": name.upper(),
-                            "Trackers Count In Zone": m["count"],
-                            "Pattern Aspect Structure": m["shape"],
-                            "Pins / Tracker Unit": f"{m['pins_per_unit']} Pts",
-                            "Total Pinpoints Combined": f"{m['accumulated_pins']} Pts"
-                        })
-                    st.markdown(f"**Structural Tracker Configuration Layout Profiles inside `{zone_name}`:**")
-                    st.table(z_summary_rows)
-                    
-                    st.markdown(f"**Electrical Inverter Capacity Density Matrix inside `{zone_name}`:**")
-                    zone_inv_string_distribution = {}
-                    
-                    for b in zone_blocks:
-                        labels_list = [f"{b['id']}_N", f"{b['id']}_S"] if b.get("structure_type") == "double_6x9" else [f"{b['id']}_A"]
-                        for lbl in labels_list:
-                            if lbl in string_groups:
-                                associated_inv = string_groups[lbl]
-                                zone_inv_string_distribution[associated_inv] = zone_inv_string_distribution.get(associated_inv, 0) + 1
-                    
-                    zone_capacity_buckets = {}
-                    distinct_zone_inverters_set = set()
-                    for inv_id, s_count in zone_inv_string_distribution.items():
-                        bucket_key = f"{s_count} Strings Loading Channel"
-                        if bucket_key not in zone_capacity_buckets:
-                            zone_capacity_buckets[bucket_key] = []
-                        zone_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
-                        distinct_zone_inverters_set.add(inv_id)
-                        
-                    if zone_capacity_buckets:
-                        z_bucket_rows = []
-                        for b_name, inv_badge_list in zone_capacity_buckets.items():
-                            sorted_zone_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
-                            z_bucket_rows.append({
-                                "String Load Concentration Density": b_name,
-                                "Inverters Count inside Zone": len(sorted_zone_inv_badges),
-                                "Target Mapped Inverter Tokens (Sorted)": ", ".join(sorted_zone_inv_badges)
-                            })
-                        st.table(z_bucket_rows)
-                    else:
-                        st.caption("No custom string topographies or electrical node wires are lassoed into this zone index bounds yet.")
-                        
-                    col_z1, col_z2, col_z3 = st.columns(3)
-                    with col_z1: st.metric(f"Total Tracker Blocks ({zone_name})", f"{z_total_trackers} Units")
-                    with col_z2: st.metric(f"Total Pegging Pinpoints ({zone_name})", f"{z_total_pegging_points} Coordinates")
-                    with col_z3: st.metric(f"Total Inverter Entities ({zone_name})", f"{len(distinct_zone_inverters_set)} INVs")
-
-            st.write("---")
-            # ==================================================================
-            # LEVEL 3: MVS TRANSFORMER STATION POOL ASSIGNATION MATRIX
-            # ==================================================================
-            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Fleet Interconnection Registries")
-            st.metric("Total Active Transformer Medium Voltage Stations Registered", f"{len(transformers_list)} Station Hubs")
+        # --- STAGE 6: PROGRESS HISTORY & LOG VIEWER ---
+        with setup_tabs[5]:
+            st.markdown("### 📈 Engineering Analytics Execution Log & Dynamic Timeline Rollup")
+            history_aspect = st.selectbox("Select Filter Category View Aspect:", list(aspects_dictionary.keys()), format_func=lambda x: aspects_dictionary[x])
+            history_date = st.date_input("Select Historical State Target Snapshot Date:", value=date.today())
             
-            ts_summary_table = []
-            for ts_idx, ts_obj in enumerate(transformers_list):
-                connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
-                connected_invs.sort()
-                inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
-                
-                ts_summary_table.append({
-                    "Transformer Hub Location ID": f"TS {ts_idx + 1}",
-                    "Aggregated Inverters Count": len(connected_invs),
-                    "Sorted Inverters Interconnected Pool": inv_string_labels
-                })
-            st.table(ts_summary_table)
+            logs_res = supabase.table("daily_progress_log").select("*").eq("farm_id", st.session_state.active_site_id).order("log_date", desc=True).execute().data
+            if logs_res:
+                formatted_logs = [{
+                    "Logged Date Index": l["log_date"],
+                    "Zone Region Label": l["zone_label"],
+                    "Construction Aspect Stage": l["aspect_key"].upper(),
+                    "Calculated Daily Incremental Output": f"+{l['installed_count']} Units Added",
+                    "Crew Remarks Journal": l["remark"] if l["remark"] else "-"
+                } for l in logs_res]
+                st.table(formatted_logs)
+            else: st.info("No field completion journal events verified across this database record scope.")
 
+    # ==============================================================================
+    # 🇲🇾 REGION B: FIELD INSTALLER CREW OPERATION TRACKING ENGINE WORKSPACE
+    # ==============================================================================
     else:
-        # ==============================================================================
-        # 👷 THE OPERATION INTERFACES (CREW WORKSPACE VIEWS)
-        # ==============================================================================
         if not site_is_published:
             st.error("🛑 **Access Restricted:** The operational blueprint for this site layout has not been deployed or finalized by the administrator yet.")
-            st.info("ℹ️ Field crews will gain tracker workspace mapping capability once the admin team formally authorizes a live deployment package from the control panel.")
-            if st.button("🔄 Check Deployment Synchronization Status", type="primary"): st.rerun()
             st.stop()
             
         if site_bg_img and not site_bg_img.startswith("{"):
@@ -1573,144 +1376,207 @@ else:
             st.image(site_bg_img, use_container_width=False, width=700)
             st.write("---")
 
-        crew_tabs = st.tabs([
-            "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
-        ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
+        crew_aspect_keys = ["pegging", "piling", "mounting", "module", "inverter_struct", "inverter", "transformer_station", "dc_cabling", "ac_cabling"]
+        crew_tabs = st.tabs([aspects_dictionary.get(k, k) for k in crew_aspect_keys])
+        
+        op_date = get_operational_date()
+        sched_res = supabase.table("aspect_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+        schedules_index = {(item["zone_label"], item["aspect_key"]): item for item in sched_res}
+        progress_res = supabase.table("daily_progress_log").select("*").eq("farm_id", st.session_state.active_site_id).eq("log_date", str(op_date)).execute().data
 
-        def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
-            today_str = str(date.today())
-
-            html_crew_map = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
-                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
-                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp; 
-                    <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
-                    <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
-                </div>
+        for a_idx, a_key in enumerate(crew_aspect_keys):
+            with crew_tabs[a_idx]:
                 
-                <div id="crew_hover_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-
-                <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_LAYER_KEY" width="1500" height="600" style="background:#020617; display:block; cursor:grab;"></canvas>
+                # --- EMBED GRAPHICS INTERACTIVE MULTI-SELECT CANVAS tracker MODULES ---
+                html_crew_engine = f"""
+                <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select:none; font-family:sans-serif;">
+                    <canvas id="crew_canvas_{a_key}" width="1400" height="450" style="background:#020617; display:block; border-radius:6px; cursor:crosshair;"></canvas>
+                    <div id="crew_bar" style="position:absolute; bottom:20px; left:20px; background:rgba(30,41,59,0.95); border:2px solid #22c55e; padding:12px; border-radius:8px; display:none; color:white; font-size:13px; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+                        Selected Cluster Index Components Mapped: <span id="crw_sel_count" style="font-weight:bold; color:#22c55e;">0</span> &nbsp;|&nbsp; 
+                        <button id="crw_cmt_btn" style="background:#22c55e; border:none; padding:6px 12px; color:white; font-weight:bold; border-radius:4px; cursor:pointer;">Stage Changes Locally</button>
+                    </div>
                 </div>
-            </div>
-            <script>
-                (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__")); 
-                    const canvas = document.getElementById("crew_LAYER_KEY"); 
-                    const ctx = canvas.getContext('2d');
-                    const tooltip = document.getElementById("crew_hover_tooltip");
-                    const CELL = 14; 
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                <script>
+                    (function() {{
+                        const blocks = JSON.parse(atob("{b64_json_data}"));
+                        const topo = JSON.parse(atob("{b64_topo_data}"));
+                        const canvas = document.getElementById("crew_canvas_{a_key}");
+                        const ctx = canvas.getContext('2d');
+                        const aspect = "{a_key}";
+                        const CELL = 14;
+                        let scale = 0.6, offsetX = 40, offsetY = 40;
+                        let isSelecting = false, isPanning = false, startX=0, startY=0, curX=0, curY=0;
+                        let localSelectionMap = {{}};
 
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    if (scale <= 0 || scale === Infinity) scale = 0.5;
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    
-                    let isPanning = false, isSelecting = false;
-                    let dragStartRawX = 0, dragStartRawY = 0, dragCurrentRawX = 0, dragCurrentRawY = 0;
+                        function isBlockHostToInverter(b) {{
+                            if(!topo.inverters) return false;
+                            return topo.inverters.some(inv => (inv.x >= b.min_c*CELL && inv.x <= (b.max_c+1)*CELL) && (inv.y >= b.min_r*CELL && inv.y <= (b.max_r+1)*CELL));
+                        }}
 
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-                    function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        
-                        blocks.forEach(b => {
-                            ctx.fillStyle = b['LAYER_KEY_status'] === 'completed' ? '#22c55e' : '#3b82f6';
-                            let x = b.min_c * CELL; let y = b.min_r * CELL;
-                            let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                        });
-                        ctx.restore();
-
-                        if (isSelecting) {
-                            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
-                            ctx.fillRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
-                            ctx.strokeRect(dragStartRawX, dragStartRawY, dragCurrentRawX - dragStartRawX, dragCurrentRawY - dragStartRawY);
-                        }
-                    }
-
-                    canvas.addEventListener('mousemove', (e) => {
-                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        
-                        if (isPanning) { offsetX = e.clientX - dragStartRawX; offsetY = e.clientY - dragStartRawY; draw(); tooltip.style.display = "none"; return; }
-                        else if (isSelecting) { dragCurrentRawX = mX; dragCurrentRawY = mY; draw(); tooltip.style.display = "none"; return; }
-
-                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
-                        let b = blocks.find(item => worldX >= item.min_c*CELL && worldX <= (item.max_c+1)*CELL && worldY >= item.min_r*CELL && worldY <= (item.max_r+1)*CELL);
-
-                        if (b) {
-                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `Label: ${b.table_label}<br/>Zone: ${b.assigned_zone}<br/>Status: ${b['LAYER_KEY_status'] || 'pending'}`;
-                        } else { tooltip.style.display = "none"; }
-                    });
-
-                    canvas.addEventListener('mousedown', (e) => {
-                        const rect = canvas.getBoundingClientRect(); const clickX = e.clientX - rect.left; const clickY = e.clientY - rect.top;
-                        if (e.button === 2) { isPanning = true; isSelecting = false; dragStartRawX = e.clientX - offsetX; dragStartRawY = e.clientY - offsetY; canvas.style.cursor = 'move'; }
-                        else if (e.button === 0) { isSelecting = true; isPanning = false; dragStartRawX = clickX; dragStartRawY = clickY; dragCurrentRawX = clickX; dragCurrentRawY = clickY; canvas.style.cursor = 'crosshair'; }
-                        tooltip.style.display = "none";
-                    });
-
-                    canvas.addEventListener('mouseup', async (e) => {
-                        const rect = canvas.getBoundingClientRect(); const mouseUpX = e.clientX - rect.left; const mouseUpY = e.clientY - rect.top;
-
-                        if (isPanning) { isPanning = false; canvas.style.cursor = 'grab'; }
-                        else if (isSelecting) {
-                            isSelecting = false; canvas.style.cursor = 'default';
-                            let boxX1 = Math.min(dragStartRawX, mouseUpX); let boxX2 = Math.max(dragStartRawX, mouseUpX);
-                            let boxY1 = Math.min(dragStartRawY, mouseUpY); let boxY2 = Math.max(dragStartRawY, mouseUpY);
-                            let dist = Math.sqrt(Math.pow(mouseUpX - dragStartRawX, 2) + Math.pow(mouseUpY - dragStartRawY, 2));
-                            let payloadIds = [];
-
-                            blocks.forEach(b => {
-                                let cx = b.min_c * CELL * scale + offsetX; let cy = b.min_r * CELL * scale + offsetY;
-                                let match = dist > 4 ? (cx >= boxX1 && cx <= boxX2 && cy >= boxY1 && cy <= boxY2) : (boxX1 >= cx && boxX1 <= (b.max_c * CELL * scale + offsetX) && boxY1 >= cy && boxY1 <= (b.max_r * CELL * scale + offsetY));
-                                if (match && b['LAYER_KEY_status'] !== 'completed') payloadIds.push(b.id);
-                            });
+                        function draw() {{
+                            ctx.clearRect(0,0,canvas.width,canvas.height);
+                            ctx.save(); ctx.translate(offsetX,offsetY); ctx.scale(scale,scale);
                             
-                            if (payloadIds.length > 0) {
-                                const statMsg = document.getElementById("crew_sync_status_msg"); statMsg.style.display = "block";
-                                statMsg.innerText = `Synchronizing ${payloadIds.length} blocks to database...`;
-                                try {
-                                    for (let id of payloadIds) {
-                                        let target = blocks.find(item => item.id === id); if (target) target['LAYER_KEY_status'] = 'completed';
-                                        await fetch('SUPABASE_URL_VAL/rest/v1/structures?id=eq.' + id, {
-                                            method: "PATCH", headers: { "apikey": 'SUPABASE_KEY_VAL', "Authorization": 'Bearer SUPABASE_KEY_VAL', "Content-Type": "application/json", "Prefer": "return=minimal" },
-                                            body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
-                                        });
-                                    }
-                                    statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
-                                    setTimeout(() => { statMsg.style.display = "none"; }, 5000);
-                                } catch (e) { statMsg.innerText = "Database updates timed out."; }
+                            blocks.forEach(b => {{
+                                let isLocked = false;
+                                if((aspect==='inverter_struct' || aspect==='inverter' || aspect==='ac_cabling') && !isBlockHostToInverter(b)) isLocked = true;
+                                if(aspect==='transformer_station') isLocked = true; 
+                                
+                                let totalElements = 1, completedElements = 0;
+                                let enc = b.section_group || 403;
+                                let r_f = Math.floor(enc/100), c_f = enc%100;
+                                
+                                if(aspect==='pegging' || aspect==='piling' || aspect==='module') {{
+                                    totalElements = r_f * c_f;
+                                    let stateArr = b[aspect+'_pins_state'] || [];
+                                    completedElements = stateArr.filter(p => p.status==='completed').length;
+                                }} else {{
+                                    if(b[aspect+'_status']==='completed') completedElements = 1;
+                                }}
+                                
+                                if(isLocked) ctx.fillStyle = '#1e293b';
+                                else if(completedElements === totalElements) ctx.fillStyle = '#22c55e';
+                                else if(completedElements > 0) ctx.fillStyle = '#eab308';
+                                else ctx.fillStyle = '#3b82f6';
+                                
+                                if(localSelectionMap[b.id]) ctx.fillStyle = '#facd15';
+                                
+                                let bx = b.min_c*CELL, by = b.min_r*CELL;
+                                let bw = (b.max_c-b.min_c+1)*CELL, bh = (b.max_r-b.min_r+1)*CELL;
+                                ctx.fillRect(bx, by, bw, bh);
+                                
+                                if(!isLocked && (aspect==='pegging' || aspect==='piling' || aspect==='module')) {{
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth=0.5;
+                                    let rg = bh/r_f, cg = bw/c_f;
+                                    for(let i=1; i<r_f; i++) {{ ctx.beginPath(); ctx.moveTo(bx, by+i*rg); ctx.lineTo(bx+bw, by+i*rg); ctx.stroke(); }}
+                                    for(let j=1; j<c_f; j++) {{ ctx.beginPath(); ctx.moveTo(bx+j*cg, by); ctx.lineTo(bx+j*cg, by+bh); ctx.stroke(); }}
+                                }}
+                                ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 0.5; ctx.strokeRect(bx, by, bw, bh);
+                            }});
+                            
+                            if(topo.transformers) {{
+                                topo.transformers.forEach((t, i) => {{
+                                    ctx.fillStyle = '#ef4444'; ctx.fillRect(t.x-14, t.y-14, 28, 28);
+                                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth=1.5; ctx.strokeRect(t.x-14, t.y-14, 28, 28);
+                                }});
+                            }}
+                            ctx.restore();
+                            if(isSelecting) {{
+                                ctx.strokeStyle='#22c55e'; ctx.fillStyle='rgba(34,197,94,0.15)';
+                                ctx.fillRect(startX,startY,curX-startX,curY-startY); ctx.strokeRect(startX,startY,curX-startX,curY-startY);
+                            }}
+                        }}
+
+                        canvas.addEventListener('mousedown', e => {{
+                            let r = canvas.getBoundingClientRect(); let x = e.clientX-r.left, y = e.clientY-r.top;
+                            if(e.button===2) {{ isPanning=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; }}
+                            else {{ isSelecting=true; startX=x; startY=y; curX=x; curY=y; }}
+                        }});
+                        canvas.addEventListener('mousemove', e => {{
+                            let r = canvas.getBoundingClientRect(); let x = e.clientX-r.left, y = e.clientY-r.top;
+                            if(isPanning) {{ offsetX=e.clientX-startX; offsetY=e.clientY-startY; draw(); }}
+                            else if(isSelecting) {{ curX=x; curY=y; draw(); }}
+                        }});
+                        canvas.addEventListener('mouseup', e => {{
+                            if(isPanning) isPanning=false;
+                            if(isSelecting) {{
+                                isSelecting = false;
+                                let x1 = Math.min(startX,curX), x2 = Math.max(startX,curX);
+                                let y1 = Math.min(startY,curY), y2 = Math.max(startY,curY);
+                                
+                                blocks.forEach(b => {{
+                                    let cx = b.min_c*CELL*scale+offsetX, cy = b.min_r*CELL*scale+offsetY;
+                                    if(cx>=x1 && cx<=x2 && cy>=y1 && cy<=y2) {{ localSelectionMap[b.id] = !localSelectionMap[b.id]; }}
+                                }});
+                                let activeSelSize = Object.values(localSelectionMap).filter(Boolean).length;
+                                document.getElementById("crew_bar").style.display = activeSelSize ? "block" : "none";
+                                document.getElementById("crw_sel_count").innerText = activeSelSize;
+                                draw();
+                            }}
+                        }});
+                        canvas.addEventListener('wheel', e => {{
+                            e.preventDefault(); let r = canvas.getBoundingClientRect(); let mx = e.clientX-r.left, my = e.clientY-r.top;
+                            let wx = (mx-offsetX)/scale, wy = (my-offsetY)/scale;
+                            scale *= (e.deltaY<0?1.15:0.85); scale=Math.max(0.1,Math.min(scale,10));
+                            offsetX = mx-wx*scale; offsetY = my-wy*scale; draw();
+                        }}, {{passive:false}});
+                        
+                        document.getElementById("crw_cmt_btn").addEventListener('click', async () => {{
+                            let targetIds = Object.keys(localSelectionMap).filter(k => localSelectionMap[k]);
+                            for(let id of targetIds) {{
+                                let b = blocks.find(x => x.id == id);
+                                let updateBody = {{}};
+                                if(aspect==='pegging' || aspect==='piling' || aspect==='module') {{
+                                    let enc = b.section_group || 403; let total = Math.floor(enc/100)*(enc%100);
+                                    let fullState = []; for(let i=0; i<total; i++) fullState.push({{index:i, status:'completed'}});
+                                    updateBody[aspect+'_pins_state'] = fullState;
+                                }} else {{
+                                    updateBody[aspect+'_status'] = 'completed';
+                                }}
+                                await fetch('{SUPABASE_URL}/rest/v1/structures?id=eq.'+id, {{
+                                    method: 'PATCH', headers: {{ 'apikey':'{SUPABASE_KEY}', 'Authorization':'Bearer {SUPABASE_KEY}', 'Content-Type':'application/json' }},
+                                    body: JSON.stringify(updateBody)
+                                }});
+                            }}
+                            alert("Staging completed successfully! Click 'Save and Update Table' below to confirm ledger outputs.");
+                            window.location.reload();
+                        }});
+                        draw();
+                    }})();
+                </script>
+                """
+                components.html(html_crew_engine, height=480)
+
+                # --- 📊 DYNAMIC TIMELINE OPERATIONAL LEDGER METRICS TABLES ---
+                st.markdown("##### 📊 Dynamic Timeline Operations Progress Verification Ledger")
+                zone_submissions_index = {}
+                progress_index = {item["zone_label"]: item for item in progress_res if item["aspect_key"] == a_key}
+
+                for zone in all_zones_list:
+                    zone_blocks = [b for b in active_table_data if b.get("assigned_zone", "Unassigned") == zone]
+                    if not zone_blocks and zone != "Unassigned": continue
+                    
+                    total_scope_units = 0
+                    for b in zone_blocks:
+                        enc = b.get("section_group", 403)
+                        sub_pins = int(enc // 100) * int(enc % 100)
+                        if a_key in ["pegging", "piling", "module"]: total_scope_units += sub_pins
+                        else: total_scope_units += 1
+
+                    sched = schedules_index.get((zone, a_key), None)
+                    if sched:
+                        w_days = calculate_working_days(datetime.strptime(sched["start_date"], "%Y-%m-%d").date(), datetime.strptime(sched["end_date"], "%Y-%m-%d").date())
+                        daily_target = math.ceil(total_scope_units / w_days) if w_days > 0 else total_scope_units
+                    else:
+                        daily_target = 0
+                    
+                    saved_log = progress_index.get(zone, {})
+                    
+                    st.markdown(f"###### 📍 Production Row Metrics: `{zone.upper()}`")
+                    col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns([2, 2, 2, 2, 4])
+                    
+                    with col_l1: st.text_input("Log Date:", value=str(op_date), disabled=True, key=f"dt_{a_key}_{zone}")
+                    with col_l2: st.number_input("Target Per Day:", value=int(daily_target), disabled=True, key=f"tgt_{a_key}_{zone}")
+                    
+                    # TIMELINE BOUNDARY ENFORCEMENT ENGINE
+                    is_row_locked = False if (st.session_state.is_admin_mode and st.session_state.time_travel_date) or (op_date == date.today()) else True
+                    
+                    with col_l3: crew_installed_num = st.number_input("Installed Today Amount:", min_value=0, max_value=max(total_scope_units, 1), value=int(saved_log.get("installed_count", 0)), disabled=is_row_locked, key=f"ins_{a_key}_{zone}")
+                    with col_l4: st.text_input("Calculated Deviation Variance:", value=f"{crew_installed_num - daily_target} Pts", disabled=True, key=f"dev_{a_key}_{zone}")
+                    with col_l5: crew_remark_txt = st.text_input("Field Crew Remark Notes Line:", value=saved_log.get("remark", ""), disabled=is_row_locked, key=f"rem_{a_key}_{zone}")
+                    
+                    zone_submissions_index[zone] = {
+                        "installed_count": crew_installed_num, "remark": crew_remark_txt, "existing_id": saved_log.get("id", None)
+                    }
+                
+                if st.button("💾 Save and Update Table Records Matrix", key=f"save_ledger_{a_key}", type="primary", use_container_width=True):
+                    with st.spinner("Writing production progress snapshots..."):
+                        for z_name, pl in zone_submissions_index.items():
+                            db_payload = {
+                                "farm_id": st.session_state.active_site_id, "log_date": str(op_date),
+                                "zone_label": z_name, "aspect_key": a_key,
+                                "installed_count": int(pl["installed_count"]), "remark": str(pl["remark"])
                             }
-                            setTimeout(draw, 50);
-                        }
-                    });
-
-                    canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 15));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
-
-                    draw();
-                })();
-            </script>
-            """
-            return html_crew_map
-
-        def process_crew_tab(tab_obj, key_val):
-            with tab_obj: components.html(inject_crew_tracking_map(key_val, b64_json_data, min_c, max_c, min_r, max_r), height=640)
-
-        process_crew_tab(crew_tabs[0], "pegging")
-        process_crew_tab(crew_tabs[1], "piling")
-        process_crew_tab(crew_tabs[2], "mounting")
-        process_crew_tab(crew_tabs[3], "modules")
+                            if pl["existing_id"]: supabase.table("daily_progress_log").update(db_payload).eq("id", pl["existing_id"]).execute()
+                            else: supabase.table("daily_progress_log").insert(db_payload).execute()
+                        st.success("🎉 Workspace ledger tables updated completely!"); time.sleep(0.5); st.rerun()

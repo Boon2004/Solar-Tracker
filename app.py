@@ -861,15 +861,18 @@ else:
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
                         with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
                             try:
+                                # 1. Push updates to your cloud database
                                 supabase.table("structures").update({
                                     "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                # CRITICAL: Reset memory cache pipelines to guarantee the newly updated structure matrix reflects on re-run loops
+                                # 2. FORCE REFRESH: Clear cached data so the application drops old values
                                 st.cache_resource.clear()
+                                
+                                # 3. Trigger immediate rerun to draw the new grid dimensions instantly
                                 st.success("Updated fleet configuration profiles cleanly!")
-                                time.sleep(1.0)
+                                time.sleep(0.5)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Transmission mutation failure occurred: {str(e)}")

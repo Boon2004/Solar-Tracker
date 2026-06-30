@@ -767,7 +767,7 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
+                # UPPER SECTION: Isolated layout template slots mapping layout matrices perfectly
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -776,23 +776,27 @@ else:
                         st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
                         
                         saved_pts = data["points_per_unit"]
-                        h_px = int(data["h_cells"] * 25)
-                        w_px = int(data["w_cells"] * 35)
+                        # Reduced scaling multiplier slightly from 25/35 down to 18/26 to add zoom out safety margin
+                        h_px = int(data["h_cells"] * 18)
+                        w_px = int(data["w_cells"] * 26)
                         
-                        # Dynamically derive rows and columns from total points for standard layouts
+                        # Parse factors from overall database value integers safely
                         if saved_pts == 12:
                             saved_rows, saved_cols = 4, 3
                         elif saved_pts == 6:
                             saved_rows, saved_cols = 2, 3
+                        elif saved_pts == 16:
+                            saved_rows, saved_cols = 4, 4
+                        elif saved_pts == 8:
+                            saved_rows, saved_cols = 2, 4
                         else:
-                            # Fallback guess factors if custom total points are found
                             saved_cols = math.ceil(math.sqrt(saved_pts))
                             saved_rows = math.ceil(saved_pts / saved_cols) if saved_cols > 0 else 1
 
                         html_current_view = f"""
                         <div style="background:#0f172a; padding:10px; border-radius:8px; text-align:center; font-family:sans-serif;">
-                            <canvas id="saved_canvas_{idx}" width="300" height="180" style="background:#020617; border:2px solid #22c55e; border-radius:6px;"></canvas>
-                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Saved Base Capacity: {saved_pts} Pins ({saved_rows}x{saved_cols} Grid)</div>
+                            <canvas id="saved_canvas_{idx}" width="320" height="200" style="background:#020617; border:2px solid #22c55e; border-radius:6px;"></canvas>
+                            <div style="color:#64748b; font-size:11px; margin-top:4px;">Database Value: {saved_pts} Pins ({saved_rows}x{saved_cols} Matrix Layout)</div>
                         </div>
                         <script>
                             (function() {{
@@ -801,10 +805,13 @@ else:
                                 const rows = {saved_rows};
                                 const cols = {saved_cols};
                                 const boxW = {w_px}; const boxH = {h_px};
-                                const bx = (canvas.width / 2) - (boxW / 2); const by = (canvas.height / 2) - (boxH / 2);
+                                
+                                // Zoom control padding compensation logic to keep dots away from canvas boundary clipping limits
+                                const bx = (canvas.width / 2) - (boxW / 2); 
+                                const by = (canvas.height / 2) - (boxH / 2);
                                 
                                 ctx.fillStyle = '#1e293b'; ctx.fillRect(bx, by, boxW, boxH);
-                                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, boxW, boxH);
+                                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.strokeRect(bx, by, boxW, boxH);
                                 
                                 if(rows > 0 && cols > 0) {{
                                     const rowGap = (rows === 1) ? boxH / 2 : boxH / (rows - 1);
@@ -852,22 +859,25 @@ else:
                     st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit")
                     
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
-                        with st.spinner("Transmitting coordinate modifications to database..."):
+                        with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
                             try:
                                 supabase.table("structures").update({
                                     "section_group": int(total_calculated_points)
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
-                                st.success("Updated fleet metrics cleanly!")
-                                time.sleep(0.8)
+                                # CRITICAL: Reset memory cache pipelines to guarantee the newly updated structure matrix reflects on re-run loops
+                                st.cache_resource.clear()
+                                st.success("Updated fleet configuration profiles cleanly!")
+                                time.sleep(1.0)
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Transmission rejected: {str(e)}")
+                                st.error(f"Transmission mutation failure occurred: {str(e)}")
 
                 with col_actions:
-                    h_px = int(target_layout["h_cells"] * 25)
-                    w_px = int(target_layout["w_cells"] * 35)
+                    # Sync lower preview scale bounds to match the layout presentation geometry above perfectly
+                    h_px_prev = int(target_layout["h_cells"] * 18)
+                    w_px_prev = int(target_layout["w_cells"] * 26)
                     
                     html_micro_template = f"""
                     <div style="background:#0f172a; padding:15px; border-radius:12px; text-align:center; font-family:sans-serif;">
@@ -879,7 +889,7 @@ else:
                             const canvas = document.getElementById("micro_canvas");
                             const ctx = canvas.getContext('2d');
                             const rows = {row_pts}; const cols = {col_pts};
-                            const boxW = {w_px}; const boxH = {h_px};
+                            const boxW = {w_px_prev}; const boxH = {h_px_prev};
                             const bx = (canvas.width / 2) - (boxW / 2); const by = (canvas.height / 2) - (boxH / 2);
                             
                             ctx.fillStyle = '#1e293b'; ctx.fillRect(bx, by, boxW, boxH);

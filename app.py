@@ -1640,11 +1640,25 @@ else:
                         zone_proportion = total_elements_count // max(len(zones_to_configure), 1)
                         computed_runrate_target = round(zone_proportion / w_days, 2)
                         
-                        supabase.table("project_schedules").upsert({
-                            "farm_id": st.session_state.active_site_id, "aspect": selected_sched_aspect,
-                            "zone": target_sched_zone, "start_date": str(start_sc_dt), "end_date": str(end_sc_dt),
-                            "working_days": w_days, "daily_target": computed_runrate_target
-                        }).execute()
+                        try:
+                            supabase.table("project_schedules").upsert(
+                                {
+                                    "farm_id": str(st.session_state.active_site_id), 
+                                    "aspect": str(selected_sched_aspect),
+                                    "zone": str(target_sched_zone), 
+                                    "start_date": str(start_sc_dt), 
+                                    "end_date": str(end_sc_dt),
+                                    "working_days": int(w_days), 
+                                    "daily_target": float(computed_runrate_target)
+                                },
+                                on_conflict="farm_id, aspect, zone"  # Tells Supabase how to overwrite duplicates safely
+                            ).execute()
+                            st.success(f"Milestones locked! Target set to {computed_runrate_target} Units / Working Day.")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as sched_err:
+                            st.error("🚨 Database rejected schedule upload block!")
+                            st.code(str(sched_err))
                         st.success(f"Milestones locked! Target set to {computed_runrate_target} Units / Working Day.")
                         time.sleep(0.5); st.rerun()
 
@@ -1878,7 +1892,7 @@ else:
             safe_farm_id = str(st.session_state.active_site_id) if st.session_state.get("active_site_id") else ""
             safe_aspect = str(selected_crew_aspect) if selected_crew_aspect else "pegging"
             safe_zone = str(active_zone_profile) if active_zone_profile else "Global"
-            safe_date_str = str(current_date_str) if current_date_str else str(date.today())
+            safe_date_str = str(current_system_date) if current_system_date else str(date.today())
             
             # 2. Prevent Float-to-Int payload truncation errors explicitly
             try:
@@ -1907,12 +1921,17 @@ else:
                 st.error("❌ Session State Mismatch: Active Project Farm ID is invalid or missing.")
             else:
                 try:
-                    supabase.table("daily_progress_logs").upsert(sync_payload).execute()
+                    # Added on_conflict modifier to allow updating the target rows cleanly
+                    supabase.table("daily_progress_logs").upsert(
+                        sync_payload, 
+                        on_conflict="farm_id, aspect, zone, log_date"
+                    ).execute()
+                    
                     st.success("🎉 Log entries updated cleanly!")
                     time.sleep(0.5)
                     st.rerun()
                 except Exception as db_err:
                     st.error("🚨 Database Engine Rejected Transaction Payload!")
-                    st.warning(" Review data types payload sent below:")
+                    st.warning("Review data types payload sent below:")
                     st.json(sync_payload)
                     st.code(str(db_err))

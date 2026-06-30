@@ -1044,41 +1044,38 @@ else:
                             ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
 
-                        // 2. High-Contrast True Perimeter Group Border Tracing Algorithm
+                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
                         let inverterCellsMap = {};
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
                             if (!linkedInv) return;
                             if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
-                            
-                            inverterCellsMap[linkedInv].push({
-                                r1: s.min_r, r2: s.max_r,
-                                c1: s.min_c, c2: s.max_c
-                            });
+                            inverterCellsMap[linkedInv].push(s);
                         });
 
                         Object.keys(inverterCellsMap).forEach(invId => {
                             let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff0000"; 
+                            ctx.strokeStyle = "#ff3333"; 
                             ctx.lineWidth = 3.0;
-                            ctx.lineJoin = "round";
+                            ctx.lineJoin = "miter";
 
                             cellBlocks.forEach(b => {
-                                let x = b.c1 * CELL;
-                                let y = b.r1 * CELL;
-                                let w = (b.max_c - b.c1 + 1) * CELL;
-                                let h = (b.max_r - b.r1 + 1) * CELL;
+                                let x = b.min_c * CELL;
+                                let y = b.min_r * CELL;
+                                let w = (b.max_c - b.min_c + 1) * CELL;
+                                let h = (b.max_r - b.min_r + 1) * CELL;
 
-                                let topShared = cellBlocks.some(other => b !== other && other.r2 === b.r1 - 1 && other.c1 <= b.c2 && other.c2 >= b.c1);
-                                let bottomShared = cellBlocks.some(other => b !== other && other.r1 === b.r2 + 1 && other.c1 <= b.c2 && other.c2 >= b.c1);
-                                let leftShared = cellBlocks.some(other => b !== other && other.c2 === b.c1 - 1 && other.r1 <= b.r2 && other.r2 >= b.r1);
-                                let rightShared = cellBlocks.some(other => b !== other && other.c1 === b.c2 + 1 && other.r1 <= b.r2 && other.r2 >= b.r1);
+                                // Edge neighbors evaluation matrix
+                                let topShared = cellBlocks.some(other => b !== other && other.max_r === b.min_r - 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
+                                let bottomShared = cellBlocks.some(other => b !== other && other.min_r === b.max_r + 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
+                                let leftShared = cellBlocks.some(other => b !== other && other.max_c === b.min_c - 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
+                                let rightShared = cellBlocks.some(other => b !== other && other.min_c === b.max_c + 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
 
                                 ctx.beginPath();
-                                if (!topShared) { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); }
-                                if (!bottomShared) { ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); }
-                                if (!leftShared) { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + h); }
-                                if (!rightShared) { ctx.moveTo(x + w - 1, y); ctx.lineTo(x + w - 1, y + h); }
+                                if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
+                                if (!bottomShared) { ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); }
+                                if (!leftShared) { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
+                                if (!rightShared) { ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); }
                                 ctx.stroke();
                             });
                         });

@@ -746,6 +746,7 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
+            # Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -766,6 +767,7 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
+                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -774,10 +776,12 @@ else:
                         st.markdown(f"📦 **Current saved pattern for {data['type_string'].upper()}**")
                         
                         enc_val = data["encoded_value"]
+                        # Decode custom rows and columns directly from the stored multiplier value
                         if enc_val > 100:
                             saved_rows = int(enc_val // 100)
                             saved_cols = int(enc_val % 100)
                         else:
+                            # Fallback support legacy integers safely
                             if enc_val == 12: saved_rows, saved_cols = 3, 4
                             elif enc_val == 6: saved_rows, saved_cols = 2, 3
                             else: saved_rows, saved_cols = 4, 3
@@ -830,6 +834,8 @@ else:
                         components.html(html_current_view, height=220)
 
                 st.write("---")
+                
+                # LOWER SECTION: Interactive Template Editor Selector Matrix
                 st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
                 selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 
@@ -851,12 +857,15 @@ else:
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
                         with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
                             try:
+                                # Encode compound rows and columns integer signature directly into the database field
                                 encoded_group_signature = int((row_pts * 100) + col_pts)
+                                
                                 supabase.table("structures").update({
                                     "section_group": encoded_group_signature
                                 }).eq("farm_id", st.session_state.active_site_id)\
                                   .eq("structure_type", target_layout["type_string"]).execute()
                                 
+                                # Flush layout memory resource pipelines to accurately reflect fresh fetches on map loops
                                 st.cache_resource.clear()
                                 st.success("Updated fleet configuration profiles cleanly!")
                                 time.sleep(0.5)
@@ -1262,8 +1271,6 @@ else:
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
             
-            # Global variables extraction pipeline
-            layout_analysis = {}
             global_inv_string_distribution = {}
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
@@ -1273,6 +1280,7 @@ else:
             # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
             
+            layout_analysis = {}
             grand_total_trackers = 0
             grand_total_pegging_points = 0
             
@@ -1317,16 +1325,25 @@ else:
             with col_plant2: st.metric("Plant Total Configured Pegging Pinpoints", f"{grand_total_pegging_points} Coordinates")
             with col_plant3: st.metric("Plant Active Transrelation Inverter Hubs", f"{len(inverters_list)} INVs")
             
-            # Global capacity sizing bucket cards
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
-                bucket_key = f"{s_count} Strings Sizing"
-                global_capacity_buckets[bucket_key] = global_capacity_buckets.get(bucket_key, 0) + 1
+                bucket_key = f"{s_count} Strings Loading Capacity"
+                if bucket_key not in global_capacity_buckets:
+                    global_capacity_buckets[bucket_key] = []
+                global_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
+                
             if global_capacity_buckets:
-                st.markdown("**Global Electrical Inverter Capacity Loading Tally:**")
-                g_cols = st.columns(min(len(global_capacity_buckets), 4))
-                for g_idx, (b_name, b_count) in enumerate(global_capacity_buckets.items()):
-                    with g_cols[g_idx % len(g_cols)]: st.metric(b_name, f"{b_count} Inverter Units")
+                st.markdown("**Global Inverter Breakdown by String Capacities Configuration Tally:**")
+                g_bucket_rows = []
+                for b_name, inv_badge_list in global_capacity_buckets.items():
+                    # Strictly list sorted array tokens out sequentially
+                    sorted_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
+                    g_bucket_rows.append({
+                        "Loading Capacity Model": b_name,
+                        "Total Combined Inverters Tally": len(sorted_inv_badges),
+                        "Numerical Sequence Mapped Inverters": ", ".join(sorted_inv_badges)
+                    })
+                st.table(g_bucket_rows)
             
             st.write("---")
             
@@ -1335,7 +1352,6 @@ else:
             # ==================================================================
             st.subheader("🗺️ LEVEL 2: Granular Zone Level Operations Breakdown")
             
-            # Group rows cleanly by zone parameters
             zone_clusters = {}
             for block in active_table_data:
                 zn = block.get("assigned_zone", "Unassigned")
@@ -1348,7 +1364,6 @@ else:
                     z_total_trackers = 0
                     z_total_pegging_points = 0
                     
-                    # Track localized array items
                     for b in zone_blocks:
                         l_type = b.get("structure_type", "single_3x9")
                         enc_val = b.get("section_group") if b.get("section_group") is not None else 403
@@ -1374,7 +1389,6 @@ else:
                         z_total_trackers += 1
                         z_total_pegging_points += pins_per_unit
 
-                    # Table 1: Structural tracker points summary for this zone
                     z_summary_rows = []
                     for name, m in z_layout_analysis.items():
                         z_summary_rows.append({
@@ -1384,30 +1398,22 @@ else:
                             "Pins / Tracker Unit": f"{m['pins_per_unit']} Pts",
                             "Total Pinpoints Combined": f"{m['accumulated_pins']} Pts"
                         })
-                    st.markdown(f"**Structural Matrix Inventory for `{zone_name}`:**")
+                    st.markdown(f"**Structural Tracker Configuration Layout Profiles inside `{zone_name}`:**")
                     st.table(z_summary_rows)
                     
-                    # Table 2: Electrical inverter loading summary for strings explicitly inside this zone
-                    st.markdown(f"**Electrical String-to-Inverter Loading Capacity Map inside `{zone_name}`:**")
+                    st.markdown(f"**Electrical Inverter Capacity Density Matrix inside `{zone_name}`:**")
                     zone_inv_string_distribution = {}
                     
-                    # Extract only sub-string segments built within this active zone sector
                     for b in zone_blocks:
-                        # Scan north and south sub-elements for double tracker architectures
-                        if b.get("structure_type") == "double_6x9":
-                            labels_list = [f"{b['id']}_N", f"{b['id']}_S"]
-                        else:
-                            labels_list = [f"{b['id']}_A"]
-                            
+                        labels_list = [f"{b['id']}_N", f"{b['id']}_S"] if b.get("structure_type") == "double_6x9" else [f"{b['id']}_A"]
                         for lbl in labels_list:
                             if lbl in string_groups:
                                 associated_inv = string_groups[lbl]
                                 zone_inv_string_distribution[associated_inv] = zone_inv_string_distribution.get(associated_inv, 0) + 1
                     
-                    # Bucket matching string length concentrations for the selected zone area
                     zone_capacity_buckets = {}
                     for inv_id, s_count in zone_inv_string_distribution.items():
-                        bucket_key = f"{s_count} Strings Configuration"
+                        bucket_key = f"{s_count} Strings Loading Channel"
                         if bucket_key not in zone_capacity_buckets:
                             zone_capacity_buckets[bucket_key] = []
                         zone_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
@@ -1415,19 +1421,40 @@ else:
                     if zone_capacity_buckets:
                         z_bucket_rows = []
                         for b_name, inv_badge_list in zone_capacity_buckets.items():
+                            # STRICT NUMERICAL SORTING MATCH FOR INTERNAL TOKENS BREAKDOWNS
+                            sorted_zone_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
                             z_bucket_rows.append({
-                                "String Load Capacity Concentration": b_name,
-                                "Inverters Count inside Zone": len(inv_badge_list),
-                                "Target Mapped Inverter Tokens": ", ".join(inv_badge_list)
+                                "String Load Concentration Density": b_name,
+                                "Inverters Count inside Zone": len(sorted_zone_inv_badges),
+                                "Target Mapped Inverter Tokens (Sorted)": ", ".join(sorted_zone_inv_badges)
                             })
                         st.table(z_bucket_rows)
                     else:
-                        st.caption("No custom string topographies or electrical node wires are lassoed into this zone index bounds yet.")
+                        st.caption("No custom string topologies or electrical node wires are lassoed into this zone index bounds yet.")
                         
-                    # Cumulative summary numbers overview footer metrics row
                     col_z1, col_z2 = st.columns(2)
                     with col_z1: st.metric(f"Total Trackers assigned to {zone_name.upper()}", f"{z_total_trackers} Units")
                     with col_z2: st.metric(f"Total Pegging Pinpoints inside {zone_name.upper()}", f"{z_total_pegging_points} Coordinates")
+
+            st.write("---")
+            # ==================================================================
+            # LEVEL 3: MVS TRANSFORMER STATION POOL ASSIGNATION MATRIX
+            # ==================================================================
+            st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Fleet Interconnection Registries")
+            st.metric("Total Active Transformer Medium Voltage Stations Registered", f"{len(transformers_list)} Station Hubs")
+            
+            ts_summary_table = []
+            for ts_idx, ts_obj in enumerate(transformers_list):
+                connected_invs = [inv.get("id") for inv in inverters_list if inv.get("transformerId") == ts_idx]
+                connected_invs.sort()
+                inv_string_labels = ", ".join([f"INV #{i}" for i in connected_invs]) if connected_invs else "None Routed"
+                
+                ts_summary_table.append({
+                    "Transformer Hub Location ID": f"TS {ts_idx + 1}",
+                    "Aggregated Inverters Count": len(connected_invs),
+                    "Sorted Inverters Interconnected Pool": inv_string_labels
+                })
+            st.table(ts_summary_table)
 
     else:
         # ==============================================================================

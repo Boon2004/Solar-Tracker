@@ -22,28 +22,20 @@ supabase: Client = get_supabase_client()
 
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
+# --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
 st.markdown("""
     <style>
-    /* Hide the GitHub icon */
-    .stAppToolbar a[href*="github.com"] {
+    /* 1. Target and hide the GitHub repository shortcut icon specifically */
+    .stAppToolbar a[href*="github.com"],
+    .stAppToolbar a:has(svg[viewBox="0 0 16 16"]) {
         display: none !important;
     }
     
-    /* Hide the Edit / Developer pencil icon */
-    .stAppToolbar button[aria-label="Manage app"], 
-    .stAppToolbar button:has(svg path[d*="M14.06"]) {
+    /* 2. Target and hide the Developer Edit pencil button specifically */
+    .stAppToolbar button[aria-label="Manage app"],
+    .stAppToolbar button:has(svg path[d*="M14.06"]),
+    .stAppToolbar button:has(svg path[d*="M3 17.25"]) {
         display: none !important;
-    }
-    
-    /* Alternative blanket option: Hide the entire upper right toolbar icons entirely */
-    .stAppToolbar {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* Hide the main hamburger settings menu for end users */
-    #MainMenu {
-        visibility: hidden !important;
     }
     </style>
 """, unsafe_allow_html=True)

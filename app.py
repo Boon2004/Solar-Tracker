@@ -1081,36 +1081,60 @@ else:
 
                     canvas.addEventListener("mouseup", e => {
                         if (e.button === 2 || isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
+                        
                         if (isSelecting) {
-                            isSelecting = false; const mUp = getMouseLocation(e);
+                            isSelecting = false; 
+                            canvas.style.cursor = "default"; 
+                            const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
-                            let x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x), y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
+                            
+                            let x1 = Math.min(p1.x, p2.x);
+                            let x2 = Math.max(p1.x, p2.x);
+                            let y1 = Math.min(p1.y, p2.y);
+                            let y2 = Math.max(p1.y, p2.y);
                             let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
 
                             if (getActiveTool() === "route") {
                                 if (dist > 5) {
-                                    gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });
+                                    gridTopo.inverters.forEach(inv => { 
+                                        if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { 
+                                            if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); 
+                                        } 
+                                    });
                                 }
-                                draw(); return;
+                                draw(); 
+                                return;
                             }
 
                             let activeInv = parseInt(document.getElementById("topo_inv_token").value) || 20;
-                            let targets = independentStrings.filter(s => dist > 5 ? (s.min_c*CELL >= x1 && s.min_c*CELL <= x2 && s.min_r*CELL >= y1 && s.min_r*CELL <= y2) : (x1 >= s.min_c*CELL && x1 <= (s.max_c+1)*CELL && y1 >= s.min_r*CELL && y1 <= (s.max_r+1)*CELL));
+                            let isLassoSelection = dist > 5;
                             
-                            targets.forEach(s => { if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { if (dist <= 5 && gridTopo.stringGroups[s.id] === activeInv) delete gridTopo.stringGroups[s.id]; else gridTopo.stringGroups[s.id] = activeInv; } });
+                            let boxSelected = independentStrings.filter(s => {
+                                let cx = s.min_c * CELL; 
+                                let cy = s.min_r * CELL;
+                                let cw = (s.max_c - s.min_c + 1) * CELL; 
+                                let ch = (s.max_r - s.min_r + 1) * CELL;
+                                
+                                if (!isLassoSelection) {
+                                    return (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
+                                } else {
+                                    return (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2);
+                                }
+                            });
+                            
+                            boxSelected.forEach(s => { 
+                                if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { 
+                                    if (!isLassoSelection && gridTopo.stringGroups[s.id] === activeInv) {
+                                        delete gridTopo.stringGroups[s.id]; 
+                                    } else {
+                                        gridTopo.stringGroups[s.id] = activeInv; 
+                                    }
+                                } 
+                            });
                             draw();
                         }
                     });
-
-                    canvas.addEventListener("wheel", e => {
-                        e.preventDefault(); const m = getMouseLocation(e); const world = transformToWorldSpace(m);
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
-                        offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
-                    }, { passive: false });
-
-                    draw();
-                })();
             </script>
             """
             html_topology_workspace = html_topology_workspace.replace("__JSON_DATA_B64__", b64_json_data)\

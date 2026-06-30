@@ -1608,85 +1608,60 @@ else:
             try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
             except Exception: topo_meta_obj = {}
             
-            total_elements_count = 0
-            if selected_sched_aspect in ["pegging", "piling"]:
-                for b in active_table_data:
-                    ev = b.get("section_group") if b.get("section_group") is not None else 403
-                    if ev > 100:
-                        total_elements_count += int((ev // 100) * (ev % 100))
-                    else:
-                        if ev == 12: total_elements_count += 12
-                        elif ev == 6: total_elements_count += 6
-                        else: total_elements_count += 12
-            elif selected_sched_aspect in ["mounting", "dc_cabling"]:
-                total_elements_count = len(active_table_data)
-            elif selected_sched_aspect == "modules":
-                    for b in zone_filtered_blocks:
-                        # Dynamically measure the physical grid layout footprint matrix
-                        grid_rows = int(b["max_r"] - b["min_r"] + 1)
-                        grid_cols = int(b["max_c"] - b["min_c"] + 1)
-                        
-                        # Determine panel density multiplier on the fly based on geometry
-                        panel_density = grid_rows * grid_cols
-                        zone_specific_element_count += panel_density
-            elif selected_sched_aspect in ["inverter_structure", "inverter"]:
-                total_elements_count = len(topo_meta_obj.get("inverters", []))
-            elif selected_sched_aspect in ["transformer", "ac_cabling"]:
-                total_elements_count = len(topo_meta_obj.get("transformers", []))
-
-            st.markdown(f"**Aspect Total Quantities Parameter:** `{total_elements_count} Units` to redistribute across production cells.")
+            # --- ZONE TARGET SELECTOR PRE-POPLATOR ---
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             
-            with st.form("admin_schedule_broadcasting_form"):
-                sched_cols = st.columns(3)
-                with sched_cols[0]: target_sched_zone = st.selectbox("Select Target Segment Zone Boundary:", zones_to_configure)
-                with sched_cols[1]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
-                with sched_cols[2]: end_sc_dt = st.date_input("Scheduled Operational Wrap Date:", value=current_system_date + timedelta(days=14))
+            # We create a temporary non-form dropdown here to extract the active zone safely 
+            # before any evaluation engines trigger lower down
+            selected_target_zone_preview = st.selectbox("Active View Filter Zone:", zones_to_configure, key="zone_preview_filter_idx")
+            
+            # 🟢 DEFINED AT THE ABSOLUTE TOP: Guaranteed to exist before any aspect block triggers
+            zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
+            
+            zone_specific_element_count = 0
+            
+            if selected_sched_aspect in ["pegging", "piling"]:
+                for b in zone_filtered_blocks:
+                    ev = b.get("section_group") if b.get("section_group") is not None else 403
+                    if ev > 100:
+                        zone_specific_element_count += int((ev // 100) * (ev % 100))
+                    else:
+                        zone_specific_element_count += 12
+                        
+            elif selected_sched_aspect in ["mounting", "dc_cabling"]:
+                zone_specific_element_count = len(zone_filtered_blocks)
                 
-                # 🟢 CRITICAL: DEFINE THIS FIRST BEFORE ANY CALCULATION LOOPS RUN
-                zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(target_sched_zone)]
-                
-                zone_specific_element_count = 0
-                
-                if selected_sched_aspect in ["pegging", "piling"]:
-                    for b in zone_filtered_blocks:
-                        ev = b.get("section_group") if b.get("section_group") is not None else 403
-                        if ev > 100:
-                            zone_specific_element_count += int((ev // 100) * (ev % 100))
-                        else:
-                            zone_specific_element_count += 12
-                            
-                elif selected_sched_aspect in ["mounting", "dc_cabling"]:
-                    zone_specific_element_count = len(zone_filtered_blocks)
+            elif selected_sched_aspect == "modules":
+                for b in zone_filtered_blocks:
+                    # Dynamically measure dimensions safely from layout database entries
+                    grid_rows = int(b["max_r"] - b["min_r"] + 1)
+                    grid_cols = int(b["max_c"] - b["min_c"] + 1)
+                    zone_specific_element_count += (grid_rows * grid_cols)
                     
-                elif selected_sched_aspect == "modules":
-                    for b in zone_filtered_blocks:
-                        # Dynamically measure the physical grid layout footprint matrix
-                        grid_rows = int(b["max_r"] - b["min_r"] + 1)
-                        grid_cols = int(b["max_c"] - b["min_c"] + 1)
+            elif selected_sched_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
+                for inv in topo_meta_obj.get("inverters", []):
+                    inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
+                    CELL = 14
+                    match_found = any(
+                        str(b.get("assigned_zone")) == str(selected_target_zone_preview) and
+                        (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and
+                        (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL)
+                        for b in active_table_data
+                    )
+                    if match_found:
+                        zone_specific_element_count += 1
                         
-                        # Determine panel density multiplier on the fly based on geometry
-                        panel_density = grid_rows * grid_cols
-                        zone_specific_element_count += panel_density
-                        
-                elif selected_sched_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
-                    for inv in topo_meta_obj.get("inverters", []):
-                        inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
-                        CELL = 14
-                        match_found = any(
-                            str(b.get("assigned_zone")) == str(target_sched_zone) and
-                            (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and
-                            (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL)
-                            for b in active_table_data
-                        )
-                        if match_found:
-                            zone_specific_element_count += 1
-                            
-                elif selected_sched_aspect == "transformer":
-                    zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
+            elif selected_sched_aspect == "transformer":
+                zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
-                st.markdown(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{target_sched_zone}** for this aspect layer.")
+            st.info(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
 
+            # --- SCHEDULING DISPATCH DECK ---
+            with st.form("admin_schedule_broadcasting_form"):
+                sched_cols = st.columns(2)
+                with sched_cols[0]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
+                with sched_cols[1]: end_sc_dt = st.date_input("Scheduled Operational Wrap Date:", value=current_system_date + timedelta(days=14))
+                
                 if st.form_submit_button("💾 Broadcast Milestones & Save Run-Rates"):
                     w_days = calculate_network_working_days(start_sc_dt, end_sc_dt)
                     if w_days <= 0: 
@@ -1699,7 +1674,7 @@ else:
                                 {
                                     "farm_id": str(st.session_state.active_site_id), 
                                     "aspect": str(selected_sched_aspect),
-                                    "zone": str(target_sched_zone), 
+                                    "zone": str(selected_target_zone_preview), 
                                     "start_date": str(start_sc_dt), 
                                     "end_date": str(end_sc_dt),
                                     "working_days": int(w_days), 

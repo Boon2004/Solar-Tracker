@@ -1044,7 +1044,7 @@ else:
                             ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
 
-                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
+                        // 2. High-Contrast Outer Perimeter Outline Group Tracer (Unified Red Perimeter Contour)
                         let inverterCellsMap = {};
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
@@ -1065,9 +1065,9 @@ else:
                                 let w = (b.max_c - b.min_c + 1) * CELL;
                                 let h = (b.max_r - b.min_r + 1) * CELL;
 
-                                // Edge neighbors evaluation matrix (checks coordinates across the entire matching ID cluster)
-                                let topShared = cellBlocks.some(other => b !== other && other.max_r === b.min_r - 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
-                                let bottomShared = cellBlocks.some(other => b !== other && other.min_r === b.max_r + 1 && other.min_c <= b.max_c && other.max_c >= b.min_c);
+                                // Checks coordinates across the matching inverter cluster and drops internal dividing lines cleanly
+                                let topShared = cellBlocks.some(other => b !== other && (other.max_r === b.min_r - 1 || other.parentId === b.parentId) && other.min_c <= b.max_c && other.max_c >= b.min_c && b.min_r > other.min_r);
+                                let bottomShared = cellBlocks.some(other => b !== other && (other.min_r === b.max_r + 1 || other.parentId === b.parentId) && other.min_c <= b.max_c && other.max_c >= b.min_c && b.max_r < other.max_r);
                                 let leftShared = cellBlocks.some(other => b !== other && other.max_c === b.min_c - 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
                                 let rightShared = cellBlocks.some(other => b !== other && other.min_c === b.max_c + 1 && other.min_r <= b.max_r && other.max_r >= b.min_r);
 
@@ -1214,19 +1214,13 @@ else:
 
                     canvas.addEventListener("mouseup", e => {
                         if (e.button === 2 || isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
-                        if (isPanning) { isPanning = false; canvas.style.cursor = "default"; return; }
-                        
                         if (isSelecting) {
-                            isSelecting = false;
-                            canvas.style.cursor = "default";
-                            const mUp = getMouseLocation(e);
+                            isSelecting = false; const mUp = getMouseLocation(e);
                             const p1 = transformToWorldSpace(getMouseLocation({ clientX: startX + canvas.getBoundingClientRect().left, clientY: startY + canvas.getBoundingClientRect().top }));
                             const p2 = transformToWorldSpace(mUp);
-
-                            let boxX1 = Math.min(p1.x, p2.x), boxX2 = Math.max(p1.x, p2.x);
-                            let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
+                            let x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x), y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
                             let dist = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
-                            
+
                             if (getActiveTool() === "route") {
                                 if (dist > 5) {
                                     gridTopo.inverters.forEach(inv => { if (inv.x >= x1 && inv.x <= x2 && inv.y >= y1 && inv.y <= y2) { if (!lassoSelectedInvertersList.includes(inv.id)) lassoSelectedInvertersList.push(inv.id); } });

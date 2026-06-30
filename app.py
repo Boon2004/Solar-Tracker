@@ -1692,7 +1692,7 @@ else:
                 ⚙️ <b>Field Assembly Blueprint Canvas Deck Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to lasso blocks &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom maps.
             </div>
             <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                <canvas id="crew_execution_canvas" width="1500" height="600" style="background:__CANVAS_BG__; display:block;"></canvas>
+                <canvas id="crew_execution_canvas" width="1500" height="600" style="background:__CANVAS_BG__; display:block(");></canvas>
             </div>
             <div style="margin-top:10px; text-align:right;">
                 <button id="btn_save_field_state" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px; box-shadow:0 4px 6px rgba(0,0,0,0.25);">💾 Save Field Tracking Data & Update Progress Table</button>
@@ -1728,8 +1728,8 @@ else:
                     let status = b[aspectKey + '_status'] || 'pending';
                     let dateVal = b[aspectKey + '_date'];
                     if (status === 'completed') {
-                        if (dateVal === sysDateStr) return '#eab308'; // Active Date Progress tracking (Yellow)
-                        return '#22c55e'; // Locked progress from historical shifts (Green)
+                        if (dateVal === sysDateStr) return '#eab308';
+                        return '#22c55e';
                     }
                     return '#3b82f6';
                 }
@@ -1867,68 +1867,30 @@ else:
             })
         st.table(compiled_ui_matrix_rows)
         
-        def cache_reporting_remark(f_id, aspect, zone, l_date, target, installed, remark_text):
-    st.session_state["staged_remark_payload"] = {
-        "farm_id": str(f_id),
-        "aspect": str(aspect),
-        "zone": str(zone),
-        "log_date": str(l_date),
-        "target_units": int(math.floor(target)),
-        "installed_units": int(installed),
-        "deviation": int(installed - math.floor(target)),
-        "remark": str(remark_text)
-    }
+        st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
+        with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
+            active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
+            updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
+            submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
 
-# 2. RENDER THE INTERFACE ENGINES
-st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
-
-with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
-    active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
-    updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
-    
-    # Check if the form button was clicked natively
-    submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
-
-# Process the transaction at the absolute base level (Zero Indentation)
-if submit_triggered:
-    try:
-        calculated_deviation = int(installed_today_count - math.floor(target_runrate))
-        
-        supabase.table("daily_progress_logs").upsert({
-            "farm_id": str(st.session_state.active_site_id),
-            "aspect": str(selected_crew_aspect),
-            "zone": str(active_zone_profile),
-            "log_date": str(current_date_str),
-            "target_units": int(math.floor(target_runrate)),
-            "installed_units": int(installed_today_count),
-            "deviation": calculated_deviation,
-            "remark": str(updated_remark_note)
-        }).execute()
-        
-        st.success("Log entries updated cleanly!")
-        time.sleep(0.5)
-        st.rerun()
-    except Exception as db_err:
-        st.error(f"Cloud update rejected: {str(db_err)}")
-    # Cast calculation metrics safely to avoid float serialization errors
-    safe_target = int(math.floor(target_runrate))
-    safe_deviation = int(installed_today_count - safe_target)
-    
-    try:
-        supabase.table("daily_progress_logs").upsert({
-            "farm_id": str(st.session_state.active_site_id), 
-            "aspect": str(selected_crew_aspect),
-            "zone": str(active_zone_profile), 
-            "log_date": str(current_date_str),
-            "target_units": safe_target, 
-            "installed_units": int(installed_today_count),
-            "deviation": safe_deviation, 
-            "remark": str(updated_remark_note)
-        }).execute()
-        st.success("Log entries updated cleanly!")
-        time.sleep(0.5); st.rerun()
-    except Exception as db_err:
-        st.error(f"Cloud update rejected: {str(db_err)}")
-
+        if submit_triggered:
+            try:
+                safe_target = int(math.floor(target_runrate))
+                safe_deviation = int(installed_today_count - safe_target)
+                
+                supabase.table("daily_progress_logs").upsert({
+                    "farm_id": str(st.session_state.active_site_id),
+                    "aspect": str(selected_crew_aspect),
+                    "zone": str(active_zone_profile),
+                    "log_date": str(current_date_str),
+                    "target_units": safe_target,
+                    "installed_units": int(installed_today_count),
+                    "deviation": safe_deviation,
+                    "remark": str(updated_remark_note)
+                }).execute()
+                
                 st.success("Log entries updated cleanly!")
-                time.sleep(0.5); st.rerun()
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as db_err:
+                st.error(f"Cloud update rejected: {str(db_err)}")

@@ -382,7 +382,7 @@ else:
                                             for old_key, inv_value in topo_data["stringGroups"].items():
                                                 parts = old_key.split("_")
                                                 old_base_id = parts[0]
-                                                suffix = f"_{parts[1 Menn]}" if len(parts) > 1 else ""
+                                                suffix = f"_{parts[1]}" if len(parts) > 1 else ""
                                                 
                                                 if old_base_id in id_mapping_dictionary:
                                                     new_base_id = id_mapping_dictionary[old_base_id]

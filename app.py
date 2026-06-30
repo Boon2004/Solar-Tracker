@@ -1530,7 +1530,6 @@ else:
             st.table(zone_metrics_rows)
             
             st.write("---")
-            
             # ==================================================================
             # LEVEL 3: MVS TRANSFORMER STATION INTERCONNECTION REGISTRY
             # ==================================================================
@@ -1558,16 +1557,10 @@ else:
             try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
             except Exception: topo_meta_obj = {}
             
-            # --- ZONE TARGET SELECTOR PRE-POPLATOR ---
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
-            
-            # We create a temporary non-form dropdown here to extract the active zone safely 
-            # before any evaluation engines trigger lower down
             selected_target_zone_preview = st.selectbox("Active View Filter Zone:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # 🟢 DEFINED AT THE ABSOLUTE TOP: Guaranteed to exist before any aspect block triggers
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
-            
             zone_specific_element_count = 0
             
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1583,7 +1576,6 @@ else:
                 
             elif selected_sched_aspect == "modules":
                 for b in zone_filtered_blocks:
-                    # Dynamically measure dimensions safely from layout database entries
                     grid_rows = int(b["max_r"] - b["min_r"] + 1)
                     grid_cols = int(b["max_c"] - b["min_c"] + 1)
                     zone_specific_element_count += (grid_rows * grid_cols)
@@ -1606,7 +1598,6 @@ else:
 
             st.info(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
 
-            # --- SCHEDULING DISPATCH DECK ---
             with st.form("admin_schedule_broadcasting_form"):
                 sched_cols = st.columns(2)
                 with sched_cols[0]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
@@ -1645,7 +1636,6 @@ else:
                 st.markdown("#### 📋 Active Operational Run-Sheets Master Calendar Configuration Profiles")
                 st.table(saved_schedules_res)
                 
-                # Render the standalone target wipe utility form panel
                 with st.form("admin_schedule_reset_form"):
                     st.markdown("##### 🚨 Danger Zone: Reset Active Schedules")
                     st.caption("This action completely clears out all assigned start dates, end dates, and target metrics for this project site layout.")
@@ -1659,7 +1649,6 @@ else:
                         except Exception as reset_err:
                             st.error(f"Failed to reset milestone timelines: {str(reset_err)}")
 
-        # APPEND TAB 5 AT THE BOTTOM OF THE ADMIN CODE BLOCK:
         with setup_tabs[5]:
             st.markdown("### 📈 Historical Operations Playback & Audit Engine Logs")
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
@@ -1674,23 +1663,31 @@ else:
                 st.caption("No written field entry logs found matching this evaluation criteria configuration profile window context.")
 
     else:
-        # PLACE THIS COMPREHENSIVE GENERICS CREW EXECUTION SYSTEM DECK COVERING THE ENTIRE FIELD MODE LOWER BLOCK:
-        st.markdown("###  Live Production Crew Workspace Mapping Dashboards")
+        # ==============================================================================
+        # 👷 LIVE PRODUCTION CREW WORKSPACE MAPPING DASHBOARDS
+        # ==============================================================================
+        st.markdown("### 🛰️ Live Production Crew Workspace Mapping Dashboards")
+        
         aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
         selected_crew_aspect = st.selectbox("Select Active Work Execution Protocol Aspect Layer:", aspect_options_list, key="crew_active_layer")
         
         active_zone_profile = "Global" if selected_crew_aspect == "transformer" else "Zone A"
         schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).execute().data
         
-        target_runrate = 0.0
-        if schedule_meta:
-            match = next((s for s in schedule_meta if s["zone"] == active_zone_profile), schedule_meta[0])
-            target_runrate = float(match.get("daily_target", 0.0))
+        # Guard Execution Scope: Lockout interface entirely if admin has not initialized schedule parameters
+        if not schedule_meta:
+            st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
+            st.info("This deployment map layer will automatically activate as soon as milestones are published in the Admin control suite.")
+            st.stop()
+            
+        match = next((s for s in schedule_meta if s["zone"] == active_zone_profile), schedule_meta[0])
+        target_runrate = float(match.get("daily_target", 0.0))
 
         st.markdown(f"#### 🛰️ Active Map Layer Profile View: `{selected_crew_aspect.upper()}`")
+        
+        # Theme declaration safely evaluated before HTML context binds
         is_light_theme = "true" if app_theme == "Light Mode" else "false"
         
-        # INJECT THE INTERACTIVE FIELD COMPONENT CONTROLLER LAYER EMBED BLOCK
         html_execution_engine = """
         <div style="background:__BG_COLOR__; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
             <div id="crew_canvas_tooltip" style="position:absolute; display:none; background:rgba(15,23,42,0.95); color:#f8fafc; border:1px solid #22c55e; padding:6px 12px; border-radius:4px; font-size:12px; pointer-events:none; z-index:99999; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
@@ -1698,7 +1695,7 @@ else:
                 ⚙️ <b>Field Assembly Blueprint Canvas Deck Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to lasso blocks &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom maps.
             </div>
             <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                <canvas id="crew_execution_canvas" width="1500" height="600" style="background:__CANVAS_BG__; display:block(");></canvas>
+                <canvas id="crew_execution_canvas" width="1500" height="600" style="background:__CANVAS_BG__; display:block;"></canvas>
             </div>
             <div style="margin-top:10px; text-align:right;">
                 <button id="btn_save_field_state" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px; box-shadow:0 4px 6px rgba(0,0,0,0.25);">💾 Save Field Tracking Data & Update Progress Table</button>
@@ -1880,50 +1877,23 @@ else:
             submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
 
         if submit_triggered:
-            # 1. Fallback Defaults: Guard against empty/missing context tokens safely
-            safe_farm_id = str(st.session_state.active_site_id) if st.session_state.get("active_site_id") else ""
-            safe_aspect = str(selected_crew_aspect) if selected_crew_aspect else "pegging"
-            safe_zone = str(active_zone_profile) if active_zone_profile else "Global"
-            safe_date_str = str(current_system_date) if current_system_date else str(date.today())
-            
-            # 2. Prevent Float-to-Int payload truncation errors explicitly
             try:
-                safe_target = int(math.floor(float(target_runrate or 0.0)))
-            except Exception:
-                safe_target = 0
+                safe_target = int(math.floor(target_runrate))
+                safe_deviation = int(installed_today_count - safe_target)
                 
-            safe_installed = int(installed_today_count) if installed_today_count is not None else 0
-            safe_deviation = safe_installed - safe_target
-            safe_remark = str(updated_remark_note).strip() if updated_remark_note else ""
-
-            # 3. Create explicit payload container mapping
-            sync_payload = {
-                "farm_id": safe_farm_id,
-                "aspect": safe_aspect,
-                "zone": safe_zone,
-                "log_date": safe_date_str,
-                "target_units": safe_target,
-                "installed_units": safe_installed,
-                "deviation": int(safe_deviation),
-                "remark": safe_remark
-            }
-
-            # 4. Fire protected transaction query loop block
-            if not safe_farm_id:
-                st.error("❌ Session State Mismatch: Active Project Farm ID is invalid or missing.")
-            else:
-                try:
-                    # Added on_conflict modifier to allow updating the target rows cleanly
-                    supabase.table("daily_progress_logs").upsert(
-                        sync_payload, 
-                        on_conflict="farm_id, aspect, zone, log_date"
-                    ).execute()
-                    
-                    st.success("🎉 Log entries updated cleanly!")
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as db_err:
-                    st.error("🚨 Database Engine Rejected Transaction Payload!")
-                    st.warning("Review data types payload sent below:")
-                    st.json(sync_payload)
-                    st.code(str(db_err))
+                supabase.table("daily_progress_logs").upsert({
+                    "farm_id": str(st.session_state.active_site_id),
+                    "aspect": str(selected_crew_aspect),
+                    "zone": str(active_zone_profile),
+                    "log_date": str(current_date_str),
+                    "target_units": safe_target,
+                    "installed_units": int(installed_today_count),
+                    "deviation": safe_deviation,
+                    "remark": str(updated_remark_note)
+                }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                
+                st.success("🎉 Log entries updated cleanly!")
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as db_err:
+                st.error(f"Cloud update rejected: {str(db_err)}")

@@ -1601,13 +1601,24 @@ else:
             total_elements_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
                 for b in active_table_data:
-                    ev = b.get("section_group", 403)
-                    total_elements_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
+                    ev = b.get("section_group") if b.get("section_group") is not None else 403
+                    if ev > 100:
+                        total_elements_count += int((ev // 100) * (ev % 100))
+                    else:
+                        if ev == 12: total_elements_count += 12
+                        elif ev == 6: total_elements_count += 6
+                        else: total_elements_count += 12
             elif selected_sched_aspect in ["mounting", "dc_cabling"]:
                 total_elements_count = len(active_table_data)
             elif selected_sched_aspect == "modules":
+                # Matches the exact pattern layout criteria found inside your summaries
                 for b in active_table_data:
-                    total_elements_count += ((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1))
+                    ev = b.get("section_group") if b.get("section_group") is not None else 403
+                    if ev > 100:
+                        pins_per_unit = int((ev // 100) * (ev % 100))
+                    else:
+                        pins_per_unit = 12
+                    total_elements_count += pins_per_unit
             elif selected_sched_aspect in ["inverter_structure", "inverter"]:
                 total_elements_count = len(topo_meta_obj.get("inverters", []))
             elif selected_sched_aspect in ["transformer", "ac_cabling"]:
@@ -1860,7 +1871,27 @@ else:
         with st.form("crew_reporting_ledger_submission_form"):
             active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
             updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
+            
             if st.form_submit_button("💾 Commit Shift Remarks to Permanent Log Database"):
+                # Ensure exactly 16 spaces (4 levels deep) are applied here:
+                safe_target = int(math.floor(target_runrate))
+                safe_deviation = int(installed_today_count - safe_target)
+                
+                try:
+                    supabase.table("daily_progress_logs").upsert({
+                        "farm_id": str(st.session_state.active_site_id), 
+                        "aspect": str(selected_crew_aspect),
+                        "zone": str(active_zone_profile), 
+                        "log_date": str(current_date_str),
+                        "target_units": safe_target, 
+                        "installed_units": int(installed_today_count),
+                        "deviation": safe_deviation, 
+                        "remark": str(updated_remark_note)
+                    }).execute()
+                    st.success("Log entries updated cleanly!")
+                    time.sleep(0.5); st.rerun()
+                except Exception as db_err:
+                    st.error(f"Cloud update rejected: {str(db_err)}")
     # Cast calculation metrics safely to avoid float serialization errors
     safe_target = int(math.floor(target_runrate))
     safe_deviation = int(installed_today_count - safe_target)
@@ -1880,6 +1911,6 @@ else:
         time.sleep(0.5); st.rerun()
     except Exception as db_err:
         st.error(f"Cloud update rejected: {str(db_err)}")
-        
+
                 st.success("Log entries updated cleanly!")
                 time.sleep(0.5); st.rerun()

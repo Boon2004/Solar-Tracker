@@ -22,25 +22,14 @@ supabase: Client = get_supabase_client()
 
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
-# --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
+# ==============================================================================
+# 🎨 REPOSITORIES & DEV ACTIONS ISOLATOR (CSS INJECTION)
+# ==============================================================================
 st.markdown("""
     <style>
-    /* 1. Target and hide the entire sub-container that holds GitHub and the Edit buttons */
-    div[data-testid="stAppToolbar"] > div:has(a),
-    div[data-testid="stAppToolbar"] div[class*="stActionButton"]:not(:has(button[data-testid="stActionButtonDropdown"])) {
+    /* Cleanly collapse and hide the entire upper header toolbar context completely */
+    div[data-testid="stAppToolbar"] {
         display: none !important;
-    }
-
-    /* 2. Target any loose anchor tags (links) inside the toolbar and kill them */
-    div[data-testid="stAppToolbar"] a {
-        display: none !important;
-    }
-
-    /* 3. Strict structural exception: Force the three-dots popover wrapper to remain visible */
-    div[data-testid="stAppToolbar"] div:has(button[data-testid="stActionButtonDropdown"]),
-    button[data-testid="stActionButtonDropdown"] {
-        display: inline-flex !important;
-        visibility: visible !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -59,6 +48,35 @@ def fetch_farms_directory():
 
 all_registered_farms = fetch_farms_directory()
 farm_options = [f["name"] for f in all_registered_farms]
+
+# ==============================================================================
+# 🎨 GLOBAL SIDEBAR ENGINE & DISPLAY CONFIGURATION
+# ==============================================================================
+with st.sidebar:
+    st.header("🎨 Display Settings")
+    app_theme = st.selectbox(
+        "Application Interface Theme:",
+        ["Dark Mode (Default)", "Light Mode"],
+        index=0
+    )
+    
+    # Inject active layout styles based on live drop selection
+    if app_theme == "Light Mode":
+        st.markdown("""
+            <style>
+            .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
+            section[data-testid="stSidebar"] { background-color: #f1f5f9 !important; }
+            </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <style>
+            .stApp { background-color: #020617 !important; color: #f8fafc !important; }
+            section[data-testid="stSidebar"] { background-color: #0f172a !important; }
+            </style>
+        """, unsafe_allow_html=True)
+
+    st.write("---")
 
 # ==============================================================================
 # 🏡 MAIN ENTRY SITE GATEWAY
@@ -89,26 +107,21 @@ if st.session_state.active_site_id is None:
                 if farm_options:
                     wipe_target = st.selectbox("Select Project to Clear:", farm_options, key="dev_clear_dropdown")
                     
-                    # Initialize confirmation gate if not present
                     if "confirm_purge_gate" not in st.session_state:
                         st.session_state.confirm_purge_gate = False
                     if "purge_target_selected" not in st.session_state:
                         st.session_state.purge_target_selected = ""
 
-                    # If they changed the dropdown selection, reset the confirmation gate for safety
                     if st.session_state.purge_target_selected != wipe_target:
                         st.session_state.confirm_purge_gate = False
                         st.session_state.purge_target_selected = wipe_target
 
                     if not st.session_state.confirm_purge_gate:
-                        # Initial click button
                         if st.button("💥 Purge Cloud Data Records", type="primary"):
                             st.session_state.confirm_purge_gate = True
                             st.rerun()
                     else:
-                        # Revealed confirmation menu block after the initial click
-                        st.error(f"🚨 **CRITICAL WARNING:** Are you sure you want to delete layout parameters for **{wipe_target}**? This cannot be undone.")
-                        
+                        st.error(f"🚨 **CRITICAL WARNING:** Are you absolutely sure you want to completely wipe out all data matrices for **{wipe_target}**? This cannot be undone.")
                         col_purge1, col_purge2 = st.columns(2)
                         with col_purge1:
                             if st.button("🔥 YES, PERMANENTLY PURGE", type="primary", use_container_width=True):
@@ -119,12 +132,9 @@ if st.session_state.active_site_id is None:
                                             supabase.table("structures").delete().eq("farm_id", target_farm["id"]).execute()
                                             supabase.table("farms").delete().eq("id", target_farm["id"]).execute()
                                             st.success(f"Successfully cleared all data frameworks for {wipe_target}!")
-                                            
-                                            # Reset gate conditions
                                             st.session_state.confirm_purge_gate = False
                                             st.cache_resource.clear()
-                                            time.sleep(1)
-                                            st.rerun()
+                                            time.sleep(1); st.rerun()
                                     except Exception as e: 
                                         st.error(f"Purge rejected: {str(e)}")
                         with col_purge2:
@@ -133,6 +143,8 @@ if st.session_state.active_site_id is None:
                                 st.rerun()
                 else:
                     st.info("No active cloud entries found to clear.")
+                
+                st.write("---")
                 st.subheader("🚀 Onboard New Layout Framework")
                 new_site_name = st.text_input("Assign Site Project Name:")
                 init_admin_pwd = st.text_input("Assign Management Password:", value="ok")
@@ -235,8 +247,7 @@ if st.session_state.active_site_id is None:
                                 
                                 st.success(f"🎉 Saved {success_count} structured blocks.")
                                 st.cache_resource.clear()
-                                time.sleep(1)
-                                st.rerun()
+                                time.sleep(1); st.rerun()
 
     st.subheader("🌐 Access Site Workspace Portal")
     if farm_options:
@@ -250,10 +261,11 @@ if st.session_state.active_site_id is None:
                     st.session_state.active_site_name = target_site_record["name"]
                     st.session_state.admin_key_match = target_site_record.get("admin_password") or "ok"
                     
-                    # FIX: Instantly lock developer panel when entering a layout workspace
-                    st.session_state.dev_unlocked = False 
-                    
+                    # Safety Auto-Logout of Developer Mode on Site Workspace Entry
+                    st.session_state.dev_unlocked = False
                     st.rerun()
+                else: st.error("Incorrect password credentials.")
+
 # ==============================================================================
 # 🗂️ PHASE 2: INTERNAL OPERATIONS TRACKING PLATFORM COMMAND CENTER
 # ==============================================================================
@@ -299,7 +311,6 @@ else:
                             parent_farm_id = st.session_state.active_site_id
                             raw_topo_string = current_farm_record.get("background_image_url") or "{}"
                             
-                            # 1. Download ALL parent structures completely across pages
                             parent_structures = []
                             limit = 1000
                             offset = 0
@@ -310,7 +321,6 @@ else:
                                 if len(res_page) < limit: break
                                 offset += limit
 
-                            # 2. Instantiate the new farm master profile row
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": current_farm_record.get("admin_password", "ok"),
@@ -326,7 +336,6 @@ else:
                             if new_farm_response.data and parent_structures:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
                                 
-                                # 3. Replicate all structural components properties completely
                                 sandbox_structures = []
                                 for struct in parent_structures:
                                     sandbox_structures.append({
@@ -350,7 +359,6 @@ else:
                                     if res_batch.data:
                                         inserted_structures_fleet.extend(res_batch.data)
                                 
-                                # 4. Relational tracking index mapper dictionary
                                 id_mapping_dictionary = {}
                                 for old_s in parent_structures:
                                     match = next((new_s for new_s in inserted_structures_fleet 
@@ -360,12 +368,10 @@ else:
                                     if match:
                                         id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
                                 
-                                # 5. Parse, update, and validate string, inverter, and TS topographies
                                 try:
                                     if raw_topo_string.startswith("{"):
                                         topo_data = json.loads(raw_topo_string)
                                         
-                                        # Map panels IDs to strings channels
                                         if "stringGroups" in topo_data:
                                             new_string_groups = {}
                                             for old_key, inv_value in topo_data["stringGroups"].items():
@@ -378,11 +384,9 @@ else:
                                                     new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                             topo_data["stringGroups"] = new_string_groups
                                         
-                                        # Recalculate Inverters positioning and protect TS relational references
                                         if "inverters" in topo_data:
                                             CELL = 14
                                             for inv in topo_data["inverters"]:
-                                                # Ensure transformer relationships default back safely to null instead of breaking if indices shifted
                                                 if "transformerId" in inv and inv["transformerId"] is not None:
                                                     if "transformers" in topo_data and (inv["transformerId"] >= len(topo_data["transformers"]) or inv["transformerId"] < 0):
                                                         inv["transformerId"] = None
@@ -405,13 +409,11 @@ else:
                                 except Exception:
                                     pass
                                 
-                                # Write corrected structure back to cloud database
                                 supabase.table("farms").update({"background_image_url": raw_topo_string}).eq("id", sandbox_farm_id).execute()
                                 
                                 st.cache_resource.clear()
                                 st.success("🎉 100% Perfect Clone Created! Panels, Inverters, Strings, and TS Hubs are identical.")
-                                time.sleep(1.5)
-                                st.rerun()
+                                time.sleep(1.5); st.rerun()
                         except Exception as err:
                             st.error(f"Duplication sequence failed: {str(err)}")
             
@@ -488,7 +490,7 @@ else:
         offset = 0
         while True:
             try:
-                # FIX: Order spatially by row and column instead of by database ID
+                # Spatial coordinate sorting to keep mapping sequences synchronized
                 res = supabase.table("structures").select("*").eq("farm_id", farm_id).order("min_r").order("min_c").range(offset, offset + limit - 1).execute().data
                 if not res: break
                 all_data.extend(res)
@@ -500,7 +502,7 @@ else:
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
     if not active_table_data:
-        st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet. Use the control configuration page above to import structural data files.")
+        st.warning("ℹ️ No operational layout metrics loaded from database. Use the developer configuration panel to onboard blueprint sheets.")
         st.stop()
 
     min_r = min([b.get("min_r", 1) for b in active_table_data])
@@ -519,6 +521,7 @@ else:
             st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
     
     clean_wiping_dropdown_options = [zone for zone in st.session_state.managed_zones if zone != "Unassigned"]
+    is_light_theme = "true" if app_theme == "Light Mode" else "false"
 
     if st.session_state.is_admin_mode:
         setup_tabs = st.tabs([
@@ -570,7 +573,7 @@ else:
                             st.error(f"Reset failed: {str(e)}")
 
             html_zone_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+            <div style="background:__BG_COLOR__; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     Mouse Controls: <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to select multiple cells &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to select a single block &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                 </div>
@@ -584,7 +587,7 @@ else:
                     <button id="btn_no" style="background:#ef4444; color:white; border:none; padding:8px 22px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px;">No</button>
                 </div>
                 <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="zone_canvas" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                    <canvas id="zone_canvas" width="1500" height="600" style="background:__CANVAS_BG__; display:block;"></canvas>
                 </div>
             </div>
             <script>
@@ -596,6 +599,7 @@ else:
                     const paintZone = "PAINT_ZONE_VAL";
                     const CELL = CELL_SIZE_VAL;
                     const isPublished = __IS_PUBLISHED_VAL__;
+                    const isLight = __IS_LIGHT_THEME__;
                     
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL;
@@ -626,7 +630,8 @@ else:
                     }
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = isLight ? '#f8fafc' : '#020617';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
                         ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
 
                         blocks.forEach(b => {
@@ -635,7 +640,7 @@ else:
                             let x = b.min_c * CELL; let y = b.min_r * CELL;
                             let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h);
-                            ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
+                            ctx.strokeStyle = isLight ? '#cbd5e1' : '#020617'; ctx.lineWidth = 0.75; ctx.strokeRect(x, y, w, h);
                             
                             if (isStaged) { 
                                 ctx.strokeStyle = '#ffff00'; 
@@ -797,7 +802,7 @@ else:
                                     body: JSON.stringify({ "assigned_zone": paintZone })
                                 });
                             }
-                            msgBox.innerText = "Done! Hit the reload button to refresh overview.";
+                            msgBox.innerText = "Done! Hit reload button to refresh overview.";
                             setTimeout(() => { msgBox.style.display = "none"; }, 4000);
                         } catch(e) {
                             msgBox.innerText = "Network transmission exception dropped.";
@@ -831,6 +836,9 @@ else:
                                              .replace("MAX_R_VAL", str(max_r))\
                                              .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
                                              .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                             .replace("__IS_LIGHT_THEME__", is_light_theme)\
+                                             .replace("__BG_COLOR__", "#f1f5f9" if app_theme == "Light Mode" else "#090d16")\
+                                             .replace("__CANVAS_BG__", "#f8fafc" if app_theme == "Light Mode" else "#020617")\
                                              .replace("__IS_PUBLISHED_VAL__", "true" if site_is_published else "false")
             components.html(html_zone_engine, height=700)
 
@@ -838,7 +846,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # Isolate the distinct structural layouts from your database matrix
             layout_types = {}
             for block in active_table_data:
                 h_cells = block.get("max_r", 1) - block.get("min_r", 1) + 1
@@ -859,7 +866,6 @@ else:
             if layout_count == 0:
                 st.info("No structure architecture frameworks detected.")
             else:
-                # UPPER SECTION: Show isolated layout boxes matching the exact coordinate math
                 st.markdown("#### 🗺️ Current Active Database Layout Formations")
                 top_cols = st.columns(max(layout_count, 2))
                 
@@ -924,8 +930,6 @@ else:
                         components.html(html_current_view, height=220)
 
                 st.write("---")
-                
-                # LOWER SECTION: Interactive Template Editor Selector Matrix
                 st.markdown("#### ⚙️ Layout Architecture Blueprint Adjustments Deck")
                 selected_layout_label = st.selectbox("Select Model Template Variant to Configure Layout Pins Amount:", list(layout_types.keys()))
                 
@@ -938,14 +942,14 @@ else:
                 col_inputs, col_actions = st.columns([4, 6])
                 
                 with col_inputs:
-                    row_pts = st.number_input("Array Points per Row Count (Rows stacked vertically):", min_value=1, max_value=20, key=f"{state_prefix}_rows")
-                    col_pts = st.number_input("Array Points per Column Count (Columns lined horizontally):", min_value=1, max_value=20, key=f"{state_prefix}_cols")
+                    row_pts = st.number_input("Array Points per Row Count:", min_value=1, max_value=20, key=f"{state_prefix}_rows")
+                    col_pts = st.number_input("Array Points per Column Count:", min_value=1, max_value=20, key=f"{state_prefix}_cols")
                     
                     total_calculated_points = row_pts * col_pts
                     st.metric(label="Calculated Configuration Pins", value=f"{total_calculated_points} Pts / Unit")
                     
                     if st.button("💾 Apply & Replicate Fleetwide Structure Patterns", type="primary", use_container_width=True):
-                        with st.spinner("Broadcasting layout modifications to cloud ecosystem records..."):
+                        with st.spinner("Broadcasting layout modifications..."):
                             try:
                                 encoded_group_signature = int((row_pts * 100) + col_pts)
                                 supabase.table("structures").update({
@@ -955,10 +959,9 @@ else:
                                 
                                 st.cache_resource.clear()
                                 st.success("Updated fleet configuration profiles cleanly!")
-                                time.sleep(0.5)
-                                st.rerun()
+                                time.sleep(0.5); st.rerun()
                             except Exception as e:
-                                st.error(f"Transmission mutation failure occurred: {str(e)}")
+                                st.error(f"Transmission mutation failure: {str(e)}")
 
                 with col_actions:
                     h_px_prev = int(target_layout["h_cells"] * 18)
@@ -1004,15 +1007,15 @@ else:
             stored_metadata_string = current_farm_record.get("background_image_url") if (current_farm_record.get("background_image_url") and current_farm_record.get("background_image_url").startswith("{")) else "{}"
             
             html_topology_workspace = """
-            <div style="background:#090d16; padding:15px; border-radius:12px; font-family:sans-serif; color:#f8fafc;">
+            <div style="background:__BG_COLOR__; padding:15px; border-radius:12px; font-family:sans-serif; color:__TEXT_COLOR__;">
                 <div style="display:grid; grid-template-columns: 260px 1fr; gap:15px;">
-                    <div style="background:#0f172a; padding:14px; border-radius:8px; border:1px solid #1e293b; font-size:13px;">
+                    <div style="background:#0f172a; padding:14px; border-radius:8px; border:1px solid #1e293b; font-size:13px; color:#f8fafc;">
                         <h4 style="margin-top:0; margin-bottom:12px; color:#38bdf8; font-size:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;">🛠️ DESIGN DECK</h4>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="pan" checked> ✋ Pan / Navigate Map</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="string"> 🔌 Click / Lasso Strings</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="inverter"> ⚡ Click Place Inverter</label>
                         <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="transformer"> 🏪 Click Place Transformer</label>
-                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverters to MVS (Click / Drag Lasso)</label>
+                        <label style="display:block; margin-bottom:10px; cursor:pointer;"><input type="radio" name="topo_tool" value="route"> 🔗 Route Inverters to MVS</label>
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
                         <h5 style="margin-top:0; margin-bottom:8px; color:#a78bfa; font-size:12px;">ACTIVE IDENTIFICATION</h5>
@@ -1020,14 +1023,12 @@ else:
                         <input type="number" id="topo_inv_token" value="20" min="1" style="width:100%; background:#1e293b; color:white; border:1px solid #334155; border-radius:4px; padding:5px; margin-bottom:12px; box-sizing:border-box;">
                         
                         <hr style="border-color:#1e293b; margin:14px 0;">
-                        
-                        
-                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:10px 0px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; font-size:13px; line-height:normal; height:auto;">💾 Save Topologies</button>
+                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:10px 0px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; font-size:13px;">💾 Save Topologies</button>
                     </div>
 
                     <div style="position:relative;">
                         <div id="topo_tooltip" style="position:absolute; display:none; background:rgba(15,23,42,0.95); border:1px solid #38bdf8; padding:8px; border-radius:4px; font-size:12px; pointer-events:none; z-index:99999; color:#f8fafc; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
-                        <canvas id="topo_canvas" width="1120" height="600" style="background:#020617; border-radius:8px; border:1px solid #1e293b; display:block;"></canvas>
+                        <canvas id="topo_canvas" width="1120" height="600" style="background:__CANVAS_BG__; border-radius:8px; border:1px solid #1e293b; display:block;"></canvas>
                     </div>
                 </div>
             </div>
@@ -1036,6 +1037,7 @@ else:
                 (function() {
                     const databaseStructures = JSON.parse(atob("__JSON_DATA_B64__"));
                     let gridTopo = JSON.parse(atob("__TOPOLOGY_METADATA_B64__"));
+                    const isLight = __IS_LIGHT_THEME__;
                     
                     if (!gridTopo.inverters) gridTopo.inverters = [];
                     if (!gridTopo.transformers) gridTopo.transformers = [];
@@ -1081,7 +1083,6 @@ else:
 
                     let isPanning = false, isSelecting = false;
                     let startX = 0, startY = 0, currX = 0, currY = 0;
-                    let selectedInverterIndexForRouting = null;
                     let lassoSelectedInvertersList = [];
 
                     canvas.addEventListener("contextmenu", e => e.preventDefault());
@@ -1092,10 +1093,7 @@ else:
 
                     function getCapacityColor(stringCount) {
                         if (stringCount <= 0) return "#1e293b";
-                        const palette = [
-                            "#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", 
-                            "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"
-                        ];
+                        const palette = ["#10b981", "#06b6d4", "#8b5cf6", "#f43f5e", "#ec4899", "#3b82f6", "#14b8a6", "#f59e0b", "#6366f1", "#a855f7"];
                         return palette[(stringCount - 1) % palette.length];
                     }
 
@@ -1104,7 +1102,8 @@ else:
                     }
 
                     function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = isLight ? '#f8fafc' : '#020617';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
                         ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
 
                         gridTopo.inverters.forEach(inv => {
@@ -1118,7 +1117,6 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // 1. Core structural background fills
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1128,46 +1126,10 @@ else:
                             ctx.fillRect(x, y, w, h);
                             
                             if (!linkedInv) {
-                                ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                                ctx.strokeStyle = isLight ? "rgba(0,0,0,0.15)" : "rgba(255, 255, 255, 0.12)"; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                             }
                         });
 
-                        // 2. High-Contrast Outer Perimeter Outline Group Tracer
-                        let inverterCellsMap = {};
-                        independentStrings.forEach(s => {
-                            let linkedInv = gridTopo.stringGroups[s.id];
-                            if (!linkedInv) return;
-                            if (!inverterCellsMap[linkedInv]) inverterCellsMap[linkedInv] = [];
-                            inverterCellsMap[linkedInv].push(s);
-                        });
-
-                        Object.keys(inverterCellsMap).forEach(invId => {
-                            let cellBlocks = inverterCellsMap[invId];
-                            ctx.strokeStyle = "#ff0000"; 
-                            ctx.lineWidth = 4.0;
-                            ctx.lineJoin = "miter";
-
-                            cellBlocks.forEach(b => {
-                                let x = b.min_c * CELL;
-                                let y = b.min_r * CELL;
-                                let w = (b.max_c - b.min_c + 1) * CELL;
-                                let h = (b.max_r - b.min_r + 1) * CELL;
-
-                                let topShared = cellBlocks.some(other => b !== other && b.min_r > other.min_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (b.min_r - other.max_r <= 5 || other.parentId === b.parentId));
-                                let bottomShared = cellBlocks.some(other => b !== other && b.max_r < other.max_r && other.min_c <= b.max_c && other.max_c >= b.min_c && (other.min_r - b.max_r <= 5 || other.parentId === b.parentId));
-                                let leftShared = cellBlocks.some(other => b !== other && b.min_c > other.min_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (b.min_c - other.max_c <= 5));
-                                let rightShared = cellBlocks.some(other => b !== other && b.max_c < other.max_c && other.min_r <= b.max_r && other.max_r >= b.min_r && (other.min_c - b.max_c <= 5));
-
-                                ctx.beginPath();
-                                if (!topShared) { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
-                                if (!bottomShared) { ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); }
-                                if (!leftShared) { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
-                                if (!rightShared) { ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); }
-                                ctx.stroke();
-                            });
-                        });
-
-                        // 3. String component tokens data overlays
                         independentStrings.forEach(s => {
                             let linkedInv = gridTopo.stringGroups[s.id];
                             if (!linkedInv) return;
@@ -1194,13 +1156,14 @@ else:
 
                             ctx.strokeStyle = lassoSelectedInvertersList.includes(inv.id) ? "#facc15" : "#ffffff";
                             ctx.lineWidth = lassoSelectedInvertersList.includes(inv.id) ? 3.5 : 1; ctx.strokeRect(bx, by, badgeW, badgeH);
+                            ctx.textAlign = "start";
                         });
 
                         gridTopo.transformers.forEach((t, i) => {
                             ctx.fillStyle = "#ff1744"; ctx.fillRect(t.x - 18, t.y - 18, 36, 36);
                             ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(t.x - 18, t.y - 18, 36, 36);
                             ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
-                            ctx.fillText("TS " + (i + 1), t.x, t.y + 4);
+                            ctx.fillText("TS " + (i + 1), t.x, t.y + 4); ctx.textAlign = "start";
                         });
 
                         ctx.restore();
@@ -1225,24 +1188,19 @@ else:
                                     gridTopo.transformers.splice(tIdx, 1);
                                     gridTopo.inverters.forEach(i => { if (i.transformerId === tIdx) i.transformerId = null; else if (i.transformerId > tIdx) i.transformerId -= 1; });
                                 }
-                                draw();
-                                return;
+                                draw(); return;
                             }
                             if (tool === "inverter") {
                                 gridTopo.inverters = gridTopo.inverters.filter(inv => {
                                     let isHit = Math.sqrt(Math.pow(world.x - inv.x, 2) + Math.pow(world.y - inv.y, 2)) <= 20;
                                     if (isHit) {
-                                        Object.keys(gridTopo.stringGroups).forEach(key => {
-                                            if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key];
-                                        });
+                                        Object.keys(gridTopo.stringGroups).forEach(key => { if (gridTopo.stringGroups[key] === inv.id) delete gridTopo.stringGroups[key]; });
                                     }
                                     return !isHit;
                                 });
                                 draw(); return;
                             }
-                            
-                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move";
-                            return;
+                            isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; canvas.style.cursor = "move"; return;
                         }
 
                         if (tool === "pan") {
@@ -1328,11 +1286,7 @@ else:
                             let boxSelected = independentStrings.filter(s => {
                                 let cx = s.min_c * CELL; let cy = s.min_r * CELL;
                                 let cw = (s.max_c - s.min_c + 1) * CELL; let ch = (s.max_r - s.min_r + 1) * CELL;
-                                if (!isLassoSelection) {
-                                    return (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
-                                } else {
-                                    return (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2);
-                                }
+                                return isLassoSelection ? (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) : (x1 >= cx && x1 <= cx + cw && y1 >= cy && y1 <= cy + ch);
                             });
                             
                             boxSelected.forEach(s => { if (!gridTopo.stringGroups[s.id] || gridTopo.stringGroups[s.id] === activeInv) { if (!isLassoSelection && gridTopo.stringGroups[s.id] === activeInv) delete gridTopo.stringGroups[s.id]; else gridTopo.stringGroups[s.id] = activeInv; } });
@@ -1346,6 +1300,15 @@ else:
                         offsetX = m.x - world.x * scale; offsetY = m.y - world.y * scale; draw();
                     }, { passive: false });
 
+                    document.getElementById("btn_topo_save").addEventListener("click", async () => {
+                        await fetch("SUPABASE_URL_VAL/rest/v1/farms?id=eq.ACTIVE_SITE_ID_VAL", {
+                            method: "PATCH",
+                            headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                            body: JSON.stringify({ "background_image_url": JSON.stringify(gridTopo) })
+                        });
+                        alert("Topologies synchronized safely inside structural metadata profiles!");
+                    });
+
                     draw();
                 })();
             </script>
@@ -1358,8 +1321,11 @@ else:
                                                              .replace("MAX_R_VAL", str(max_r))\
                                                              .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
                                                              .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
-                                                             .replace("ACTIVE_SITE_ID_VAL", str(st.session_state.active_site_id))
-            
+                                                             .replace("ACTIVE_SITE_ID_VAL", str(st.session_state.active_site_id))\
+                                                             .replace("__IS_LIGHT_THEME__", is_light_theme)\
+                                                             .replace("__BG_COLOR__", "#f1f5f9" if app_theme == "Light Mode" else "#090d16")\
+                                                             .replace("__TEXT_COLOR__", "#0f172a" if app_theme == "Light Mode" else "#f8fafc")\
+                                                             .replace("__CANVAS_BG__", "#f8fafc" if app_theme == "Light Mode" else "#020617")
             components.html(html_topology_workspace, height=660)
 
         # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
@@ -1376,9 +1342,6 @@ else:
             for str_id, inv_id in string_groups.items():
                 global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
             
-            # ==================================================================
-            # LEVEL 1: WHOLE PLANT HOLISTIC SUMMARY OVERVIEW
-            # ==================================================================
             st.subheader("🏭 LEVEL 1: Whole Plant Operational Fleet Totals")
             
             layout_analysis = {}
@@ -1400,10 +1363,8 @@ else:
                 
                 if l_type not in layout_analysis:
                     layout_analysis[l_type] = {
-                        "tracker_count": 0,
-                        "pins_per_unit": pins_per_unit,
-                        "matrix_shape": f"{r_f} Rows × {c_f} Columns",
-                        "total_pins": 0
+                        "tracker_count": 0, "pins_per_unit": pins_per_unit,
+                        "matrix_shape": f"{r_f} Rows × {c_f} Columns", "total_pins": 0
                     }
                 layout_analysis[l_type]["tracker_count"] += 1
                 layout_analysis[l_type]["total_pins"] += pins_per_unit
@@ -1429,8 +1390,7 @@ else:
             global_capacity_buckets = {}
             for inv_id, s_count in global_inv_string_distribution.items():
                 bucket_key = f"{s_count} Strings Loading Capacity"
-                if bucket_key not in global_capacity_buckets:
-                    global_capacity_buckets[bucket_key] = []
+                if bucket_key not in global_capacity_buckets: global_capacity_buckets[bucket_key] = []
                 global_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
                 
             if global_capacity_buckets:
@@ -1446,10 +1406,6 @@ else:
                 st.table(g_bucket_rows)
             
             st.write("---")
-            
-            # ==================================================================
-            # LEVEL 2: GRANULAR ZONE LEVEL METRICS DECK
-            # ==================================================================
             st.subheader("🗺️ LEVEL 2: Granular Zone Level Operations Breakdown")
             
             zone_clusters = {}
@@ -1469,9 +1425,7 @@ else:
                         enc_val = b.get("section_group") if b.get("section_group") is not None else 403
                         
                         if enc_val > 100:
-                            r_f = int(enc_val // 100)
-                            c_f = int(enc_val % 100)
-                            pins_per_unit = int(r_f * c_f)
+                            r_f = int(enc_val // 100); c_f = int(enc_val % 100); pins_per_unit = int(r_f * c_f)
                         else:
                             if enc_val == 12: pins_per_unit, r_f, c_f = 12, 3, 4
                             elif enc_val == 6: pins_per_unit, r_f, c_f = 6, 2, 3
@@ -1479,10 +1433,8 @@ else:
                             
                         if l_type not in z_layout_analysis:
                             z_layout_analysis[l_type] = {
-                                "count": 0,
-                                "shape": f"{r_f}x{c_f} Grid",
-                                "pins_per_unit": pins_per_unit,
-                                "accumulated_pins": 0
+                                "count": 0, "shape": f"{r_f}x{c_f} Grid",
+                                "pins_per_unit": pins_per_unit, "accumulated_pins": 0
                             }
                         z_layout_analysis[l_type]["count"] += 1
                         z_layout_analysis[l_type]["accumulated_pins"] += pins_per_unit
@@ -1492,18 +1444,13 @@ else:
                     z_summary_rows = []
                     for name, m in z_layout_analysis.items():
                         z_summary_rows.append({
-                            "Tracker Model Category": name.upper(),
-                            "Trackers Count In Zone": m["count"],
-                            "Pattern Aspect Structure": m["shape"],
-                            "Pins / Tracker Unit": f"{m['pins_per_unit']} Pts",
+                            "Tracker Model Category": name.upper(), "Trackers Count In Zone": m["count"],
+                            "Pattern Aspect Structure": m["shape"], "Pins / Tracker Unit": f"{m['pins_per_unit']} Pts",
                             "Total Pinpoints Combined": f"{m['accumulated_pins']} Pts"
                         })
-                    st.markdown(f"**Structural Tracker Configuration Layout Profiles inside `{zone_name}`:**")
                     st.table(z_summary_rows)
                     
-                    st.markdown(f"**Electrical Inverter Capacity Density Matrix inside `{zone_name}`:**")
                     zone_inv_string_distribution = {}
-                    
                     for b in zone_blocks:
                         labels_list = [f"{b['id']}_N", f"{b['id']}_S"] if b.get("structure_type") == "double_6x9" else [f"{b['id']}_A"]
                         for lbl in labels_list:
@@ -1515,8 +1462,7 @@ else:
                     distinct_zone_inverters_set = set()
                     for inv_id, s_count in zone_inv_string_distribution.items():
                         bucket_key = f"{s_count} Strings Loading Channel"
-                        if bucket_key not in zone_capacity_buckets:
-                            zone_capacity_buckets[bucket_key] = []
+                        if bucket_key not in zone_capacity_buckets: zone_capacity_buckets[bucket_key] = []
                         zone_capacity_buckets[bucket_key].append(f"INV #{inv_id}")
                         distinct_zone_inverters_set.add(inv_id)
                         
@@ -1525,13 +1471,12 @@ else:
                         for b_name, inv_badge_list in zone_capacity_buckets.items():
                             sorted_zone_inv_badges = sorted(inv_badge_list, key=lambda x: int(x.split('#')[1]))
                             z_bucket_rows.append({
-                                "String Load Concentration Density": b_name,
-                                "Inverters Count inside Zone": len(sorted_zone_inv_badges),
+                                "String Load Concentration Density": b_name, "Inverters Count inside Zone": len(sorted_zone_inv_badges),
                                 "Target Mapped Inverter Tokens (Sorted)": ", ".join(sorted_zone_inv_badges)
                             })
                         st.table(z_bucket_rows)
                     else:
-                        st.caption("No custom string topographies or electrical node wires are lassoed into this zone index bounds yet.")
+                        st.caption("No custom string topographies wires mapped inside this zone yet.")
                         
                     col_z1, col_z2, col_z3 = st.columns(3)
                     with col_z1: st.metric(f"Total Tracker Blocks ({zone_name})", f"{z_total_trackers} Units")
@@ -1539,9 +1484,6 @@ else:
                     with col_z3: st.metric(f"Total Inverter Entities ({zone_name})", f"{len(distinct_zone_inverters_set)} INVs")
 
             st.write("---")
-            # ==================================================================
-            # LEVEL 3: MVS TRANSFORMER STATION POOL ASSIGNATION MATRIX
-            # ==================================================================
             st.subheader("🏪 LEVEL 3: Transformer Station (MVS) Fleet Interconnection Registries")
             st.metric("Total Active Transformer Medium Voltage Stations Registered", f"{len(transformers_list)} Station Hubs")
             
@@ -1564,7 +1506,6 @@ else:
         # ==============================================================================
         if not site_is_published:
             st.error("🛑 **Access Restricted:** The operational blueprint for this site layout has not been deployed or finalized by the administrator yet.")
-            st.info("ℹ️ Field crews will gain tracker workspace mapping capability once the admin team formally authorizes a live deployment package from the control panel.")
             if st.button("🔄 Check Deployment Synchronization Status", type="primary"): st.rerun()
             st.stop()
             
@@ -1573,21 +1514,14 @@ else:
             st.image(site_bg_img, use_container_width=False, width=700)
             st.write("---")
 
-        crew_tabs = st.tabs([
-            "📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"
-        ] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
+        crew_tabs = st.tabs(["📌 Pegging Phase", "🪵 Piling Operations", "🏗️ Mounting Structures", "☀️ PV Module Tracking"] + [f"🛠️ {ct}" for ct in st.session_state.custom_tabs])
 
         def inject_crew_tracking_map(layer_key, b64_data, min_c, max_c, min_r, max_r):
             today_str = str(date.today())
-
             html_crew_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family: sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    ⚙️ <b>Crew Controls:</b> 
-                    <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; 
-                    <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; 
-                    <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a single section &nbsp;|&nbsp; 
-                    <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
+                    ⚙️ <b>Crew Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag</span> to multi-select cell blocks &nbsp;|&nbsp; <span style="color:#38bdf8; font-weight:bold;">Right-Click + Drag</span> to pan map &nbsp;|&nbsp; <span style="color:#eab308; font-weight:bold;">Single Left-Click</span> to complete a section &nbsp;|&nbsp; <span style="color:#a78bfa; font-weight:bold;">Scroll</span> to zoom.
                     <div id="crew_sync_status_msg" style="color:#22c55e; font-weight:bold; display:none; margin-top:4px;">Transmitting field records...</div>
                 </div>
                 
@@ -1638,7 +1572,6 @@ else:
 
                     canvas.addEventListener('mousemove', (e) => {
                         const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        
                         if (isPanning) { offsetX = e.clientX - dragStartRawX; offsetY = e.clientY - dragStartRawY; draw(); tooltip.style.display = "none"; return; }
                         else if (isSelecting) { dragCurrentRawX = mX; dragCurrentRawY = mY; draw(); tooltip.style.display = "none"; return; }
 
@@ -1686,7 +1619,7 @@ else:
                                             body: JSON.stringify({ "LAYER_KEY_status": "completed", "LAYER_KEY_date": "TODAY_STR_VAL" })
                                         });
                                     }
-                                    statMsg.innerText = "Sync Complete! Click the top reload button to update map view colors.";
+                                    statMsg.innerText = "Sync Complete! Click the top reload button to update view map colors.";
                                     setTimeout(() => { statMsg.style.display = "none"; }, 5000);
                                 } catch (e) { statMsg.innerText = "Database updates timed out."; }
                             }
@@ -1705,6 +1638,15 @@ else:
                 })();
             </script>
             """
+            html_crew_map = html_crew_map.replace("LAYER_KEY", layer_key)\
+                                         .replace("__JSON_DATA_B64__", b64_data)\
+                                         .replace("MIN_C_VAL", str(min_c))\
+                                         .replace("MAX_C_VAL", str(max_c))\
+                                         .replace("MIN_R_VAL", str(min_r))\
+                                         .replace("MAX_R_VAL", str(max_r))\
+                                         .replace("SUPABASE_URL_VAL", SUPABASE_URL)\
+                                         .replace("SUPABASE_KEY_VAL", SUPABASE_KEY)\
+                                         .replace("TODAY_STR_VAL", today_str)
             return html_crew_map
 
         def process_crew_tab(tab_obj, key_val):

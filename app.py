@@ -1867,34 +1867,36 @@ else:
             })
         st.table(compiled_ui_matrix_rows)
         
-        st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
-        with st.form("crew_reporting_ledger_submission_form"):
-            active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
-            updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
-            
-            # Let the button handler execute a clean, flat function structure
-            if st.form_submit_button("💾 Commit Shift Remarks to Permanent Log Database"):
-                st.session_state["staged_remark_payload"] = {
-                    "farm_id": str(st.session_state.active_site_id),
-                    "aspect": str(selected_crew_aspect),
-                    "zone": str(active_zone_profile),
-                    "log_date": str(current_date_str),
-                    "target_units": int(math.floor(target_runrate)),
-                    "installed_units": int(installed_today_count),
-                    "deviation": int(installed_today_count - int(math.floor(target_runrate))),
-                    "remark": str(updated_remark_note)
-                }
+        def commit_field_crew_remarks(f_id, aspect, zone, l_date, target, installed, remark_text):
+    try:
+        calc_dev = int(installed - math.floor(target))
+        supabase.table("daily_progress_logs").upsert({
+            "farm_id": str(f_id),
+            "aspect": str(aspect),
+            "zone": str(zone),
+            "log_date": str(l_date),
+            "target_units": int(math.floor(target)),
+            "installed_units": int(installed),
+            "deviation": calc_dev,
+            "remark": str(remark_text)
+        }).execute()
+        st.toast("✅ Log entries updated cleanly!", icon="🟢")
+        time.sleep(0.5)
+    except Exception as db_err:
+        st.error(f"Cloud update rejected: {str(db_err)}")
 
-        # Executing database transactions OUTSIDE the nested form eliminates the spacing trap
-        if "staged_remark_payload" in st.session_state:
-            payload = st.session_state.pop("staged_remark_payload")
-            try:
-                supabase.table("daily_progress_logs").upsert(payload).execute()
-                st.success("Log entries updated cleanly!")
-                time.sleep(0.5)
-                st.rerun()
-            except Exception as db_err:
-                st.error(f"Cloud update rejected: {str(db_err)}")
+# 2. RENDER THE INTERFACE
+st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
+with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
+    active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
+    updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
+    
+    # Trigger the flat function directly on click
+    st.form_submit_button(
+        "举 Save Field Tracking Data & Update Progress Table",
+        on_click=commit_field_crew_remarks,
+        args=(st.session_state.active_site_id, selected_crew_aspect, active_zone_profile, current_date_str, target_runrate, installed_today_count, updated_remark_note)
+    )
     # Cast calculation metrics safely to avoid float serialization errors
     safe_target = int(math.floor(target_runrate))
     safe_deviation = int(installed_today_count - safe_target)

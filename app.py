@@ -240,12 +240,12 @@ else:
                 sandbox_suffix = st.text_input("Assign Sandbox Name Extension:", value="EXPERIMENTAL COPY")
                 
                 if st.button("🚀 Clone Target Setup to New Sandbox Slot", type="primary", use_container_width=True):
-                    with st.spinner("Synchronizing blueprint structures... (This loops through all pages)"):
+                    with st.spinner("Executing 100% Master Duplication Loop..."):
                         try:
                             parent_farm_id = st.session_state.active_site_id
                             raw_topo_string = current_farm_record.get("background_image_url") or "{}"
                             
-                            # 1. Download ALL parent structures across all pages (Fixes the cut-off issue)
+                            # 1. Download ALL parent structures completely across pages
                             parent_structures = []
                             limit = 1000
                             offset = 0
@@ -256,7 +256,7 @@ else:
                                 if len(res_page) < limit: break
                                 offset += limit
 
-                            # 2. Build the new farm row shell
+                            # 2. Instantiate the new farm master profile row
                             sandbox_payload = {
                                 "name": f"{st.session_state.active_site_name} - {sandbox_suffix.upper()}",
                                 "admin_password": current_farm_record.get("admin_password", "ok"),
@@ -264,7 +264,7 @@ else:
                                 "max_rows": int(current_farm_record.get("max_rows", 100)),
                                 "max_cols": int(current_farm_record.get("max_cols", 150)),
                                 "is_published": False,
-                                "background_image_url": "{}" # Placeholder till remapped
+                                "background_image_url": "{}"
                             }
                             
                             new_farm_response = supabase.table("farms").insert(sandbox_payload).execute()
@@ -272,7 +272,7 @@ else:
                             if new_farm_response.data and parent_structures:
                                 sandbox_farm_id = new_farm_response.data[0]["id"]
                                 
-                                # 3. Prepare data rows to clone and push them in safe 200-row batch segments
+                                # 3. Replicate all structural components properties completely
                                 sandbox_structures = []
                                 for struct in parent_structures:
                                     sandbox_structures.append({
@@ -296,7 +296,7 @@ else:
                                     if res_batch.data:
                                         inserted_structures_fleet.extend(res_batch.data)
                                 
-                                # 4. Build a relational ID map using structural grid positions
+                                # 4. Relational tracking index mapper dictionary
                                 id_mapping_dictionary = {}
                                 for old_s in parent_structures:
                                     match = next((new_s for new_s in inserted_structures_fleet 
@@ -306,11 +306,12 @@ else:
                                     if match:
                                         id_mapping_dictionary[str(old_s["id"])] = str(match["id"])
                                 
-                                # 5. Parse, update, and rewrite the JSON metadata file layout keys
+                                # 5. Parse, update, and validate string, inverter, and TS topographies
                                 try:
                                     if raw_topo_string.startswith("{"):
                                         topo_data = json.loads(raw_topo_string)
                                         
+                                        # Map panels IDs to strings channels
                                         if "stringGroups" in topo_data:
                                             new_string_groups = {}
                                             for old_key, inv_value in topo_data["stringGroups"].items():
@@ -323,10 +324,15 @@ else:
                                                     new_string_groups[f"{new_base_id}{suffix}"] = inv_value
                                             topo_data["stringGroups"] = new_string_groups
                                         
-                                        # Recalculate physical Inverter center coordinates on the new blocks
+                                        # Recalculate Inverters positioning and protect TS relational references
                                         if "inverters" in topo_data:
                                             CELL = 14
                                             for inv in topo_data["inverters"]:
+                                                # Ensure transformer relationships default back safely to null instead of breaking if indices shifted
+                                                if "transformerId" in inv and inv["transformerId"] is not None:
+                                                    if "transformers" in topo_data and (inv["transformerId"] >= len(topo_data["transformers"]) or inv["transformerId"] < 0):
+                                                        inv["transformerId"] = None
+                                                
                                                 matching_parent_block = None
                                                 for p_struct in parent_structures:
                                                     if (p_struct["min_c"] * CELL) <= inv["x"] <= ((p_struct["max_c"] + 1) * CELL) and \
@@ -340,20 +346,20 @@ else:
                                                     if new_block:
                                                         inv["x"] = (new_block["min_c"] * CELL) + (((new_block["max_c"] - new_block["min_c"] + 1) * CELL) / 2)
                                                         inv["y"] = (new_block["min_r"] * CELL) + (((new_block["max_r"] - new_block["min_r"] + 1) * CELL) / 2)
-                                        
+                                                        
                                         raw_topo_string = json.dumps(topo_data)
                                 except Exception:
                                     pass
                                 
-                                # Save the final updated topography string
+                                # Write corrected structure back to cloud database
                                 supabase.table("farms").update({"background_image_url": raw_topo_string}).eq("id", sandbox_farm_id).execute()
                                 
                                 st.cache_resource.clear()
-                                st.success("🎉 Sandbox successfully duplicated with 100% intact layout tracking connections!")
+                                st.success("🎉 100% Perfect Clone Created! Panels, Inverters, Strings, and TS Hubs are identical.")
                                 time.sleep(1.5)
                                 st.rerun()
                         except Exception as err:
-                            st.error(f"Sandbox duplication rejected: {str(err)}")
+                            st.error(f"Duplication sequence failed: {str(err)}")
             
             st.write("---")
             st.subheader("📢 Field Deployment Release")

@@ -1881,21 +1881,30 @@ else:
 
 # 2. RENDER THE INTERFACE ENGINES
 st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
+
 with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
     active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
     updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
     
-    st.form_submit_button(
-        "💾 Save Field Tracking Data & Update Progress Table",
-        on_click=cache_reporting_remark,
-        args=(st.session_state.active_site_id, selected_crew_aspect, active_zone_profile, current_date_str, target_runrate, installed_today_count, updated_remark_note)
-    )
+    # Check if the form button was clicked natively
+    submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
 
-# 3. RUN DATABASE TRANSACTIONS SAFELY AT THE COMPLETELY UNINDENTED BASE LEVEL
-if "staged_remark_payload" in st.session_state:
-    payload_data = st.session_state.pop("staged_remark_payload")
+# Process the transaction at the absolute base level (Zero Indentation)
+if submit_triggered:
     try:
-        supabase.table("daily_progress_logs").upsert(payload_data).execute()
+        calculated_deviation = int(installed_today_count - math.floor(target_runrate))
+        
+        supabase.table("daily_progress_logs").upsert({
+            "farm_id": str(st.session_state.active_site_id),
+            "aspect": str(selected_crew_aspect),
+            "zone": str(active_zone_profile),
+            "log_date": str(current_date_str),
+            "target_units": int(math.floor(target_runrate)),
+            "installed_units": int(installed_today_count),
+            "deviation": calculated_deviation,
+            "remark": str(updated_remark_note)
+        }).execute()
+        
         st.success("Log entries updated cleanly!")
         time.sleep(0.5)
         st.rerun()

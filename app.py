@@ -164,7 +164,7 @@ if st.session_state.active_site_id is None:
                                                 "min_r": int(min_br), "max_r": int(max_br), "min_c": int(min_bc), "max_c": int(max_bc),
                                                 "structure_type": "double_6x9" if h_cells >= 5 else "single_3x9",
                                                 "assigned_zone": "Unassigned",
-                                                "section_group": 12, # System configuration default setup allocation metrics
+                                                "section_group": 12, 
                                                 "pegging_status": "pending", "piling_status": "pending", 
                                                 "mounting_status": "pending", "modules_status": "pending"
                                             })
@@ -746,7 +746,6 @@ else:
         with setup_tabs[1]:
             st.markdown("### 📌 Component Placement Microscale Engineering Template Engine")
             
-            # --- REQUIREMENT 5 (PART A): HOLISTIC FLEET OVERVIEW MATRIX TABLE ---
             st.markdown("#### 📊 Current View of Pegging & Pillar Points Fleet-Wide")
             unique_structures_summary = {}
             for block in active_table_data:
@@ -771,6 +770,58 @@ else:
                 })
             st.table(overview_rows)
             st.metric("Total Cumulative Structural Piling Pinpoints Registered", f"{grand_total_points} Coordinates")
+            
+            st.markdown("#### 🗺️ Fleet-Wide Live Coordinate Preview Matrix Plot")
+            
+            html_global_piling_preview = """
+            <div style="background:#0f172a; padding:12px; border-radius:12px; text-align:center; font-family:sans-serif; color:#f8fafc;">
+                <div style="font-size:12px; margin-bottom:6px; color:#94a3b8;">Holistic Microscale Component Coordinates Positioning Index Chart</div>
+                <canvas id="global_piling_canvas" width="1000" height="250" style="background:#020617; border:1px solid #1e293b; border-radius:6px; display:block; margin:0 auto;"></canvas>
+            </div>
+            <script>
+                (function(){
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("global_piling_canvas");
+                    const ctx = canvas.getContext("2d");
+                    const CELL = 4;
+                    
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    let mapW = (maxX - minX + 1) * CELL;
+                    let mapH = (maxY - minY + 1) * CELL;
+                    
+                    let scale = Math.min((canvas.width - 40) / mapW, (canvas.height - 40) / mapH);
+                    let ox = (canvas.width / 2) - (mapW * scale / 2) - (minX * CELL * scale);
+                    let oy = (canvas.height / 2) - (mapH * scale / 2) - (minY * CELL * scale);
+                    
+                    ctx.clearRect(0,0,canvas.width,canvas.height);
+                    ctx.save(); ctx.translate(ox,oy); ctx.scale(scale,scale);
+                    
+                    blocks.forEach(b => {
+                        let x = b.min_c * CELL; let y = b.min_r * CELL;
+                        let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                        ctx.fillStyle = "#1e293b";
+                        ctx.fillRect(x,y,w,h);
+                        ctx.strokeStyle = "rgba(56,189,248,0.25)";
+                        ctx.lineWidth = 0.5;
+                        ctx.strokeRect(x,y,w,h);
+                        
+                        let ptsCount = b.section_group || 12;
+                        ctx.fillStyle = "#f43f5e";
+                        if (ptsCount > 0) {
+                            let dotSize = 1.0;
+                            ctx.fillRect(x + (w/2) - (dotSize/2), y + (h/2) - (dotSize/2), dotSize, dotSize);
+                        }
+                    });
+                    ctx.restore();
+                })();
+            </script>
+            """
+            html_global_piling_preview = html_global_piling_preview.replace("__JSON_DATA_B64__", b64_json_data)\
+                                                                 .replace("MIN_C_VAL", str(min_c))\
+                                                                 .replace("MAX_C_VAL", str(max_c))\
+                                                                 .replace("MIN_R_VAL", str(min_r))\
+                                                                 .replace("MAX_R_VAL", str(max_r))
+            components.html(html_global_piling_preview, height=290)
             st.write("---")
 
             layout_types = {}
@@ -948,7 +999,7 @@ else:
                         <button id="btn_flush_inverters" style="width:100%; background:#334155; border:none; padding:6px; color:#cbd5e1; font-weight:bold; border-radius:4px; cursor:pointer; margin-bottom:6px; font-size:11px;">❌ Clear Inverters Only</button>
                         <button id="btn_flush_transformers" style="width:100%; background:#334155; border:none; padding:6px; color:#cbd5e1; font-weight:bold; border-radius:4px; cursor:pointer; margin-bottom:12px; font-size:11px;">❌ Clear Xfrmrs Only</button>
                         
-                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:9px; color:white; font-weight:bold; border-radius:4px; cursor:pointer;">💾 Save Topologies</button>
+                        <button id="btn_topo_save" style="width:100%; background:#22c55e; border:none; padding:99px; color:white; font-weight:bold; border-radius:4px; cursor:pointer; font-size:13px; line-height:0px; height:36px;">💾 Save Topologies</button>
                     </div>
 
                     <div style="position:relative;">
@@ -1049,7 +1100,6 @@ else:
                         let counts = {};
                         Object.values(gridTopo.stringGroups).forEach(id => { counts[id] = (counts[id] || 0) + 1; });
 
-                        // REQUIREMENT 1: CLEAR MULTI-STRING ALIGNMENT LABELS DRAWN WITH DISTINCT SEPARATION BORDERS
                         independentStrings.forEach(s => {
                             let x = s.min_c * CELL; let y = s.min_r * CELL;
                             let w = (s.max_c - s.min_c + 1) * CELL; let h = (s.max_r - s.min_r + 1) * CELL;
@@ -1086,7 +1136,7 @@ else:
                         gridTopo.inverters.forEach(inv => {
                             let strCount = counts[inv.id] || 0;
                             let tsPrefix = "";
-                            if (inv.transformerId !== null) {
+                            if (inv.transformerId !== null && gridTopo.transformers[inv.transformerId]) {
                                 tsPrefix = "TS" + (inv.transformerId + 1) + "-";
                             }
                             let titleText = tsPrefix + "IN" + String(inv.id).padStart(3, '0');
@@ -1156,14 +1206,19 @@ else:
                         const tool = getActiveTool();
 
                         if (e.button === 2) {
-                            // REQUIREMENT 3: SINGLE IN-FLIGHT TRANSFORMER REMOVAL LOOP ENGINE WITHOUT BLANKING POPULATIONS
                             if (tool === "transformer") {
-                                if (gridTopo.transformers.length > 0) {
-                                    let poppedIdx = gridTopo.transformers.length - 1;
-                                    gridTopo.transformers.pop();
-                                    gridTopo.inverters.forEach(i => { if (i.transformerId === poppedIdx) i.transformerId = null; });
-                                    draw();
+                                let targetedXfmrIdx = gridTopo.transformers.findIndex(t => 
+                                    Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25
+                                );
+                                
+                                if (targetedXfmrIdx !== -1) {
+                                    gridTopo.transformers.splice(targetedXfmrIdx, 1);
+                                    gridTopo.inverters.forEach(i => {
+                                        if (i.transformerId === targetedXfmrIdx) i.transformerId = null;
+                                        else if (i.transformerId > targetedXfmrIdx) i.transformerId -= 1;
+                                    });
                                 }
+                                draw();
                                 return;
                             }
                             if (tool === "inverter") {
@@ -1232,7 +1287,7 @@ else:
                             if (invIdx !== -1) {
                                 selectedInverterIndexForRouting = invIdx;
                                 tooltip.style.display = "block";
-                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer station destination box.";
+                                tooltip.innerHTML = "🎯 <b>Inverter Targeted</b>: Choose target Transformer station box.";
                             } else if (selectedInverterIndexForRouting !== null) {
                                 let xfmrIdx = gridTopo.transformers.findIndex(t => Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25);
                                 if (xfmrIdx !== -1) {
@@ -1261,7 +1316,6 @@ else:
 
                         gridTopo.transformers.forEach((t, index) => {
                             if (Math.sqrt(Math.pow(world.x - t.x, 2) + Math.pow(world.y - t.y, 2)) <= 25) {
-                                // REQUIREMENT 4: SORT INVERTERS IN INCREASING ASCENDING ORDER SMOOTHLY
                                 let connectedInvsList = gridTopo.inverters
                                     .filter(i => i.transformerId === index)
                                     .map(i => i.id)
@@ -1331,7 +1385,7 @@ else:
                             let boxY1 = Math.min(p1.y, p2.y), boxY2 = Math.max(p1.y, p2.y);
                             let totalDragDistance = Math.sqrt(Math.pow(mUp.x - startX, 2) + Math.pow(mUp.y - startY, 2));
                             
-                            // REQUIREMENT 2 (PART C): LASSO ROUTING SELECTION FOR MULTIPLE INVERTERS
+                            // FIXED MULTI-INVERTER ROUTING: DRAG REGION ENCLOSING INVERTERS AND RELEASE THE CURSOR ON TOP OF TRANSFORMER TARGET HUB
                             if (getActiveTool() === "lasso_route") {
                                 if (totalDragDistance > 5) {
                                     let targetedInverters = gridTopo.inverters.filter(inv => 
@@ -1340,7 +1394,7 @@ else:
                                     
                                     if (targetedInverters.length > 0) {
                                         let destinationXfmrIdx = gridTopo.transformers.findIndex(t => 
-                                            Math.sqrt(Math.pow(p2.x - t.x, 2) + Math.pow(p2.y - t.y, 2)) <= 40
+                                            Math.sqrt(Math.pow(p2.x - t.x, 2) + Math.pow(p2.y - t.y, 2)) <= 35
                                         );
                                         if (destinationXfmrIdx !== -1) {
                                             targetedInverters.forEach(inv => {
@@ -1446,7 +1500,7 @@ else:
             
             components.html(html_topology_workspace, height=660)
 
-        # --- REQUIREMENT 6: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
+        # --- STAGE 4: EXECUTIVE SUMMARY ANALYTICAL MANAGEMENT PANEL TAB ---
         with setup_tabs[3]:
             st.markdown("### 📊 Executive Analytical Dashboard Summary")
             
@@ -1459,7 +1513,6 @@ else:
             transformers_list = topo_meta.get("transformers", [])
             string_groups = topo_meta.get("stringGroups", {})
             
-            # 1. Total Cells / Trackers counts categorized by structure type layout
             st.markdown("#### 🪵 Tracker Distribution Frameworks")
             layout_counts = {}
             for block in active_table_data:
@@ -1475,7 +1528,6 @@ else:
                 
             st.write("---")
             
-            # 2. Stringing Capacities calculations matching requested groups
             st.markdown("#### ⚡ Electrical Inverter Influx String Capacity Metrics")
             inv_string_distribution = {}
             for str_id, inv_id in string_groups.items():
@@ -1496,7 +1548,6 @@ else:
                 
             st.write("---")
             
-            # 3. Transformer Stations analytics with sorted routing list
             st.markdown("#### 🏪 Transformer Station (MVS) Interconnection Registries")
             st.metric("Total Active Transformer Stations (MVS Pool)", f"{len(transformers_list)} Hubs")
             

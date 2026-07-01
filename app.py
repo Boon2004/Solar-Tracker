@@ -1856,7 +1856,7 @@ else:
             "🕒 Field Shift History Log Viewer"
         ])
 
-        # # ==============================================================================
+        # ==============================================================================
         # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
         # ==============================================================================
         with crew_tabs[0]:
@@ -1867,7 +1867,7 @@ else:
             if saved_schedules_res:
                 st.markdown("##### 📅 Active Schedule Timeline Reference")
                 
-                # Custom raw CSS injection to handle high-visibility row striping
+                # Raw style injection to handle row highlighting container targets
                 st.markdown("""
                     <style>
                     .active-schedule-row {
@@ -1922,7 +1922,7 @@ else:
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
             
             if not schedule_meta:
-                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** inside **{selected_crew_zone.toUpperCase() if hasattr(selected_crew_zone, 'toUpperCase') else selected_crew_zone}** have not been initialized by management yet.")
+                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
             else:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
@@ -1930,7 +1930,7 @@ else:
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
                 if not is_editable_window:
-                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside the active timeline window boundaries ({sched_bound['start_date']} to {sched_bound['end_date']}).")
+                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active windows boundaries.")
                 
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
@@ -2009,7 +2009,7 @@ else:
                             }
                         });
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
-                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No mutations staged inside matrix canvas view layer."); return; }
+                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No changes staged."); return; }
                             for (let id of keys) {
                                 let p = {};
                                 if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
@@ -2019,7 +2019,7 @@ else:
                                     body: JSON.stringify(p)
                                 });
                             }
-                            alert("Shift logs uploaded safely into active operations registries!"); window.parent.location.reload();
+                            alert("Field logs uploaded successfully!"); window.parent.location.reload();
                         });
                         canvas.addEventListener('wheel', e => {
                             e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
@@ -2068,7 +2068,7 @@ else:
                 
                 if is_editable_window:
                     st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
-                    with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
+                    with st.form("crew_reporting_ledger_submission_form_v2", clear_on_submit=False):
                         active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
                         updated_remark_note = st.text_input("Append Shift Remarks & Notes:", value=active_log_row.get("remark", ""))
                         submit_triggered = st.form_submit_button("💾 Save Operational Remarks and Metrics Logs", type="primary")

@@ -575,6 +575,12 @@ else:
 
     active_table_data = load_site_isolated_tables(st.session_state.active_site_id)
 
+    for b in active_table_data:
+        z = b.get("assigne_zone")
+        if z and z not in st.session_state.managed_zones:
+            st.session_state.managed_zones.insert(len(st.session_state.managed_zones)-1, z)
+    clean_zones = [z for z in st.session_state.managed_zones if z != "Unassigned"]
+
     if not active_table_data:
         st.warning("ℹ️ No operational layout metrics have loaded from database for this specific site yet.")
         st.stop()
@@ -1729,7 +1735,7 @@ else:
                         let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                         let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                         let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let selectedAdminMap = {};
+                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let stagedMutationsMap = {};
                         canvas.addEventListener('contextmenu', e => e.preventDefault());
                         function draw() {
                             ctx.fillStyle = '#030712'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1804,7 +1810,7 @@ else:
                     })();
                 </script>
                 """
-                html_admin_rectifier = html_admin_rectifier.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", sel_asp).replace("ACTIVE_ZONE_VAL", sel_zone).replace("TARGET_NEW_DATE_VAL", str(rectify_date_target)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                html_admin_rectifier = html_admin_rectifier.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", selected_sched_aspect).replace("ACTIVE_ZONE_VAL", selected_target_zone_preview).replace("TARGET_NEW_DATE_VAL", str(rectify_date_target)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
                 components.html(html_admin_rectifier, height=450)
 
                 st.markdown("---")

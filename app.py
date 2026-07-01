@@ -1882,7 +1882,7 @@ else:
                     e_dt = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
                     is_active = (s_dt <= current_system_date <= e_dt)
                     
-                    row_style = "class='highlighted-task' style='background-color: rgba(234, 179, 8, 0.15); font-weight: bold; border-left: 4px solid #eab308;'" if is_active else ""
+                    row_style = "style='background-color: rgba(234, 179, 8, 0.15); font-weight: bold; border-left: 4px solid #eab308;'" if is_active else ""
                     table_html += f"""
                         <tr {row_style}>
                             <td style='padding: 10px; border: 1px solid #374151;'>{row['aspect'].upper()}</td>
@@ -1896,6 +1896,7 @@ else:
                 st.markdown(table_html, unsafe_allow_html=True)
             else:
                 st.info("No milestone schedules have been initialized by management teams yet.")
+
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
         # ==============================================================================
@@ -1907,7 +1908,7 @@ else:
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
             
             if not schedule_meta:
-                st.warning("📅 This task aspect or zone layer profile context has not been configured with an operational timeline schema map yet.")
+                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
             else:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
@@ -1915,9 +1916,8 @@ else:
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
                 if not is_editable_window:
-                    st.error(f"🔒 **Operational Window Locked Context:** Editing access is frozen because your current system date ({current_date_str}) falls outside active windows bounds ({sched_bound['start_date']} to {sched_bound['end_date']}).")
+                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside the active timeline window boundaries ({sched_bound['start_date']} to {sched_bound['end_date']}).")
                 
-                # --- INJECT INTERACTIVE CANVASED TRACKER ENGINE ---
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -1927,7 +1927,7 @@ else:
                         <canvas id="crew_canvas_tracker_element" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                     </div>
                     <div style="margin-top:10px; text-align:right;">
-                        <button id="btn_save_crew_canvas" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
+                        <button id="btn_save_field_state" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
                     </div>
                 </div>
                 <script>
@@ -2020,7 +2020,6 @@ else:
                 html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
                 components.html(html_crew_engine, height=670)
 
-                # --- INJECT RUN-RATE LEDGER GRAPH TABLE & SUMMARY BALANCE FOOTER ---
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 progress_records = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).order("log_date").execute().data
@@ -2072,7 +2071,7 @@ else:
                             }, on_conflict="farm_id, aspect, zone, log_date").execute()
                             st.success("🎉 Log entries updated cleanly!"); time.sleep(0.5); st.rerun()
                         except Exception as db_err: st.error(f"Cloud update rejected: {str(db_err)}")
-        
+
         # ==============================================================================
         # 🕒 TAB 3: FIELD SHIFT HISTORY LOG VIEWER (CREW READ-ONLY LOOKUP PANEL)
         # ==============================================================================
@@ -2081,10 +2080,8 @@ else:
             st.caption("Select an operational layer aspect and historical date point below to evaluate precisely what milestones your crew captured during that shift.")
             
             hist_cols = st.columns(2)
-            with hist_cols[0]: 
-                lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
-            with hist_cols[1]: 
-                lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
+            with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
+            with hist_cols[1]: lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
                 
             history_progress_records = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).eq("log_date", str(lookup_crew_date)).execute().data
             if history_progress_records:
@@ -2092,10 +2089,8 @@ else:
                 compiled_history_table = []
                 for log in history_progress_records:
                     compiled_history_table.append({
-                        "Zone Boundary Area": log["zone"], 
-                        "Target Allocation Quota": f"{log['target_units']} Units",
-                        "Actual Accomplished Units": f"{log['installed_units']} Units", 
-                        "Performance Shift Deviation": f"🟢 +{log['deviation']}" if log['deviation'] >= 0 else f"🔴 {log['deviation']}",
+                        "Zone Boundary Area": log["zone"], "Target Allocation Quota": f"{log['target_units']} Units",
+                        "Actual Accomplished Units": f"{log['installed_units']} Units", "Performance Shift Deviation": f"🟢 +{log['deviation']}" if log['deviation'] >= 0 else f"🔴 {log['deviation']}",
                         "Shift Supervisor Remarks Note Summary": log.get("remark") or "No field remarks entered."
                     })
                 st.table(compiled_history_table)

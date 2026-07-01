@@ -2150,32 +2150,4 @@ else:
             "Performance Deviation Run-Rate": f"🟢 +{total_deviation_quota}" if total_deviation_quota >= 0 else f"🔴 {total_deviation_quota} (Remaining Balance Uninstalled Target)",
             "Field Operational Remark Notes": "🏁 Master Balance Ledger Log"
         })
-        st.table(compiled_ui_matrix_rows)
         
-        st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
-        with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
-            active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
-            updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=active_log_row.get("remark", ""))
-            submit_triggered = st.form_submit_button("💾 Save Field Tracking Data & Update Progress Table")
-
-        if submit_triggered:
-            try:
-                safe_target = int(math.floor(target_runrate))
-                safe_deviation = int(installed_today_count - safe_target)
-                
-                supabase.table("daily_progress_logs").upsert({
-                    "farm_id": str(st.session_state.active_site_id),
-                    "aspect": safe_aspect if 'safe_aspect' in locals() else str(selected_crew_aspect),
-                    "zone": str(active_zone_profile),
-                    "log_date": str(current_date_str),
-                    "target_units": safe_target,
-                    "installed_units": int(installed_today_count),
-                    "deviation": safe_deviation,
-                    "remark": str(updated_remark_note)
-                }, on_conflict="farm_id, aspect, zone, log_date").execute()
-                
-                st.success("🎉 Log entries updated cleanly!")
-                time.sleep(0.5)
-                st.rerun()
-            except Exception as db_err:
-                st.error(f"Cloud update rejected: {str(db_err)}")

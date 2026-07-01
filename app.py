@@ -1861,7 +1861,7 @@ else:
         # ==============================================================================
         with crew_tabs[0]:
             if site_bg_img and not site_bg_img.startswith("{"):
-                st.image(site_bg_img, caption="Active Site Layout Blueprint Mapping Separation Mask", width=500)
+                st.image(site_bg_img, caption="Active Site Layout Blueprint", width=500)
                 
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:
@@ -1873,7 +1873,7 @@ else:
                     .active-schedule-row {
                         background-color: rgba(234, 179, 8, 0.18) !important;
                         font-weight: bold !important;
-                        border-left: 5px solid #eab308 !important;
+                        color: #ffffff !important;
                     }
                     </style>
                 """, unsafe_allow_html=True)
@@ -1907,10 +1907,12 @@ else:
                         </tr>
                     """
                 table_html += "</tbody></table>"
+                
+                # This line MUST have unsafe_allow_html=True to stop showing raw strings!
                 st.markdown(table_html, unsafe_allow_html=True)
             else:
                 st.info("No milestone schedules have been initialized by management teams yet.")
-
+                
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
         # ==============================================================================

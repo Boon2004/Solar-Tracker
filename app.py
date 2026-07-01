@@ -2137,41 +2137,4 @@ else:
             else: 
                 st.info("ℹ️ No operational crew log submissions are recorded for this calendar shift window configuration.")
 
-        # ==============================================================================
-        # 📊 RUNRATE TRACKING ACCUMULATION TABLE (CREW MODE BASE PANELS)
-        # ==============================================================================
-        st.markdown("#### 📊 Operational Run-Rate Analytics Registry")
-        installed_today_count = sum(1 for b in active_table_data if b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == str(current_system_date))
-        progress_records = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).order("log_date").execute().data
-        
-        current_date_str = str(current_system_date)
-        if not any(r["log_date"] == current_date_str for r in progress_records):
-            progress_records.append({
-                "log_date": current_date_str, "target_units": int(target_runrate),
-                "installed_units": installed_today_count, "deviation": int(installed_today_count - target_runrate), "remark": ""
-            })
-            
-        total_target_quota = sum([r["target_units"] for r in progress_records])
-        total_installed_quota = sum([r["installed_units"] for r in progress_records])
-        total_deviation_quota = sum([r["deviation"] for r in progress_records])
-        
-        compiled_ui_matrix_rows = []
-        for row in progress_records:
-            is_current = (row["log_date"] == current_date_str)
-            cur_dev = int(row["installed_units"] - row["target_units"])
-            remark_display = row.get("remark") or "" if not is_current else "📝 Editable via form entry block below"
-            
-            compiled_ui_matrix_rows.append({
-                "Date Snapshot Window": row["log_date"], "Production Target": f"{row['target_units']} Units",
-                "Assembled Quantity": f"{row['installed_units']} Units", "Performance Deviation Run-Rate": f"🟢 +{cur_dev}" if cur_dev >= 0 else f"🔴 {cur_dev}",
-                "Field Operational Remark Notes": remark_display
-            })
-            
-        compiled_ui_matrix_rows.append({
-            "Date Snapshot Window": "📊 CUMULATIVE PROJECT SITE FOOTPRINT ROLLUP TOTALS", 
-            "Production Target": f"{total_target_quota} Units",
-            "Assembled Quantity": f"{total_installed_quota} Units", 
-            "Performance Deviation Run-Rate": f"🟢 +{total_deviation_quota}" if total_deviation_quota >= 0 else f"🔴 {total_deviation_quota} (Remaining Balance Uninstalled Target)",
-            "Field Operational Remark Notes": "🏁 Master Balance Ledger Log"
-        })
         

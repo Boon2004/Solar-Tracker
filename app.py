@@ -1859,60 +1859,84 @@ else:
         # ==============================================================================
         # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
         # ==============================================================================
+        # ==============================================================================
+        # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
+        # ==============================================================================
         with crew_tabs[0]:
             if site_bg_img and not site_bg_img.startswith("{"):
                 st.image(site_bg_img, caption="Active Site Layout Blueprint", width=500)
                 
+            # Fetch whatever active schedules currently exist in the database
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            if saved_schedules_res:
-                st.markdown("##### 📅 Active Schedule Timeline Reference")
-                
-                # Raw style injection to handle row highlighting container targets
-                st.markdown("""
-                    <style>
-                    .active-schedule-row {
-                        background-color: rgba(234, 179, 8, 0.18) !important;
-                        font-weight: bold !important;
-                        color: #ffffff !important;
-                    }
-                    </style>
-                """, unsafe_allow_html=True)
+            sched_lookup = {(r["aspect"], r["zone"]): r for r in saved_schedules_res} if saved_schedules_res else {}
+            
+            st.markdown("##### 📅 Whole Plant Master Schedule Matrix Index")
+            
+            # Inject raw CSS to color-code active rows cleanly
+            st.markdown("""
+                <style>
+                .active-schedule-row {
+                    background-color: rgba(234, 179, 8, 0.15) !important;
+                    font-weight: bold !important;
+                    border-left: 5px solid #eab308 !important;
+                }
+                .pending-schedule-row {
+                    color: #64748b !important;
+                    font-style: italic;
+                }
+                </style>
+            """, unsafe_allow_html=True)
 
-                table_html = """
-                <table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
-                    <thead>
-                        <tr style='background-color: #1f2937; color: #f9fafb;'>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Aspect Layer Profile</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Target Sector Zone</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Wrap Deadline Date</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Target Rate Quantity</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-                for row in saved_schedules_res:
-                    s_dt = datetime.strptime(row["start_date"], "%Y-%m-%d").date()
-                    e_dt = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
-                    is_active = (s_dt <= current_system_date <= e_dt)
+            # Build full table architecture explicitly
+            table_html = """
+            <table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
+                <thead>
+                    <tr style='background-color: #1f2937; color: #f9fafb;'>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Aspect Layer Profile</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Target Sector Zone</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Wrap Deadline Date</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Target Rate Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            
+            # Loop through ALL aspects and ALL clean zones to generate a complete overview
+            aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
+            
+            for asp in aspect_options_list:
+                for zone in clean_zones:
+                    match = sched_lookup.get((asp, zone))
                     
-                    row_class = "class='active-schedule-row'" if is_active else ""
+                    if match:
+                        s_dt = datetime.strptime(match["start_date"], "%Y-%m-%d").date()
+                        e_dt = datetime.strptime(match["end_date"], "%Y-%m-%d").date()
+                        is_active = (s_dt <= current_system_date <= e_dt)
+                        
+                        row_class = "class='active-schedule-row'" if is_active else ""
+                        start_txt = match["start_date"]
+                        end_txt = match["end_date"]
+                        target_txt = f"{match['daily_target']} Units/Day"
+                    else:
+                        # Fallback for combinations the admin hasn't scheduled yet
+                        row_class = "class='pending-schedule-row'"
+                        start_txt = "⏳ Pending"
+                        end_txt = "⏳ Pending"
+                        target_txt = "⏱️ Unscheduled"
+                        
                     table_html += f"""
                         <tr {row_class}>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{row['aspect'].upper()}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{row['zone']}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{row['start_date']}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{row['end_date']}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{row['daily_target']} Units/Day</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{asp.upper()}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{zone}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{start_txt}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{end_txt}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{target_txt}</td>
                         </tr>
                     """
-                table_html += "</tbody></table>"
-                
-                # This line MUST have unsafe_allow_html=True to stop showing raw strings!
-                st.markdown(table_html, unsafe_allow_html=True)
-            else:
-                st.info("No milestone schedules have been initialized by management teams yet.")
-                
+                    
+            table_html += "</tbody></table>"
+            st.markdown(table_html, unsafe_allow_html=True)
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
         # ==============================================================================

@@ -1856,7 +1856,7 @@ else:
             "🕒 Field Shift History Log Viewer"
         ])
 
-        # ==============================================================================
+        # # ==============================================================================
         # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
         # ==============================================================================
         with crew_tabs[0]:
@@ -1865,34 +1865,48 @@ else:
                 
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:
-                st.markdown("##### 📅 Active Schedule Timeline Reference (Highlighted rows represent tasks active today)")
+                st.markdown("##### 📅 Active Schedule Timeline Reference")
                 
+                # Custom raw CSS injection to handle high-visibility row striping
+                st.markdown("""
+                    <style>
+                    .active-schedule-row {
+                        background-color: rgba(234, 179, 8, 0.18) !important;
+                        font-weight: bold !important;
+                        border-left: 5px solid #eab308 !important;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+
                 table_html = """
                 <table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
-                    <tr style='background-color: #1f2937; color: #f9fafb;'>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Aspect Layer Profile</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Target Sector Zone</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Commencement Date</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Wrap Deadline Date</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Target Rate Quantity</th>
-                    </tr>
+                    <thead>
+                        <tr style='background-color: #1f2937; color: #f9fafb;'>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Aspect Layer Profile</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Target Sector Zone</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Wrap Deadline Date</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Target Rate Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
                 """
                 for row in saved_schedules_res:
                     s_dt = datetime.strptime(row["start_date"], "%Y-%m-%d").date()
                     e_dt = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
                     is_active = (s_dt <= current_system_date <= e_dt)
                     
-                    row_style = "style='background-color: rgba(234, 179, 8, 0.15); font-weight: bold; border-left: 4px solid #eab308;'" if is_active else ""
+                    row_class = "class='active-schedule-row'" if is_active else ""
                     table_html += f"""
-                        <tr {row_style}>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{row['aspect'].upper()}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{row['zone']}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{row['start_date']}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{row['end_date']}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{row['daily_target']} Units/Day</td>
+                        <tr {row_class}>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{row['aspect'].upper()}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{row['zone']}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{row['start_date']}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{row['end_date']}</td>
+                            <td style='padding: 12px; border: 1px solid #374151;'>{row['daily_target']} Units/Day</td>
                         </tr>
                     """
-                table_html += "</table>"
+                table_html += "</tbody></table>"
                 st.markdown(table_html, unsafe_allow_html=True)
             else:
                 st.info("No milestone schedules have been initialized by management teams yet.")
@@ -1908,7 +1922,7 @@ else:
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
             
             if not schedule_meta:
-                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
+                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** inside **{selected_crew_zone.toUpperCase() if hasattr(selected_crew_zone, 'toUpperCase') else selected_crew_zone}** have not been initialized by management yet.")
             else:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
@@ -1927,7 +1941,7 @@ else:
                         <canvas id="crew_canvas_tracker_element" width="1500" height="600" style="background:#020617; display:block;"></canvas>
                     </div>
                     <div style="margin-top:10px; text-align:right;">
-                        <button id="btn_save_field_state" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
+                        <button id="btn_save_crew_canvas" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
                     </div>
                 </div>
                 <script>
@@ -1995,7 +2009,7 @@ else:
                             }
                         });
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
-                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No mutations active."); return; }
+                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No mutations staged inside matrix canvas view layer."); return; }
                             for (let id of keys) {
                                 let p = {};
                                 if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }

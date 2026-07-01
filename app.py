@@ -20,6 +20,47 @@ def get_supabase_client():
 
 supabase: Client = get_supabase_client()
 
+# ==============================================================================
+# 🔌 OFFLINE SYNC TRUCK PROTECTION & AUTOMATED RECONCILIATION ENGINE
+# ==============================================================================
+def process_bi_directional_sync(local_payload_string, farm_id, current_system_date_str):
+    try:
+        if not local_payload_string:
+            return {"success": False, "msg": "Sync token is empty."}
+        payload = json.loads(local_payload_string)
+        local_structures = payload.get("structures", [])
+        local_logs = payload.get("daily_logs", [])
+        
+        for item in local_structures:
+            for aspect in ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]:
+                status_key = f"{aspect}_status"
+                date_key = f"{aspect}_date"
+                if item.get(status_key) == "completed":
+                    if not item.get(date_key) or item.get(date_key) != current_system_date_str:
+                        item[date_key] = current_system_date_str
+                    supabase.table("structures").update({
+                        status_key: "completed", date_key: item[date_key]
+                    }).eq("id", item["id"]).execute()
+                    
+        for log in local_logs:
+            supabase.table("daily_progress_logs").upsert({
+                "farm_id": str(farm_id), "aspect": log["aspect"], "zone": log["zone"],
+                "log_date": log["log_date"], "target_units": int(log["target_units"]),
+                "installed_units": int(log["installed_units"]), "deviation": int(log["deviation"]),
+                "remark": log.get("remark", "")
+            }, on_conflict="farm_id, aspect, zone, log_date").execute()
+            
+        fresh_structures = supabase.table("structures").select("*").eq("farm_id", farm_id).order("min_r").order("min_c").execute().data
+        fresh_schedules = supabase.table("project_schedules").select("*").eq("farm_id", farm_id).execute().data
+        fresh_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", farm_id).order("log_date").execute().data
+        
+        return {
+            "success": True, 
+            "bundle": {"structures": fresh_structures or [], "schedules": fresh_schedules or [], "daily_logs": fresh_logs or []}
+        }
+    except Exception as e:
+        return {"success": False, "msg": str(e)}
+
 st.set_page_config(layout="wide", page_title="Boon Solar Farm Tracking System")
 
 # --- HIDE ONLY GITHUB & EDIT PENCIL ICONS ---
@@ -498,6 +539,20 @@ else:
             st.session_state.active_site_id = None
             st.session_state.is_admin_mode = False
             st.rerun()
+    # ==============================================================================
+    # 🔄 LOCAL OFFLINE INTERACTIVE DATA SYNC STATION
+    # ==============================================================================
+    with st.expander("🔄 Local Workspace Sync Station", expanded=False):
+        st.caption("Synchronize your browser offline package data token to pull admin layout updates or upload current shift progress.")
+        local_payload_input = st.text_area("Paste Local Browser Sync String Token here:", height=68)
+        if st.button("🚀 Reconcile Fleet Operations & Download Updated Plans", type="primary", use_container_width=True):
+            if local_payload_input:
+                sync_result = process_bi_directional_sync(local_payload_input, st.session_state.active_site_id, current_date_str)
+                if sync_result["success"]:
+                    st.success("🎉 Bi-directional operational data pipeline successfully resolved!")
+                    st.text_area("📋 COPY AND PASTE THIS NEW FRESH TOKEN BACK TO YOUR OFFLINE WORKSPACE COPY:", value=json.dumps(sync_result["bundle"]), height=68)
+                else:
+                    st.error(f"Sync Interrupted: {sync_result['msg']}")
             
     if not st.session_state.is_admin_mode:
         app_theme = "Dark Mode"
@@ -1645,6 +1700,113 @@ else:
 
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:
+                # ==============================================================================
+                # 🛠️ ADMINISTRATIVE PROGRESS REASSIGNMENT & BACKDATE CANVASED TOOL
+                # ==============================================================================
+                st.write("---")
+                st.markdown("#### 🛠️ Historical Progress & Backdate Rectifier Canvas")
+                rectify_date_target = st.date_input("Force-Reassign Selected Lasso Coordinates to this Completion Date:", value=current_system_date, key="adm_rectifier_dt")
+                
+                html_admin_rectifier = """
+                <div style="background:#111827; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
+                    <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                        🎯 <b>Admin Rectifier Tool:</b> <span style="color:#ef4444; font-weight:bold;">Left-Click + Drag Selection Box</span> to highlight cells inside zone boundaries &nbsp;|&nbsp; Click the button below to re-stamp their completion dates.
+                    </div>
+                    <div style="width:100%; max-height:400px; border:2px solid #374151; border-radius:8px; overflow:hidden;">
+                        <canvas id="admin_rectifier_canvas" width="1500" height="400" style="background:#030712; display:block;"></canvas>
+                    </div>
+                    <div style="margin-top:10px; text-align:right;">
+                        <button id="btn_save_rectifier" style="background:#ef4444; border:none; padding:10px 24px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:13px;">⚡ Force Reassign Selected Cells Date</button>
+                    </div>
+                </div>
+                <script>
+                    (function() {
+                        const dataset = JSON.parse(atob("__JSON_DATA_B64__"));
+                        const aspect = "ACTIVE_ASPECT_VAL"; const targetZone = "ACTIVE_ZONE_VAL"; const targetNewDate = "TARGET_NEW_DATE_VAL";
+                        const canvas = document.getElementById("admin_rectifier_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                        let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                        const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                        let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                        let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                        let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let selectedAdminMap = {};
+                        canvas.addEventListener('contextmenu', e => e.preventDefault());
+                        function draw() {
+                            ctx.fillStyle = '#030712'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                            dataset.forEach(b => {
+                                if (b.assigned_zone !== targetZone) return;
+                                let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                if (selectedAdminMap[b.id]) ctx.fillStyle = '#ef4444';
+                                else if (b[aspect + '_status'] === 'completed') ctx.fillStyle = '#22c55e';
+                                else ctx.fillStyle = '#1f2937';
+                                ctx.fillRect(x, y, w, h);
+                                ctx.strokeStyle = '#111827'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            });
+                            ctx.restore();
+                            if (isSelecting) { ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
+                        }
+                        canvas.addEventListener('mousemove', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
+                            if (isSelecting) { cX = mX; cY = mY; draw(); return; }
+                        });
+                        canvas.addEventListener('mousedown', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
+                            else if (e.button === 0) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
+                        });
+                        canvas.addEventListener('mouseup', e => {
+                        if (isPanning) isPanning = false;
+                        if (isSelecting) {
+                            isSelecting = false; const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
+                            let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
+                            let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
+                            
+                            dataset.forEach(b => {
+                                if (b.assigned_zone !== targetZone) return;
+                                let cx = b.min_c * CELL; let cy = b.min_r * CELL;
+                                let hit = isLasso ? (cx >= wX1 && cx <= wX2 && cy >= wY1 && cy <= wY2) : (wX1 >= cx && wX1 <= (b.max_c+1)*CELL && wY1 >= cy && wY1 <= (b.max_r+1)*CELL);
+                                if (hit) {
+                                    let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
+                                    if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
+                                    
+                                    if (stagedMutationsMap[b.id] || (currentStatus === 'completed' && currentDateVal === sysDateStr)) {
+                                        stagedMutationsMap[b.id] = false; 
+                                        b[aspect + '_status'] = 'pending'; b[aspect + '_date'] = null;
+                                    } else {
+                                        stagedMutationsMap[b.id] = true;
+                                    }
+                                }
+                            });
+                            draw();
+                        }
+                    });
+                        document.getElementById("btn_save_rectifier").addEventListener("click", async () => {
+                            let keys = Object.keys(selectedAdminMap); if (keys.length === 0) { alert("Please use the box selection tool to lasso targets first."); return; }
+                            for (let id of keys) {
+                                let p = { [aspect + '_status']: "completed", [aspect + '_date']: targetNewDate };
+                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                    method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                    body: JSON.stringify(p)
+                                });
+                            }
+                            alert("Admin Correction complete!"); window.parent.location.reload();
+                        });
+                        canvas.addEventListener('wheel', e => {
+                            e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            const wX = (mX - offsetX) / scale; const wY = (mY - offsetY) / scale;
+                            scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                            offsetX = mX - wX * scale; offsetY = mY - wY * scale; draw();
+                        }, { passive: false });
+                        draw();
+                    })();
+                </script>
+                """
+                html_admin_rectifier = html_admin_rectifier.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", sel_asp).replace("ACTIVE_ZONE_VAL", sel_zone).replace("TARGET_NEW_DATE_VAL", str(rectify_date_target)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                components.html(html_admin_rectifier, height=450)
+
                 st.markdown("---")
                 st.markdown("#### 📋 Active Operational Run-Sheets Master Calendar Configuration Profiles")
                 st.table(saved_schedules_res)
@@ -1682,6 +1844,259 @@ else:
     else:
         st.markdown("### 🛰️ Live Production Crew Workspace Mapping Dashboards")
         
+        crew_tabs = st.tabs([
+            "🗺️ Whole Plant Master Blueprint Index", 
+            "🛠️ Execution Workspace Tracker Deck",
+            "🕒 Field Shift History Log Viewer"
+        ])
+
+        # ==============================================================================
+        # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
+        # ==============================================================================
+        with crew_tabs[0]:
+            if site_bg_img and not site_bg_img.startswith("{"):
+                st.image(site_bg_img, caption="Active Site Layout Blueprint Mapping Separation Mask", width=500)
+                
+            saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            if saved_schedules_res:
+                st.markdown("##### 📅 Active Schedule Timeline Reference (Highlighted rows represent tasks active today)")
+                
+                table_html = """
+                <table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
+                    <tr style='background-color: #1f2937; color: #f9fafb;'>
+                        <th style='padding: 10px; border: 1px solid #374151;'>Aspect Layer Profile</th>
+                        <th style='padding: 10px; border: 1px solid #374151;'>Target Sector Zone</th>
+                        <th style='padding: 10px; border: 1px solid #374151;'>Commencement Date</th>
+                        <th style='padding: 10px; border: 1px solid #374151;'>Wrap Deadline Date</th>
+                        <th style='padding: 10px; border: 1px solid #374151;'>Target Rate Quantity</th>
+                    </tr>
+                """
+                for row in saved_schedules_res:
+                    s_dt = datetime.strptime(row["start_date"], "%Y-%m-%d").date()
+                    e_dt = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
+                    is_active = (s_dt <= current_system_date <= e_dt)
+                    
+                    row_style = "class='highlighted-task' style='background-color: rgba(234, 179, 8, 0.15); font-weight: bold; border-left: 4px solid #eab308;'" if is_active else ""
+                    table_html += f"""
+                        <tr {row_style}>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{row['aspect'].upper()}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{row['zone']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{row['start_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{row['end_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{row['daily_target']} Units/Day</td>
+                        </tr>
+                    """
+                table_html += "</table>"
+                st.markdown(table_html, unsafe_allow_html=True)
+            else:
+                st.info("No milestone schedules have been initialized by management teams yet.")
+        # ==============================================================================
+        # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
+        # ==============================================================================
+        with crew_tabs[1]:
+            st.markdown("### 🛰️ Live Assembly Deployment Workspace Trackers Console Deck")
+            selected_crew_aspect = st.selectbox("Select Active Work Execution Protocol Aspect Layer Context:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_run_layer")
+            selected_crew_zone = st.selectbox("Select Active Operational Field Working Zone Sector Area Context:", clean_zones, key="crew_run_zone")
+            
+            schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
+            
+            if not schedule_meta:
+                st.warning("📅 This task aspect or zone layer profile context has not been configured with an operational timeline schema map yet.")
+            else:
+                sched_bound = schedule_meta[0]
+                start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
+                end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
+                is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
+                
+                if not is_editable_window:
+                    st.error(f"🔒 **Operational Window Locked Context:** Editing access is frozen because your current system date ({current_date_str}) falls outside active windows bounds ({sched_bound['start_date']} to {sched_bound['end_date']}).")
+                
+                # --- INJECT INTERACTIVE CANVASED TRACKER ENGINE ---
+                html_crew_engine = """
+                <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
+                    <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select and toggle staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on an active yellow node to cancel/deselect it | Right-Click + Drag to Pan.
+                    </div>
+                    <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                        <canvas id="crew_canvas_tracker_element" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                    </div>
+                    <div style="margin-top:10px; text-align:right;">
+                        <button id="btn_save_crew_canvas" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
+                    </div>
+                </div>
+                <script>
+                    (function() {
+                        const dataset = JSON.parse(atob("__JSON_DATA_B64__"));
+                        const aspect = "ACTIVE_ASPECT_VAL"; const targetZone = "ACTIVE_ZONE_VAL"; const sysDateStr = "SYSTEM_DATE_VAL"; const isEditable = __IS_EDITABLE_VAL__;
+                        const canvas = document.getElementById("crew_canvas_tracker_element"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                        let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                        const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                        let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                        let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                        let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let stagedMutationsMap = {};
+                        canvas.addEventListener('contextmenu', e => e.preventDefault());
+                        function getNodeColor(b, aspectKey) {
+                            let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
+                            if (stagedMutationsMap[b.id]) return '#eab308';
+                            if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
+                            return '#1e293b';
+                        }
+                        function draw() {
+                            ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                            dataset.forEach(b => {
+                                let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                ctx.fillStyle = getNodeColor(b, aspect); ctx.fillRect(x, y, w, h);
+                                ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            });
+                            ctx.restore();
+                            if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
+                        }
+                        canvas.addEventListener('mousemove', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
+                            if (isSelecting) { cX = mX; cY = mY; draw(); return; }
+                        });
+                        canvas.addEventListener('mousedown', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
+                            else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
+                        });
+                        canvas.addEventListener('mouseup', e => {
+                            if (isPanning) isPanning = false;
+                            if (isSelecting) {
+                                isSelecting = false; const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                                let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
+                                let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
+                                let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
+                                dataset.forEach(b => {
+                                    if (b.assigned_zone !== targetZone) return;
+                                    let cx = b.min_c * CELL; let cy = b.min_r * CELL;
+                                    let hit = isLasso ? (cx >= wX1 && cx <= wX2 && cy >= wY1 && cy <= wY2) : (wX1 >= cx && wX1 <= (b.max_c+1)*CELL && wY1 >= cy && wY1 <= (b.max_r+1)*CELL);
+                                    if (hit) {
+                                        let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
+                                        if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
+                                        if (stagedMutationsMap[b.id] || (currentStatus === 'completed' && currentDateVal === sysDateStr)) {
+                                            stagedMutationsMap[b.id] = false; 
+                                            b[aspect + '_status'] = 'pending'; b[aspect + '_date'] = null;
+                                        } else {
+                                            stagedMutationsMap[b.id] = true;
+                                        }
+                                    }
+                                });
+                                draw();
+                            }
+                        });
+                        document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
+                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No mutations active."); return; }
+                            for (let id of keys) {
+                                let p = {};
+                                if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
+                                else { p[aspect + '_status'] = "pending"; p[aspect + '_date'] = null; }
+                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                    method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                    body: JSON.stringify(p)
+                                });
+                            }
+                            alert("Shift logs uploaded safely into active operations registries!"); window.parent.location.reload();
+                        });
+                        canvas.addEventListener('wheel', e => {
+                            e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            const wX = (mX - offsetX) / scale; const wY = (mY - offsetY) / scale;
+                            scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                            offsetX = mX - wX * scale; offsetY = mY - wY * scale; draw();
+                        }, { passive: false });
+                        draw();
+                    })();
+                </script>
+                """
+                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
+                components.html(html_crew_engine, height=670)
+
+                # --- INJECT RUN-RATE LEDGER GRAPH TABLE & SUMMARY BALANCE FOOTER ---
+                st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
+                installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
+                progress_records = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).order("log_date").execute().data
+                
+                for record in progress_records:
+                    if record["log_date"] == current_date_str:
+                        record["installed_units"] = installed_today_count
+                        record["deviation"] = int(installed_today_count - record["target_units"])
+
+                total_target_quota = sum([r["target_units"] for r in progress_records])
+                total_installed_quota = sum([r["installed_units"] for r in progress_records])
+                total_deviation_quota = sum([r["deviation"] for r in progress_records])
+                
+                compiled_ui_matrix_rows = []
+                for row in progress_records:
+                    is_current = (row["log_date"] == current_date_str)
+                    cur_dev = int(row["installed_units"] - row["target_units"])
+                    remark_display = row.get("remark") or "" if not is_current else "📝 Editable via form entry block below"
+                    
+                    compiled_ui_matrix_rows.append({
+                        "Date Snapshot Window": row["log_date"], "Production Target": f"{row['target_units']} Units",
+                        "Assembled Quantity": f"{row['installed_units']} Units", "Performance Deviation Run-Rate": f"🟢 +{cur_dev}" if cur_dev >= 0 else f"🔴 {cur_dev}",
+                        "Field Operational Remark Notes": remark_display
+                    })
+                    
+                compiled_ui_matrix_rows.append({
+                    "Date Snapshot Window": "📊 CUMULATIVE PROJECT SITE FOOTPRINT ROLLUP TOTALS", "Production Target": f"{total_target_quota} Units",
+                    "Assembled Quantity": f"{total_installed_quota} Units", "Performance Deviation Run-Rate": f"🟢 +{total_deviation_quota}" if total_deviation_quota >= 0 else f"🔴 {total_deviation_quota} (Remaining Balance Uninstalled Target)",
+                    "Field Operational Remark Notes": "🏁 Master Balance Ledger Log"
+                })
+                st.table(compiled_ui_matrix_rows)
+                
+                if is_editable_window:
+                    st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
+                    with st.form("crew_reporting_ledger_submission_form", clear_on_submit=False):
+                        active_log_row = next((r for r in progress_records if r["log_date"] == current_date_str), {"remark": ""})
+                        updated_remark_note = st.text_input("Append Shift Remarks & Notes:", value=active_log_row.get("remark", ""))
+                        submit_triggered = st.form_submit_button("💾 Save Operational Remarks and Metrics Logs", type="primary")
+
+                    if submit_triggered:
+                        try:
+                            active_log_match = next((r for r in progress_records if r["log_date"] == current_date_str), None)
+                            safe_target = active_log_match["target_units"] if active_log_match else 0
+                            safe_deviation = int(installed_today_count - safe_target)
+                            supabase.table("daily_progress_logs").upsert({
+                                "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
+                                "log_date": str(current_date_str), "target_units": int(safe_target), "installed_units": int(installed_today_count),
+                                "deviation": int(safe_deviation), "remark": str(updated_remark_note)
+                            }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                            st.success("🎉 Log entries updated cleanly!"); time.sleep(0.5); st.rerun()
+                        except Exception as db_err: st.error(f"Cloud update rejected: {str(db_err)}")
+        
+        # ==============================================================================
+        # 🕒 TAB 3: FIELD SHIFT HISTORY LOG VIEWER (CREW READ-ONLY LOOKUP PANEL)
+        # ==============================================================================
+        with crew_tabs[2]:
+            st.markdown("### 🕒 Historic Operational Field Execution Ledger Lookups (Read-Only Summary)")
+            st.caption("Select an operational layer aspect and historical date point below to evaluate precisely what milestones your crew captured during that shift.")
+            
+            hist_cols = st.columns(2)
+            with hist_cols[0]: 
+                lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
+            with hist_cols[1]: 
+                lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
+                
+            history_progress_records = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).eq("log_date", str(lookup_crew_date)).execute().data
+            if history_progress_records:
+                st.markdown("##### 📑 Snapshot Summary Window Metrics")
+                compiled_history_table = []
+                for log in history_progress_records:
+                    compiled_history_table.append({
+                        "Zone Boundary Area": log["zone"], 
+                        "Target Allocation Quota": f"{log['target_units']} Units",
+                        "Actual Accomplished Units": f"{log['installed_units']} Units", 
+                        "Performance Shift Deviation": f"🟢 +{log['deviation']}" if log['deviation'] >= 0 else f"🔴 {log['deviation']}",
+                        "Shift Supervisor Remarks Note Summary": log.get("remark") or "No field remarks entered."
+                    })
+                st.table(compiled_history_table)
+            else: 
+                st.info("ℹ️ No operational crew log submissions are recorded for this calendar shift window configuration.")
+
+
         aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
         selected_crew_aspect = st.selectbox("Select Active Work Execution Protocol Aspect Layer:", aspect_options_list, key="crew_active_layer")
         
@@ -1869,17 +2284,29 @@ else:
                 "installed_units": installed_today_count, "deviation": int(installed_today_count - target_runrate), "remark": ""
             })
             
+        total_target_quota = sum([r["target_units"] for r in progress_records])
+        total_installed_quota = sum([r["installed_units"] for r in progress_records])
+        total_deviation_quota = sum([r["deviation"] for r in progress_records])
+        
         compiled_ui_matrix_rows = []
         for row in progress_records:
             is_current = (row["log_date"] == current_date_str)
             cur_dev = int(row["installed_units"] - row["target_units"])
+            remark_display = row.get("remark") or "" if not is_current else "📝 Editable via form entry block below"
+            
             compiled_ui_matrix_rows.append({
-                "Date Snapshot Window": row["log_date"],
-                "Production Target": f"{row['target_units']} Units",
-                "Assembled Quantity": f"{row['installed_units']} Units",
-                "Performance Deviation Run-Rate": f"🟢 +{cur_dev}" if cur_dev >= 0 else f"🔴 {cur_dev}",
-                "Field Operational Remark Notes": row["remark"] if not is_current else "📝 Editable down below via input form panel"
+                "Date Snapshot Window": row["log_date"], "Production Target": f"{row['target_units']} Units",
+                "Assembled Quantity": f"{row['installed_units']} Units", "Performance Deviation Run-Rate": f"🟢 +{cur_dev}" if cur_dev >= 0 else f"🔴 {cur_dev}",
+                "Field Operational Remark Notes": remark_display
             })
+            
+        compiled_ui_matrix_rows.append({
+            "Date Snapshot Window": "📊 CUMULATIVE PROJECT SITE FOOTPRINT ROLLUP TOTALS", 
+            "Production Target": f"{total_target_quota} Units",
+            "Assembled Quantity": f"{total_installed_quota} Units", 
+            "Performance Deviation Run-Rate": f"🟢 +{total_deviation_quota}" if total_deviation_quota >= 0 else f"🔴 {total_deviation_quota} (Remaining Balance Uninstalled Target)",
+            "Field Operational Remark Notes": "🏁 Master Balance Ledger Log"
+        })
         st.table(compiled_ui_matrix_rows)
         
         st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")

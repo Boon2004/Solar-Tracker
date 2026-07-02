@@ -1699,9 +1699,14 @@ else:
                         custom_target_quota = st.number_input("Assign FIXED Target Quantity:", min_value=0, value=100)
                         
                         if st.form_submit_button("➕ Inject Shift Day"):
-                            if str(extension_date) in logs_lookup and "Special Shift" in (logs_lookup[str(extension_date)].get("remark") or ""):
-                                st.error("🛑 Dummy Guard Error: This special shift extension date already exists in the ledger rows!")
+                            # 🛡️ THE ULTIMATE DUMMY GUARD: Check if the date is already in the calendar table
+                            is_regular_weekday = (start_bound_dt <= extension_date <= end_bound_dt) and (extension_date.weekday() < 5)
+                            already_has_log_row = str(extension_date) in logs_lookup
+                            
+                            if is_regular_weekday or already_has_log_row:
+                                st.error(f"🛑 Dummy Guard Rejection: The date `{extension_date}` is already active inside this timeline sheet! You cannot add a duplicate day.")
                             else:
+                                # 1. Inject the extension shift row entry with its fixed allocation footprint
                                 supabase.table("daily_progress_logs").upsert({
                                     "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                     "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
@@ -1709,13 +1714,17 @@ else:
                                     "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                                 }, on_conflict="farm_id, aspect, zone, log_date").execute()
                                 
+                                # 2. Fetch the newly expanded dataset logs pool array
                                 refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                                
                                 total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
                                 remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
                                 new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                                 
+                                # 3. Update master project schedule profile parameter value
                                 supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                                 
+                                # 4. Force re-calculation over all working weekdays
                                 loop_dt = start_bound_dt
                                 while loop_dt <= end_bound_dt:
                                     loop_dt_str = str(loop_dt)

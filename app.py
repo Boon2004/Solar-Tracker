@@ -1636,7 +1636,7 @@ else:
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             selected_target_zone_preview = st.selectbox("Select Target Sector Zone Area:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # Count total tracking nodes assigned to this sector zone profile area
+            # Count total tracking nodes assigned to this sector zone profile area (Total Scope Pool)
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
             zone_specific_element_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1654,7 +1654,7 @@ else:
             elif selected_sched_aspect == "transformer":
                 zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
-            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
+            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` total items assigned to **{selected_target_zone_preview}** for this aspect layer.")
 
             # ⚙️ SUB-ELEMENT A: THE TIMELINE GENERATOR INITIALIZATION FORM
             with st.form("admin_schedule_broadcasting_form"):
@@ -1677,60 +1677,70 @@ else:
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH AUTO-RECALCULATION)
+            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH REMAINING BALANCE RECALCULATION)
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
             if schedule_meta:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
                 end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
-                target_runrate = float(sched_bound.get("daily_target", 0.0))
+                base_working_days = int(sched_bound.get("working_days", 1))
                 
                 st.write("---")
                 st.markdown("#### ➕ Add Custom Weekend Extensions / Special Shifts")
                 with st.form("admin_custom_date_injector_form"):
-                    col_ins1 = st.columns(1)[0]
-                    extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
+                    col_ins1, col_ins2 = st.columns(2)
+                    with col_ins1: extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
+                    with col_ins2: custom_target_quota = st.number_input("Assign FIXED Target Quantity for this Extension Shift:", min_value=0, value=100)
                     
                     if st.form_submit_button("➕ Inject Custom Shift Day Row & Recalculate Quotas", type="primary"):
                         try:
-                            # 1. Insert the initial placeholder log entry row for this extension date
+                            # 1. Insert/Update the custom special shift log entry with its explicitly fixed target quota
                             supabase.table("daily_progress_logs").upsert({
                                 "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                 "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
-                                "target_units": 0, "installed_units": 0, "deviation": 0,
-                                "remark": "⚡ Special Shift Authorized by Admin Panel"
+                                "target_units": int(custom_target_quota), "installed_units": 0,
+                                "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                             }, on_conflict="farm_id, aspect, zone, log_date").execute()
                             
-                            # 2. Query all existing logs for this combination to find how many total weekend/extra days are assigned
-                            all_logs = supabase.table("daily_progress_logs").select("log_date", "installed_units").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                            # 2. Pull all progress logs to discover what special weekend dates are currently logged
+                            all_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
                             
-                            total_days_count = 0
-                            loop_dt = start_bound_dt
-                            while loop_dt <= end_bound_dt:
-                                if loop_dt.weekday() < 5 or any(l["log_date"] == str(loop_dt) for l in all_logs):
-                                    total_days_count += 1
-                                loop_dt += timedelta(days=1)
-                                
-                            # If the new extension date falls completely outside the schedule start/end bounds, add it manually
-                            if not (start_bound_dt <= extension_date <= end_bound_dt):
-                                total_days_count += 1
+                            # 3. Sum up the target units handled by special shifts
+                            total_special_shifts_quota = 0
+                            special_dates_set = set()
+                            for log in all_logs:
+                                log_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
+                                # It's a special extension if it is a weekend OR falls outside the standard timeline range boundary
+                                if log_dt.weekday() >= 5 or not (start_bound_dt <= log_dt <= end_bound_dt):
+                                    total_special_shifts_quota += log.get("target_units", 0)
+                                    special_dates_set.add(log["log_date"])
+                            
+                            # If the newly added extension_date isn't caught in the logs fetch yet, count it manually
+                            if str(extension_date) not in special_dates_set:
+                                if extension_date.weekday() >= 5 or not (start_bound_dt <= extension_date <= end_bound_dt):
+                                    total_special_shifts_quota += custom_target_quota
 
-                            # 3. Recalculate the refreshed runrate across the newly expanded timeline days
-                            new_daily_target = round(zone_specific_element_count / max(total_days_count, 1), 2)
+                            # 4. FIXED-SCOPE BALANCE REDISTRIBUTION MATH: 
+                            # Deduct the special shift allocation from total scope, then divide by base weekdays count
+                            remaining_base_scope = max(0, zone_specific_element_count - total_special_shifts_quota)
+                            new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                             
-                            # 4. Update the project schedule row with the refreshed daily targets rate
+                            # 5. Update the primary calendar timeline benchmark tracking entry
                             supabase.table("project_schedules").update({
-                                "daily_target": float(new_daily_target)
+                                "daily_target": float(new_base_daily_target)
                             }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                             
-                            # 5. Normalize target fields across every single operational day row inside our records
-                            for l_rec in all_logs:
-                                supabase.table("daily_progress_logs").update({
-                                    "target_units": int(new_daily_target),
-                                    "deviation": int((l_rec.get("installed_units") or 0) - int(new_daily_target))
-                                }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", l_rec["log_date"]).execute()
+                            # 6. Normalize and write back the recalculated targets to all base working days
+                            for log in all_logs:
+                                l_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
+                                # Leave special shift rows alone, only overwrite base weekdays
+                                if l_dt.weekday() < 5 and (start_bound_dt <= l_dt <= end_bound_dt):
+                                    supabase.table("daily_progress_logs").update({
+                                        "target_units": int(new_base_daily_target),
+                                        "deviation": int((log.get("installed_units") or 0) - int(new_base_daily_target))
+                                    }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", log["log_date"]).execute()
 
-                            st.success(f"🎉 Custom day added! Targets recalculated evenly to {new_daily_target} units/day across all {total_days_count} active shifts.")
+                            st.success(f"🎉 Redistribution complete! Deducted custom shifts ({total_special_shifts_quota} units total). Recalculated remaining {remaining_base_scope} units evenly to {new_base_daily_target} units/day across your standard {base_working_days} weekdays.")
                             time.sleep(0.5); st.rerun()
                         except Exception as err: st.error(f"Recalculation rejected: {str(err)}")
 
@@ -1759,7 +1769,8 @@ else:
                     
                     if loop_date.weekday() < 5 or matched_log:
                         inst_count = matched_log["installed_units"] if matched_log else 0
-                        t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(target_runrate)
+                        # Pull specific override values if available, else fall back to the dynamic schedule runtime rate
+                        t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(sched_bound.get("daily_target", 0.0))
                         cur_dev = int(inst_count - t_val)
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
                         row_style_attr = "style='background-color: rgba(234, 179, 8, 0.15) !important; font-weight: bold !important;'" if loop_date_str == str(date.today()) else ""

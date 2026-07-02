@@ -1933,57 +1933,119 @@ else:
         st.markdown("## 🛰️ Live Production Crew Workspace Mapping Dashboards")
         crew_tabs = st.tabs(["🗺️ Whole Plant Master Blueprint Index", "🛠️ Execution Workspace Tracker Deck", "🕒 Field Shift History Log Viewer"])
         
-        # ------------------------------------------------------------------------------
+        # # ------------------------------------------------------------------------------
         # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW
         # ------------------------------------------------------------------------------
         with crew_tabs[0]:
-            st.markdown("### 🗺️ Whole Plant Layout Structural Blueprint Grid Ledger")
+            st.markdown("### 🗺️ Whole Plant Operational Status & Progress Summary")
             
-            html_blueprint_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
-                <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_blueprint_master_canvas" width="1500" height="480" style="background:#020617; display:block;"></canvas>
-                </div>
-            </div>
-            <script>
-                (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("crew_blueprint_master_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    let isPanning = false; let startX = 0, startY = 0;
+            # --- SECTOR A: MASTER PROGRESS SUMMARY CARDS ---
+            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception: topo_meta = {}
+            
+            grand_total_trackers = 0
+            grand_total_pegging_points = 0
+            grand_total_actual_modules = 0  
+            zone_module_counts = {}
+            
+            for block in active_table_data:
+                l_type = block.get("structure_type", "single_3x9")
+                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
+                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
+                
+                if enc_val > 100:
+                    pins_per_unit = int((enc_val // 100) * (enc_val % 100))
+                else:
+                    pins_per_unit = 12
+                
+                grid_rows = int(block["max_r"] - block["min_r"] + 1)
+                grid_cols = int(block["max_c"] - block["min_c"] + 1)
+                modules_per_tracker = int(grid_rows * grid_cols)
+                
+                if z_name not in zone_module_counts:
+                    zone_module_counts[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
+                zone_module_counts[z_name]["trackers"] += 1
+                zone_module_counts[z_name]["pins"] += pins_per_unit
+                zone_module_counts[z_name]["modules"] += modules_per_tracker
+                
+                grand_total_trackers += 1
+                grand_total_pegging_points += pins_per_unit
+                grand_total_actual_modules += modules_per_tracker
+
+            col_p1, col_p2, col_p3 = st.columns(3)
+            with col_p1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
+            with col_p2: st.metric("📌 Total Layout Pins", f"{grand_total_pegging_points} Pts")
+            with col_p3: st.metric("📦 Total Target PV Modules", f"{grand_total_actual_modules} Panels")
+            
+            st.write("---")
+            
+            # --- SECTOR B: TIME-WINDOW DRIVEN ALL-ZONE TIMELINE TABLES ---
+            st.markdown("#### 📅 Active Project Timelines & Work Windows Schedule")
+            st.caption("Rows highlighted in blue indicate tasks that are currently undergoing based on your current operational date context.")
+            
+            all_schedules = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            
+            if not all_schedules:
+                st.info("ℹ️ No operational schedule timelines have been broadcasted by administration panels yet.")
+            else:
+                aspect_display_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
+                
+                for zone_name in clean_zones:
+                    zone_schedules = [s for s in all_schedules if s["zone"] == zone_name]
+                    if not zone_schedules: continue
                     
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
-                    function draw() {
-                        ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                        blocks.forEach(b => {
-                            ctx.fillStyle = '#1e293b';
-                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                        });
-                        ctx.restore();
-                    }
-                    canvas.addEventListener('mousemove', e => { if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); } });
-                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
-                    canvas.addEventListener('mouseup', () => { isPanning = false; });
-                    canvas.addEventListener('wheel', e => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
-                    draw();
-                })();
-            </script>
-            """
+                    st.markdown(f"##### 🗺️ Schedule Master Timeline Matrix: **{zone_name.upper()}**")
+                    
+                    timeline_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
+                        <thead>
+                            <tr style='background-color: #1f2937; color: #f9fafb;'>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Work Aspect Layer</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Target Completion Date</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Allocated Workdays</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Calculated Daily Target</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Current Phase Status</th>
+                            </tr>
+                        </thead><tbody>"""
+                    
+                    for aspect in aspect_display_list:
+                        sched = next((s for s in zone_schedules if s["aspect"] == aspect), None)
+                        if not sched: continue
+                        
+                        s_dt = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
+                        e_dt = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
+                        
+                        # 🎯 UNDERGOING HIGHLIGHT TRACER: Highlights row in bright blue if the task is currently active
+                        is_undergoing = (s_dt <= current_system_date <= e_dt)
+                        if is_undergoing:
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                            status_badge = "<span style='color: #60a5fa; font-weight: bold;'>⚡ UNDERGOING</span>"
+                        elif current_system_date > e_dt:
+                            row_style = ""
+                            status_badge = "<span style='color: #10b981;'>🏁 Concluded</span>"
+                        else:
+                            row_style = ""
+                            status_badge = "<span style='color: #94a3b8;'>⏳ Scheduled</span>"
+                            
+                        timeline_html += f"""<tr {row_style}>
+                            <td style='padding: 10px; border: 1px solid #374151;'><b>{aspect.replace('_', ' ').upper()}</b></td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['start_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['end_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('working_days', 0)} Days</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('daily_target', 0.0)} Units/Day</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{status_badge}</td>
+                        </tr>"""
+                        
+                    timeline_html += "</tbody></table>"
+                    st.markdown(timeline_html, unsafe_allow_html=True)
+                    
+            st.write("---")
+            st.markdown("#### 🗺️ Whole Plant Physical Layout Reference Grid")
             
+            # Keep the physical visual layout blueprint directly on the page bottom for spatial awareness
             html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data)
             html_master_view = html_master_view.replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
-            components.html(html_master_view, height=500)
+            components.html(html_master_view, height=480)
 
         # ------------------------------------------------------------------------------
         # 🛠️ CREW TAB 2: LIVE RUNRATE WORKSPACE TRACKER DECK

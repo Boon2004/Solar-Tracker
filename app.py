@@ -2231,7 +2231,7 @@ else:
                             t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else t_runrate
                             dev_val = float(inst_val - t_val)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
-                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str_else = ""
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
                             
                             z_total_target += t_val; z_total_installed += float(inst_val); z_total_deviation += dev_val
                             hist_table_html += f"""<tr {row_style}><td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td><td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td><td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td></tr>"""

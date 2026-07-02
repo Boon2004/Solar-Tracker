@@ -2301,8 +2301,11 @@ else:
                                     body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
                                 
-                                stagedMutationsMap = {}; alert("🎉 Progress records and notes successfully synchronized!");
-                                window.parent.location.reload();
+                                stagedMutationsMap = {}; 
+                                alert("🎉 Progress records and notes successfully synchronized!");
+                                
+                                // 🎯 FORCE STREAMLIT CACHE TO PURGE BEFORE RELOADING INTERFACE LAYERS
+                                window.parent.location.href = window.parent.location.href;
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
                         canvas.addEventListener('wheel', e => {
@@ -2361,22 +2364,24 @@ else:
             
             lookup_date_str = str(lookup_crew_date)
 
+            # 🎨 SUB-ELEMENT A: PLAYBACK MONITOR ENGINE PROGRESSION INTERACTIVE MAP
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                     🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window. Right-Click + Drag to Pan | Scroll to Zoom.
                 </div>
-                <div id="hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+                <div id="crew_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
                 <div style="width:100%; max-height:350px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
+                    <canvas id="crew_hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
                 (function() {
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
-                    const tooltip = document.getElementById("hist_canvas_tooltip");
+                    const canvas = document.getElementById("crew_hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    const tooltip = document.getElementById("crew_hist_canvas_tooltip");
                     const aspect = "ACTIVE_ASPECT_VAL"; const evaluationDateStr = "EVALUATION_DATE_VAL";
+                    
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
@@ -2393,6 +2398,7 @@ else:
                                 else if (compDate < evaluationDateStr) ctx.fillStyle = '#22c55e';
                                 else ctx.fillStyle = '#1e293b';
                             } else ctx.fillStyle = '#1e293b';
+                            
                             let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
@@ -2428,14 +2434,19 @@ else:
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=390)
 
+            # 📊 SUB-ELEMENT B: ALL ACTIVE ZONES STACKED ON A SINGLE PAGE AS REQUESTED
             st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
             if hist_sched_records:
+                # 🎯 BYPASS CALENDAR RE-COMPILATION DELAYS BY POOLING REAL-TIME LOG OVERVIEWS DIRECTLY FROM SYSTEM ENTRIES
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
-                # Separate processing logic loops cleanly per individual zone sector context area
+                try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
+                except Exception: topo_meta_obj = {}
+
+                # 🗺️ Stack tables for each zone back-to-back dynamically
                 for sched in hist_sched_records:
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
@@ -2444,6 +2455,24 @@ else:
                     
                     st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
                     
+                    # Compute strict total element constraints for this specific zone to calibrate totals row
+                    loop_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(z_bound)]
+                    z_element_count = 0
+                    if lookup_crew_aspect in ["pegging", "piling"]:
+                        for b in loop_filtered_blocks:
+                            ev = b.get("section_group") if b.get("section_group") is not None else 403
+                            z_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
+                    elif lookup_crew_aspect in ["mounting", "dc_cabling"]:
+                        z_element_count = len(loop_filtered_blocks)
+                    elif lookup_crew_aspect == "modules":
+                        z_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in loop_filtered_blocks])
+                    elif lookup_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
+                        for inv in topo_meta_obj.get("inverters", []):
+                            if any(str(b.get("assigned_zone")) == str(z_bound) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
+                                z_element_count += 1
+                    elif lookup_crew_aspect == "transformer":
+                        z_element_count = len(topo_meta_obj.get("transformers", []))
+
                     hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
                         <thead>
                             <tr style='background-color: #1f2937; color: #f9fafb;'>
@@ -2463,12 +2492,13 @@ else:
                         matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
                         
                         if loop_dt.weekday() < 5 or matched_log:
+                            # Pull metrics counts directly from live synced logs
                             inst_val = matched_log["installed_units"] if matched_log else 0
                             t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
                             dev_val = float(inst_val - t_val)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
-                            # 🎯 BLUE ROW HIGHLIGHT FOR SELECTED HISTORICAL EVALUATION DATE WINDOW
+                            # 🎯 HIGHLIGHT CORRESPONDING DATE ROW IN BLUE INSIDE THE CREW LOOKUP WINDOW
                             if loop_dt_str == lookup_date_str:
                                 row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
                             else:
@@ -2487,7 +2517,11 @@ else:
                             </tr>"""
                         loop_dt += timedelta(days=1)
                         
-                    # Inject sub-total rollup calculations footer inside specific zone sheet using native Python upper()
+                    if abs(z_total_target - z_element_count) <= 5:
+                        z_total_target = z_element_count
+                        z_total_deviation = z_total_installed - z_total_target
+
+                    # Inject calculations totals footer using native Python .upper() methods safely
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
                         <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>

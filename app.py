@@ -1624,7 +1624,7 @@ else:
         
         # --- STAGE 5: SCHEDULERS & TARGETS MANAGER ---
         with setup_tabs[4]:
-            st.markdown("### 📅 Production Scheduling Timeline & Daily Run-Rate Targeting Deck")
+            st.markdown("### 📅 Production Scheduling Timeline & Weekend Extensions Manager")
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
             selected_sched_aspect = st.selectbox("Select Project Milestone Layer Aspect:", aspect_options_list, key="admin_sched_aspect_sel")
             
@@ -1640,195 +1640,76 @@ else:
             if selected_sched_aspect in ["pegging", "piling"]:
                 for b in zone_filtered_blocks:
                     ev = b.get("section_group") if b.get("section_group") is not None else 403
-                    if ev > 100:
-                        zone_specific_element_count += int((ev // 100) * (ev % 100))
-                    else:
-                        zone_specific_element_count += 12
-                        
+                    zone_specific_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
             elif selected_sched_aspect in ["mounting", "dc_cabling"]:
                 zone_specific_element_count = len(zone_filtered_blocks)
-                
             elif selected_sched_aspect == "modules":
-                for b in zone_filtered_blocks:
-                    grid_rows = int(b["max_r"] - b["min_r"] + 1)
-                    grid_cols = int(b["max_c"] - b["min_c"] + 1)
-                    zone_specific_element_count += (grid_rows * grid_cols)
-                    
+                zone_specific_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in zone_filtered_blocks])
             elif selected_sched_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
                 for inv in topo_meta_obj.get("inverters", []):
-                    inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
-                    CELL = 14
-                    match_found = any(
-                        str(b.get("assigned_zone")) == str(selected_target_zone_preview) and
-                        (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and
-                        (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL)
-                        for b in active_table_data
-                    )
-                    if match_found:
+                    if any(str(b.get("assigned_zone")) == str(selected_target_zone_preview) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
                         zone_specific_element_count += 1
-                        
             elif selected_sched_aspect == "transformer":
                 zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
-            st.info(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
+            st.info(f"📊 **Live Spatial Audit:** Found exactly `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}**.")
 
+            # 🛠️ SECTION A: STANDARD WEEKDAY TIMELINE GENERATOR
             with st.form("admin_schedule_broadcasting_form"):
+                st.markdown("##### 📅 Set Base Weekday Operations Timeline Boundary")
                 sched_cols = st.columns(2)
                 with sched_cols[0]: start_sc_dt = st.date_input("Scheduled Commencement Date:", value=current_system_date)
                 with sched_cols[1]: end_sc_dt = st.date_input("Scheduled Operational Wrap Date:", value=current_system_date + timedelta(days=14))
                 
-                if st.form_submit_button("💾 Broadcast Milestones & Save Run-Rates"):
+                if st.form_submit_button("💾 Broadcast Base Milestones & Save Run-Rates"):
                     w_days = calculate_network_working_days(start_sc_dt, end_sc_dt)
                     if w_days <= 0: 
-                        st.error("Terminal validation exception: End date must exceed start date parameters bounds.")
+                        st.error("End date must exceed start date parameters bounds.")
                     else:
                         computed_runrate_target = round(zone_specific_element_count / w_days, 2)
-                        
-                        try:
-                            supabase.table("project_schedules").upsert(
-                                {
-                                    "farm_id": str(st.session_state.active_site_id), 
-                                    "aspect": str(selected_sched_aspect),
-                                    "zone": str(selected_target_zone_preview), 
-                                    "start_date": str(start_sc_dt), 
-                                    "end_date": str(end_sc_dt),
-                                    "working_days": int(w_days), 
-                                    "daily_target": float(computed_runrate_target)
-                                },
-                                on_conflict="farm_id, aspect, zone"
-                            ).execute()
-                            st.success(f"Milestones locked! Target set to {computed_runrate_target} Units / Working Day.")
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as sched_err:
-                            st.error("🚨 Database rejected schedule upload block!")
-                            st.code(str(sched_err))
+                        supabase.table("project_schedules").upsert({
+                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
+                            "zone": str(selected_target_zone_preview), "start_date": str(start_sc_dt), "end_date": str(end_sc_dt),
+                            "working_days": int(w_days), "daily_target": float(computed_runrate_target)
+                        }, on_conflict="farm_id, aspect, zone").execute()
+                        st.success("Milestones locked successfully!")
+                        time.sleep(0.5); st.rerun()
 
+            # 🛠️ SECTION B: CUSTOM WEEKEND OVERRIDE ADDITIONS LEDGER
+            st.write("---")
+            st.markdown("#### ➕ Authorize Custom Special Shift Extensions (Add Weekends)")
+            st.caption("Need your crew to work an extra Saturday or Sunday? Choose the specific date below to inject a custom work entry into their logs calendar.")
+            
+            with st.form("admin_custom_date_injector_form"):
+                col_ins1, col_ins2 = st.columns(2)
+                with col_ins1: extension_date = st.date_input("Select Special Extension Shift Date:", value=current_system_date)
+                with col_ins2: custom_target_quota = st.number_input("Assign Target Quantity for this Shift (Units):", min_value=1, value=100)
+                
+                if st.form_submit_button("➕ Inject Custom Operational Shift Row", type="primary"):
+                    try:
+                        # Force insert an initial progress logging entry block row so the date shows up on crew views
+                        supabase.table("daily_progress_logs").upsert({
+                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
+                            "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
+                            "target_units": int(custom_target_quota), "installed_units": 0,
+                            "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Management Panel"
+                        }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                        st.success(f"🎉 Custom shift row successfully injected for {str(extension_date)}!")
+                        time.sleep(0.5); st.rerun()
+                    except Exception as err:
+                        st.error(f"Failed to inject custom row: {str(err)}")
+
+            # 🛠️ SECTION C: ACTIVE SUMMARY ROLLS
+            st.write("---")
+            st.markdown("#### 📋 Active Operational Run-Sheets Master Timeline Matrix")
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             if saved_schedules_res:
-                # ==============================================================================
-                # 🛠️ ADMINISTRATIVE PROGRESS REASSIGNMENT & BACKDATE CANVASED TOOL
-                # ==============================================================================
-                st.write("---")
-                st.markdown("#### 🛠️ Historical Progress & Backdate Rectifier Canvas")
-                rectify_date_target = st.date_input("Force-Reassign Selected Lasso Coordinates to this Completion Date:", value=current_system_date, key="adm_rectifier_dt")
-                
-                html_admin_rectifier = """
-                <div style="background:#111827; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
-                    <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                        🎯 <b>Admin Rectifier Tool:</b> <span style="color:#ef4444; font-weight:bold;">Left-Click + Drag Selection Box</span> to highlight cells inside zone boundaries &nbsp;|&nbsp; Click the button below to re-stamp their completion dates.
-                    </div>
-                    <div style="width:100%; max-height:400px; border:2px solid #374151; border-radius:8px; overflow:hidden;">
-                        <canvas id="admin_rectifier_canvas" width="1500" height="400" style="background:#030712; display:block;"></canvas>
-                    </div>
-                    <div style="margin-top:10px; text-align:right;">
-                        <button id="btn_save_rectifier" style="background:#ef4444; border:none; padding:10px 24px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:13px;">⚡ Force Reassign Selected Cells Date</button>
-                    </div>
-                </div>
-                <script>
-                    (function() {
-                        const dataset = JSON.parse(atob("__JSON_DATA_B64__"));
-                        const aspect = "ACTIVE_ASPECT_VAL"; const targetZone = "ACTIVE_ZONE_VAL"; const targetNewDate = "TARGET_NEW_DATE_VAL";
-                        const canvas = document.getElementById("admin_rectifier_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
-                        let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                        const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
-                        let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                        let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                        let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let stagedMutationsMap = {};
-                        canvas.addEventListener('contextmenu', e => e.preventDefault());
-                        function draw() {
-                            ctx.fillStyle = '#030712'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                            ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                            dataset.forEach(b => {
-                                if (b.assigned_zone !== targetZone) return;
-                                let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                if (selectedAdminMap[b.id]) ctx.fillStyle = '#ef4444';
-                                else if (b[aspect + '_status'] === 'completed') ctx.fillStyle = '#22c55e';
-                                else ctx.fillStyle = '#1f2937';
-                                ctx.fillRect(x, y, w, h);
-                                ctx.strokeStyle = '#111827'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                            });
-                            ctx.restore();
-                            if (isSelecting) { ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
-                        }
-                        canvas.addEventListener('mousemove', e => {
-                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
-                            if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
-                            if (isSelecting) { cX = mX; cY = mY; draw(); return; }
-                        });
-                        canvas.addEventListener('mousedown', e => {
-                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
-                            if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
-                            else if (e.button === 0) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
-                        });
-                        canvas.addEventListener('mouseup', e => {
-                        if (isPanning) isPanning = false;
-                        if (isSelecting) {
-                            isSelecting = false; const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
-                            let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
-                            let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
-                            let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
-                            
-                            dataset.forEach(b => {
-                                if (b.assigned_zone !== targetZone) return;
-                                let cx = b.min_c * CELL; let cy = b.min_r * CELL;
-                                let hit = isLasso ? (cx >= wX1 && cx <= wX2 && cy >= wY1 && cy <= wY2) : (wX1 >= cx && wX1 <= (b.max_c+1)*CELL && wY1 >= cy && wY1 <= (b.max_r+1)*CELL);
-                                if (hit) {
-                                    let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
-                                    if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
-                                    
-                                    if (stagedMutationsMap[b.id] || (currentStatus === 'completed' && currentDateVal === sysDateStr)) {
-                                        stagedMutationsMap[b.id] = false; 
-                                        b[aspect + '_status'] = 'pending'; b[aspect + '_date'] = null;
-                                    } else {
-                                        stagedMutationsMap[b.id] = true;
-                                    }
-                                }
-                            });
-                            draw();
-                        }
-                    });
-                        document.getElementById("btn_save_rectifier").addEventListener("click", async () => {
-                            let keys = Object.keys(selectedAdminMap); if (keys.length === 0) { alert("Please use the box selection tool to lasso targets first."); return; }
-                            for (let id of keys) {
-                                let p = { [aspect + '_status']: "completed", [aspect + '_date']: targetNewDate };
-                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                    method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                    body: JSON.stringify(p)
-                                });
-                            }
-                            alert("Admin Correction complete!"); window.parent.location.reload();
-                        });
-                        canvas.addEventListener('wheel', e => {
-                            e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
-                            const wX = (mX - offsetX) / scale; const wY = (mY - offsetY) / scale;
-                            scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
-                            offsetX = mX - wX * scale; offsetY = mY - wY * scale; draw();
-                        }, { passive: false });
-                        draw();
-                    })();
-                </script>
-                """
-                html_admin_rectifier = html_admin_rectifier.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", selected_sched_aspect).replace("ACTIVE_ZONE_VAL", selected_target_zone_preview).replace("TARGET_NEW_DATE_VAL", str(rectify_date_target)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
-                components.html(html_admin_rectifier, height=450)
-
-                st.markdown("---")
-                st.markdown("#### 📋 Active Operational Run-Sheets Master Calendar Configuration Profiles")
                 st.table(saved_schedules_res)
-                
                 with st.form("admin_schedule_reset_form"):
-                    st.markdown("##### 🚨 Danger Zone: Reset Active Schedules")
-                    st.caption("This action completely clears out all assigned start dates, end dates, and target metrics for this project site layout.")
-                    
                     if st.form_submit_button("⚠️ Reset & Clear All Active Milestones", type="primary"):
-                        try:
-                            supabase.table("project_schedules").delete().eq("farm_id", str(st.session_state.active_site_id)).execute()
-                            st.success("All scheduling timelines and targets have been successfully cleared!")
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as reset_err:
-                            st.error(f"Failed to reset milestone timelines: {str(reset_err)}")
+                        supabase.table("project_schedules").delete().eq("farm_id", str(st.session_state.active_site_id)).execute()
+                        st.success("All scheduling timelines have been cleared!")
+                        time.sleep(0.5); st.rerun()
 
         # --- STAGE 6: HISTORICAL PROGRESS AUDIT LOGS ---
         with setup_tabs[5]:
@@ -2293,43 +2174,13 @@ else:
                     loop_date += timedelta(days=1)
 
                 table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'>
-                    <td style='padding:12px; border:1px solid #374151;'>拉 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
+                    <td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
                     <td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td>
                     <td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td>
                     <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td>
                     <td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td>
                 </tr></tbody></table>"""
                 st.markdown(table_html_tab2, unsafe_allow_html=True)
-
-                if is_editable_window:
-                    st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
-                    with st.form("crew_reporting_ledger_submission_form_v3", clear_on_submit=False):
-                        current_remark_val = logs_lookup.get(current_date_str, {}).get("remark", "")
-                        updated_remark_note = st.text_input("Append Shift Remarks & Blockage Mitigation Notes:", value=current_remark_val)
-                        submit_triggered = st.form_submit_button("💾 Save Operational Remarks and Metrics Logs", type="primary")
-
-                    if submit_triggered:
-                        try:
-                            safe_target_val = int(target_runrate)
-                            safe_deviation_val = int(installed_today_count - safe_target_val)
-                            
-                            # Record latest metric accumulation count safely to cloud
-                            supabase.table("daily_progress_logs").upsert({
-                                "farm_id": str(st.session_state.active_site_id),
-                                "aspect": str(selected_crew_aspect),
-                                "zone": str(selected_crew_zone),
-                                "log_date": str(current_date_str),
-                                "target_units": int(safe_target_val),
-                                "installed_units": int(installed_today_count),
-                                "deviation": int(safe_deviation_val),
-                                "remark": str(updated_remark_note)
-                            }, on_conflict="farm_id, aspect, zone, log_date").execute()
-                            
-                            st.success("🎉 Log entries updated cleanly!")
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as db_err:
-                            st.error(f"Cloud update rejected: {str(db_err)}")
 
         # ==============================================================================
         # 🕒 TAB 3: FIELD SHIFT HISTORY LOG VIEWER (CREW READ-ONLY LOOKUP PANEL)
@@ -2379,10 +2230,8 @@ else:
                             
                             if (status === 'completed' && compDate) {
                                 if (compDate === evaluationDateStr) {
-                                    // 🟡 YELLOW FOR ACTIVE EVALUATION SHIFT
                                     ctx.fillStyle = '#eab308';
                                 } else if (compDate < evaluationDateStr) {
-                                    // 🟢 GREEN FOR COMPLETED PRIOR DAYS
                                     ctx.fillStyle = '#22c55e';
                                 } else {
                                     ctx.fillStyle = '#1e293b';
@@ -2473,13 +2322,11 @@ else:
                         loop_dt_str = str(loop_dt)
                         matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
                         
-                        # 📅 WEEKDAY RULE ENFORCEMENT: Keep grid rows limited to weekdays, except when an override log row exists for a weekend entry
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = matched_log["installed_units"] if matched_log else 0
                             dev_val = matched_log["deviation"] if matched_log else int(0 - t_runrate)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
-                            # Apply dynamic highlight matching to the crew's chosen lookup criteria target selection parameter
                             if loop_dt_str == lookup_date_str:
                                 row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
                             else:

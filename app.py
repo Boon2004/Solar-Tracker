@@ -1933,23 +1933,19 @@ else:
         st.markdown("## 🛰️ Live Production Crew Workspace Mapping Dashboards")
         crew_tabs = st.tabs(["🗺️ Whole Plant Master Blueprint Index", "🛠️ Execution Workspace Tracker Deck", "🕒 Field Shift History Log Viewer"])
         
-        # # ------------------------------------------------------------------------------
-        # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW
+        # ------------------------------------------------------------------------------
+        # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW & TIMELINES
         # ------------------------------------------------------------------------------
         with crew_tabs[0]:
             st.markdown("### 🗺️ Whole Plant Operational Status & Progress Summary")
             
-            # --- SECTOR A: MASTER PROGRESS SUMMARY CARDS ---
-            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
-            except Exception: topo_meta = {}
-            
+            # Master metrics calculations
             grand_total_trackers = 0
             grand_total_pegging_points = 0
             grand_total_actual_modules = 0  
             zone_module_counts = {}
             
             for block in active_table_data:
-                l_type = block.get("structure_type", "single_3x9")
                 z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
                 enc_val = block.get("section_group") if block.get("section_group") is not None else 403
                 
@@ -1978,8 +1974,6 @@ else:
             with col_p3: st.metric("📦 Total Target PV Modules", f"{grand_total_actual_modules} Panels")
             
             st.write("---")
-            
-            # --- SECTOR B: TIME-WINDOW DRIVEN ALL-ZONE TIMELINE TABLES ---
             st.markdown("#### 📅 Active Project Timelines & Work Windows Schedule")
             st.caption("Rows highlighted in blue indicate tasks that are currently undergoing based on your current operational date context.")
             
@@ -2015,7 +2009,7 @@ else:
                         s_dt = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                         e_dt = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
                         
-                        # 🎯 UNDERGOING HIGHLIGHT TRACER: Highlights row in bright blue if the task is currently active
+                        # 🎯 UNDERGOING BLUE HIGHLIGHT TRACER
                         is_undergoing = (s_dt <= current_system_date <= e_dt)
                         if is_undergoing:
                             row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
@@ -2038,14 +2032,54 @@ else:
                         
                     timeline_html += "</tbody></table>"
                     st.markdown(timeline_html, unsafe_allow_html=True)
-                    
+            
             st.write("---")
             st.markdown("#### 🗺️ Whole Plant Physical Layout Reference Grid")
             
-            # Keep the physical visual layout blueprint directly on the page bottom for spatial awareness
+            html_blueprint_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
+                <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="crew_blueprint_master_canvas" width="1500" height="480" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("crew_blueprint_master_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false; let startX = 0, startY = 0;
+                    
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    function draw() {
+                        ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => {
+                            ctx.fillStyle = '#1e293b';
+                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        });
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousemove', e => { if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); } });
+                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
+                    canvas.addEventListener('mouseup', () => { isPanning = false; });
+                    canvas.addEventListener('wheel', e => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
             html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data)
             html_master_view = html_master_view.replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
-            components.html(html_master_view, height=480)
+            components.html(html_master_view, height=500)
 
         # ------------------------------------------------------------------------------
         # 🛠️ CREW TAB 2: LIVE RUNRATE WORKSPACE TRACKER DECK
@@ -2066,7 +2100,7 @@ else:
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
                 if not is_editable_window: 
-                    st.error(f"🔒 Locked: Active timeline bounded context is closed for the current date.")
+                    st.error(f"🔒 Locked: Active timeline bounded context is closed.")
                 
                 raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}

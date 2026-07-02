@@ -2256,7 +2256,6 @@ else:
                             let keys = Object.keys(stagedMutationsMap); let typedRemark = document.getElementById("crew_remark_input").value;
                             
                             try {
-                                // 1. Use dynamic Promise arrays to ensure database operations finish completely before reload
                                 let updatePromises = [];
                                 for (let id of keys) {
                                     let targetBlock = dataset.find(item => item.id == id);
@@ -2275,12 +2274,10 @@ else:
                                     }
                                 }
                                 
-                                // Wait for all layout grid updates to complete securely
                                 if (updatePromises.length > 0) {
                                     await Promise.all(updatePromises);
                                 }
 
-                                // 2. Compute absolute total completions count across entire memory state array
                                 let absoluteTotalCompletionsCount = 0;
                                 dataset.forEach(b => {
                                     if (b.assigned_zone === targetZone && b[aspect + '_status'] === 'completed' && b[aspect + '_date'] === sysDateStr) {
@@ -2288,7 +2285,6 @@ else:
                                     }
                                 });
 
-                                // 3. Get corresponding target quota values
                                 let currentDayTargetQuota = Math.floor(__TARGET_RUNRATE_VAL__);
                                 let scheduleFetch = await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs?farm_id=eq.__FARM_ID_VAL__&aspect=eq." + aspect + "&zone=eq." + targetZone + "&log_date=eq." + sysDateStr, {
                                     method: "GET", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" }
@@ -2300,13 +2296,13 @@ else:
                                 
                                 let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
 
-                                // 4. Upsert progress logs ledger row
+                                # 🎯 ALWAYS EXECUTE UPSERT REGARDLESS OF CHANGED BLOCKS COUNT TO CAPTURE REMARK ENTRIES Safely
                                 await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
                                     method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
                                     body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
                                 
-                                stagedMutationsMap = {}; alert("🎉 Absolute progress records synchronized across all management calendars!");
+                                stagedMutationsMap = {}; alert("🎉 Absolute progress records and notes successfully synchronized!");
                                 window.parent.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });

@@ -1636,7 +1636,7 @@ else:
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             selected_target_zone_preview = st.selectbox("Select Target Sector Zone Area:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # Count the live targets in the database for calculation context
+            # Count total tracking nodes assigned to this sector zone profile area
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
             zone_specific_element_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1677,32 +1677,62 @@ else:
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY (WEEKEND) LOG INJECTOR
+            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH AUTO-RECALCULATION)
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
             if schedule_meta:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
                 end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
-                target_runrate = float(sched_bound.get("daily_target", 0.0))
+                base_working_days = int(sched_bound.get("working_days", 1))
                 
                 st.write("---")
-                st.markdown("#### ➕ Add Custom Weekend Extensions / Special Shift Shifts")
+                st.markdown("#### ➕ Add Custom Weekend Extensions / Special Shifts")
                 with st.form("admin_custom_date_injector_form"):
-                    col_ins1, col_ins2 = st.columns(2)
-                    with col_ins1: extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
-                    with col_ins2: custom_target_quota = st.number_input("Assign Target Quantity for this Specific Shift:", min_value=0, value=int(target_runrate))
+                    col_ins1 = st.columns(1)[0]
+                    extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
                     
-                    if st.form_submit_button("➕ Inject Custom Shift Day Row", type="primary"):
+                    if st.form_submit_button("➕ Inject Custom Shift Day Row & Recalculate Quotas", type="primary"):
                         try:
+                            # 1. Insert the initial placeholder log entry row for this extension date
                             supabase.table("daily_progress_logs").upsert({
                                 "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                 "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
-                                "target_units": int(custom_target_quota), "installed_units": 0,
-                                "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
+                                "target_units": 0, "installed_units": 0, "deviation": 0,
+                                "remark": "⚡ Special Shift Authorized by Admin Panel"
                             }, on_conflict="farm_id, aspect, zone, log_date").execute()
-                            st.success(f"🎉 Custom shift row successfully injected for {str(extension_date)}!")
+                            
+                            # 2. Query all existing logs for this combination to find how many total weekend/extra days are assigned
+                            all_logs = supabase.table("daily_progress_logs").select("log_date").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                            
+                            total_days_count = 0
+                            loop_dt = start_bound_dt
+                            while loop_dt <= end_bound_dt:
+                                if loop_dt.weekday() < 5 or any(l["log_date"] == str(loop_dt) for l in all_logs):
+                                    total_days_count += 1
+                                loop_dt += timedelta(days=1)
+                                
+                            # If the new extension date falls completely outside the schedule start/end bounds, add it manually
+                            if not (start_bound_dt <= extension_date <= end_bound_dt):
+                                total_days_count += 1
+
+                            # 3. Recalculate the refreshed runrate across the newly expanded timeline days
+                            new_daily_target = round(zone_specific_element_count / max(total_days_count, 1), 2)
+                            
+                            # 4. Update the project schedule row with the refreshed daily targets rate
+                            supabase.table("project_schedules").update({
+                                "daily_target": float(new_daily_target)
+                            }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
+                            
+                            # 5. Normalize target fields across every single operational day row inside our records
+                            for l_rec in all_logs:
+                                supabase.table("daily_progress_logs").update({
+                                    "target_units": int(new_daily_target),
+                                    "deviation": int((l_rec.get("installed_units") or 0) - int(new_daily_target))
+                                }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", l_rec["log_date"]).execute()
+
+                            st.success(f"🎉 Custom day added! Targets recalculated evenly to {new_daily_target} units/day across all {total_days_count} active shifts.")
                             time.sleep(0.5); st.rerun()
-                        except Exception as err: st.error(f"Injection rejected: {str(err)}")
+                        except Exception as err: st.error(f"Recalculation rejected: {str(err)}")
 
                 # 📊 SUB-ELEMENT C: THE ACTIVE CALENDAR GRID VIEW SHEET
                 st.write("---")
@@ -1729,7 +1759,7 @@ else:
                     
                     if loop_date.weekday() < 5 or matched_log:
                         inst_count = matched_log["installed_units"] if matched_log else 0
-                        t_val = matched_log["target_units"] if matched_log else int(target_runrate)
+                        t_val = matched_log["target_units"] if (matched_log and matched_log["target_units"] > 0) else int(target_runrate)
                         cur_dev = int(inst_count - t_val)
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
                         row_style_attr = "style='background-color: rgba(234, 179, 8, 0.15) !important; font-weight: bold !important;'" if loop_date_str == str(date.today()) else ""
@@ -1750,6 +1780,7 @@ else:
                     st.markdown("##### 🚨 Danger Zone: Reset Active Schedule")
                     if st.form_submit_button("⚠️ Reset & Clear Active Timeline milestones", type="primary"):
                         supabase.table("project_schedules").delete().eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
+                        supabase.table("daily_progress_logs").delete().eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                         st.success("Target scheduling vector timeline cleared cleanly!")
                         time.sleep(0.5); st.rerun()
 

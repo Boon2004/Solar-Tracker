@@ -2140,7 +2140,6 @@ else:
                 installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
-                # 🎯 LOCAL ELEMENT COUNTER CALIBRATION FOR CREW PORTAL SCOPE ROLLS
                 try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
                 except Exception: topo_meta_obj = {}
                 
@@ -2250,29 +2249,38 @@ else:
                                 draw();
                             }
                         });
+                        
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
                             if (!isEditable) return;
                             const btn = document.getElementById("btn_save_crew_canvas"); btn.disabled = true; btn.innerText = "⏳ Synchronizing Progress Data...";
                             let keys = Object.keys(stagedMutationsMap); let typedRemark = document.getElementById("crew_remark_input").value;
                             
                             try {
+                                // 1. Use dynamic Promise arrays to ensure database operations finish completely before reload
+                                let updatePromises = [];
                                 for (let id of keys) {
                                     let targetBlock = dataset.find(item => item.id == id);
                                     if (stagedMutationsMap[id] === true) {
                                         if (targetBlock) { targetBlock[aspect + '_status'] = "completed"; targetBlock[aspect + '_date'] = sysDateStr; }
-                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                        updatePromises.push(fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
                                             method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                             body: JSON.stringify({ [aspect + '_status']: "completed", [aspect + '_date']: sysDateStr })
-                                        });
+                                        }));
                                     } else if (stagedMutationsMap[id] === false) {
                                         if (targetBlock) { targetBlock[aspect + '_status'] = "pending"; targetBlock[aspect + '_date'] = null; }
-                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                        updatePromises.push(fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
                                             method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                             body: JSON.stringify({ [aspect + '_status']: "pending", [aspect + '_date']: null })
-                                        });
+                                        }));
                                     }
                                 }
+                                
+                                // Wait for all layout grid updates to complete securely
+                                if (updatePromises.length > 0) {
+                                    await Promise.all(updatePromises);
+                                }
 
+                                // 2. Compute absolute total completions count across entire memory state array
                                 let absoluteTotalCompletionsCount = 0;
                                 dataset.forEach(b => {
                                     if (b.assigned_zone === targetZone && b[aspect + '_status'] === 'completed' && b[aspect + '_date'] === sysDateStr) {
@@ -2280,6 +2288,7 @@ else:
                                     }
                                 });
 
+                                // 3. Get corresponding target quota values
                                 let currentDayTargetQuota = Math.floor(__TARGET_RUNRATE_VAL__);
                                 let scheduleFetch = await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs?farm_id=eq.__FARM_ID_VAL__&aspect=eq." + aspect + "&zone=eq." + targetZone + "&log_date=eq." + sysDateStr, {
                                     method: "GET", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" }
@@ -2291,12 +2300,13 @@ else:
                                 
                                 let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
 
+                                // 4. Upsert progress logs ledger row
                                 await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
                                     method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
                                     body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
                                 
-                                stagedMutationsMap = {}; alert("🎉 Progress synchronized successfully!");
+                                stagedMutationsMap = {}; alert("🎉 Absolute progress records synchronized across all management calendars!");
                                 window.parent.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });

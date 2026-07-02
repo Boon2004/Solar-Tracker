@@ -2140,6 +2140,28 @@ else:
                 installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
+                # 🎯 LOCAL ELEMENT COUNTER CALIBRATION FOR CREW PORTAL SCOPE ROLLS
+                try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
+                except Exception: topo_meta_obj = {}
+                
+                crew_zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_crew_zone)]
+                crew_zone_element_count = 0
+                
+                if selected_crew_aspect in ["pegging", "piling"]:
+                    for b in crew_zone_filtered_blocks:
+                        ev = b.get("section_group") if b.get("section_group") is not None else 403
+                        crew_zone_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
+                elif selected_crew_aspect in ["mounting", "dc_cabling"]:
+                    crew_zone_element_count = len(crew_zone_filtered_blocks)
+                elif selected_crew_aspect == "modules":
+                    crew_zone_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in crew_zone_filtered_blocks])
+                elif selected_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
+                    for inv in topo_meta_obj.get("inverters", []):
+                        if any(str(b.get("assigned_zone")) == str(selected_crew_zone) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
+                            crew_zone_element_count += 1
+                elif selected_crew_aspect == "transformer":
+                    crew_zone_element_count = len(topo_meta_obj.get("transformers", []))
+
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -2294,7 +2316,6 @@ else:
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
                 
-                # 🎯 HIGHER PRECISION FLOATING MATH AGGREGATORS TO ELIMINATE DRIFT DISCREPANCIES
                 total_target_quota = 0.0; total_installed_quota = 0.0; total_deviation_quota = 0.0
                 loop_date = start_bound_dt
                 while loop_date <= end_bound_dt:
@@ -2317,9 +2338,8 @@ else:
                         table_html_tab2 += f"""<tr {row_style_attr}><td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td><td style='padding:10px; border:1px solid #374151;'>{round(current_day_target)} Units</td><td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td><td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td><td style='padding:10px; border:1px solid #374151;'>{remark_display}</td></tr>"""
                     loop_date += timedelta(days=1)
                 
-                # Dynamic matching ceiling fallback
-                if abs(total_target_quota - zone_specific_element_count) <= 5:
-                    total_target_quota = zone_specific_element_count
+                if abs(total_target_quota - crew_zone_element_count) <= 5:
+                    total_target_quota = crew_zone_element_count
                     total_deviation_quota = total_installed_quota - total_target_quota
 
                 table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td><td style='padding:12px; border:1px solid #374151;'>{round(total_target_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{round(total_installed_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{round(total_deviation_quota)}</td><td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td></tr></tbody></table>"""
@@ -2417,6 +2437,24 @@ else:
                     z_bound = sched["zone"]
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
+                    # Compute total master items for this explicit aspect layer & zone combination
+                    crew_hist_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(z_bound)]
+                    crew_hist_element_count = 0
+                    if lookup_crew_aspect in ["pegging", "piling"]:
+                        for b in crew_hist_filtered_blocks:
+                            ev = b.get("section_group") if b.get("section_group") is not None else 403
+                            crew_hist_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
+                    elif lookup_crew_aspect in ["mounting", "dc_cabling"]:
+                        crew_hist_element_count = len(crew_hist_filtered_blocks)
+                    elif lookup_crew_aspect == "modules":
+                        crew_hist_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in crew_hist_filtered_blocks])
+                    elif lookup_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
+                        for inv in topo_meta.get("inverters", []):
+                            if any(str(b.get("assigned_zone")) == str(z_bound) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
+                                crew_hist_element_count += 1
+                    elif lookup_crew_aspect == "transformer":
+                        crew_hist_element_count = len(topo_meta.get("transformers", []))
+
                     st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
                     
                     hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
@@ -2430,7 +2468,7 @@ else:
                             </tr>
                         </thead><tbody>"""
 
-                    z_total_target = 0; z_total_installed = 0; z_total_deviation = 0
+                    z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
                     
                     loop_dt = s_bound
                     while loop_dt <= e_bound:
@@ -2439,9 +2477,8 @@ else:
                         
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = matched_log["installed_units"] if matched_log else 0
-                            t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(t_runrate)
-                            dev_val = int(inst_val - t_val)
-                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
+                            dev_val = float(inst_val - t_val); rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
                             # 🎯 HIGHLIGHT SELECTED EVALUATION DATE WINDOW IN BLUE
                             if loop_dt_str == lookup_date_str:
@@ -2449,19 +2486,23 @@ else:
                             else:
                                 row_style = ""
                                 
-                            z_total_target += int(t_val)
-                            z_total_installed += inst_val
+                            z_total_target += t_val
+                            z_total_installed += float(inst_val)
                             z_total_deviation += dev_val
                             
                             hist_table_html += f"""<tr {row_style}>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{int(t_val)} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
                             </tr>"""
                         loop_dt += timedelta(days=1)
                         
+                    if abs(z_total_target - crew_hist_element_count) <= 5:
+                        z_total_target = crew_hist_element_count
+                        z_total_deviation = z_total_installed - z_total_target
+
                     # Inject sub-total rollup calculations footer directly inside the specific zone sheet
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
                         <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>

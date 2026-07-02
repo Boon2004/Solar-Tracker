@@ -2304,8 +2304,8 @@ else:
                                 stagedMutationsMap = {}; 
                                 alert("🎉 Progress records and notes successfully synchronized!");
                                 
-                                // 🎯 FORCE STREAMLIT CACHE TO PURGE BEFORE RELOADING INTERFACE LAYERS
-                                window.parent.location.href = window.parent.location.href;
+                                // 🎯 FIXED: Bypass frame security blocks by using localized frame refresh actions
+                                window.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
                         canvas.addEventListener('wheel', e => {
@@ -2320,6 +2320,8 @@ else:
                 """
                 html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false").replace("EXISTING_REMARK_VAL", existing_remark).replace("__INSTALLED_TODAY_VAL__", str(installed_today_count)).replace("__TARGET_RUNRATE_VAL__", str(target_runrate)).replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
                 components.html(html_crew_engine, height=695)
+
+                st.cache_resource.clear()
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""

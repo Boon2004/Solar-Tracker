@@ -1636,7 +1636,7 @@ else:
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             selected_target_zone_preview = st.selectbox("Select Target Sector Zone Area:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # Count total tracking nodes assigned to this sector zone profile area (Total Fixed Master Scope)
+            # Count total tracking nodes assigned to this sector zone profile area
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
             zone_specific_element_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1654,7 +1654,7 @@ else:
             elif selected_sched_aspect == "transformer":
                 zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
-            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` total items assigned to **{selected_target_zone_preview}** for this aspect layer.")
+            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
 
             # ⚙️ SUB-ELEMENT A: THE TIMELINE GENERATOR INITIALIZATION FORM
             with st.form("admin_schedule_broadcasting_form"):
@@ -1674,76 +1674,73 @@ else:
                             "zone": str(selected_target_zone_preview), "start_date": str(start_sc_dt), "end_date": str(end_sc_dt),
                             "working_days": int(w_days), "daily_target": float(computed_runrate_target)
                         }, on_conflict="farm_id, aspect, zone").execute()
+                        st.cache_resource.clear()
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH STRICT TOTAL CAPACITY TRACKING SUBTRACITON)
+            # 🛠️ SUB-ELEMENT B: MANAGE CUSTOM EXTENSIONS (ZONE SPECIFIC WITH DUMMY GUARD & DELETION)
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+            
+            # Initial safe fallback assignments to kill NameErrors entirely
+            target_runrate = 0.0
+            start_bound_dt = date.today()
+            end_bound_dt = date.today() + timedelta(days=1)
+            
             if schedule_meta:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
                 end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
-                base_working_days = int(sched_bound.get("working_days", 1))
+                target_runrate = float(sched_bound.get("daily_target", 0.0))
+                
+                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
                 
                 st.write("---")
-                st.markdown("#### ➕ Add Custom Weekend Extensions / Special Shifts")
-                with st.form("admin_custom_date_injector_form"):
-                    col_ins1, col_ins2 = st.columns(2)
-                    with col_ins1: extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
-                    with col_ins2: custom_target_quota = st.number_input("Assign FIXED Target Quantity for this Extension Shift:", min_value=0, value=100)
-                    
-                    if st.form_submit_button("➕ Inject Custom Shift Day Row & Recalculate Quotas", type="primary"):
-                        try:
-                            # 1. First insert or update the special extension row with its exact assigned capacity footprint
-                            supabase.table("daily_progress_logs").upsert({
-                                "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
-                                "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
-                                "target_units": int(custom_target_quota), "installed_units": 0,
-                                "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
-                            }, on_conflict="farm_id, aspect, zone, log_date").execute()
-                            
-                            # 2. Grab all existing logs for this combination to run full array verification loops
-                            all_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                            
-                            # 3. Sum up the absolute assigned metrics targets for ALL special extension shifts
-                            total_allocated_to_special_shifts = 0
-                            for log in all_logs:
-                                log_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
-                                # Row counts as a special extension if it falls on a weekend or outside standard boundary limits
-                                if log_dt.weekday() >= 5 or not (start_bound_dt <= log_dt <= end_bound_dt):
-                                    total_allocated_to_special_shifts += int(log.get("target_units", 0))
-
-                            # 4. CRITICAL MATHEMATICAL CORRECTIVE RECONCILIATION: 
-                            # Deduct special shift targets directly from the immutable master zone scope pool count!
-                            remaining_base_scope = max(0, int(zone_specific_element_count) - total_allocated_to_special_shifts)
-                            new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
-                            
-                            # 5. Lock this fresh run-rate baseline target value back into our master schedule profile configuration
-                            supabase.table("project_schedules").update({
-                                "daily_target": float(new_base_daily_target)
-                            }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
-                            
-                            # 6. Re-loop over all logs and forcefully apply the refreshed daily target balance value to all standard weekdays
-                            for log in all_logs:
-                                l_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
-                                if l_dt.weekday() < 5 and (start_bound_dt <= l_dt <= end_bound_dt):
-                                    current_installed = int(log.get("installed_units") or 0)
-                                    supabase.table("daily_progress_logs").update({
-                                        "target_units": int(new_base_daily_target),
-                                        "deviation": int(current_installed - int(new_base_daily_target))
-                                    }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", log["log_date"]).execute()
-
-                            st.success(f"🎉 Scope Balanced! Master Scope Pool ({zone_specific_element_count} total cells) minus special shift allocations leaves {remaining_base_scope} cells remaining. Weekday runrates recalculated cleanly to {new_base_daily_target} units/day across all {base_working_days} standard calendar days.")
+                st.markdown("#### 🛠️ Manage Custom Weekend Extensions & Special Shifts")
+                
+                col_add_panel, col_del_panel = st.columns(2)
+                
+                with col_add_panel:
+                    with st.form("admin_custom_date_injector_form"):
+                        st.markdown("##### ➕ Add Shift Extension")
+                        extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
+                        custom_target_quota = st.number_input("Assign FIXED Target Quantity for this Extension Shift:", min_value=0, value=100)
+                        
+                        if st.form_submit_button("➕ Inject Custom Shift Day Row"):
+                            # 🛡️ ANTI-DUMMY CALENDAR GUARD: Prevent duplicates or existing weekday overrides
+                            if start_bound_dt <= extension_date <= end_bound_dt and extension_date.weekday() < 5:
+                                st.error("🛑 **Dummy Guard Error:** This date is already a standard production weekday inside the base schedule boundaries.")
+                            elif str(extension_date) in logs_lookup and logs_lookup[str(extension_date)].get("target_units", 0) > 0:
+                                st.error("🛑 **Dummy Guard Error:** An operational configuration target already exists for this date.")
+                            else:
+                                supabase.table("daily_progress_logs").upsert({
+                                    "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
+                                    "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
+                                    "target_units": int(custom_target_quota), "installed_units": 0,
+                                    "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
+                                }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                                st.cache_resource.clear()
+                                st.success("Custom special shift extension recorded successfully!")
+                                time.sleep(0.5); st.rerun()
+                                
+                with col_del_panel:
+                    with st.form("admin_custom_date_removal_form"):
+                        st.markdown("##### 🗑️ Remove Shift Extension")
+                        # Only scan special entries that contain the authorization keyword remark
+                        removable_dates = [d for d, r in logs_lookup.items() if "Special Shift" in str(r.get("remark", ""))]
+                        
+                        selected_removal_date = st.selectbox("Select Target Extension Row to Delete:", removable_dates if removable_dates else ["No extensions created"])
+                        
+                        if st.form_submit_button("🗑️ Delete Extension Shift Row", type="primary", disabled=not removable_dates):
+                            supabase.table("daily_progress_logs").delete().eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", selected_removal_date).execute()
+                            st.cache_resource.clear()
+                            st.success(f"Successfully pruned custom extension row for {selected_removal_date}!")
                             time.sleep(0.5); st.rerun()
-                        except Exception as err: st.error(f"Recalculation rejected: {str(err)}")
 
                 # 📊 SUB-ELEMENT C: THE ACTIVE CALENDAR GRID VIEW SHEET
                 st.write("---")
                 st.markdown(f"#### 📅 Mapped Production Operations Calendar: `{selected_sched_aspect.upper()}` — `{selected_target_zone_preview.upper()}`")
                 
-                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
-
                 admin_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
                     <thead>
                         <tr style='background-color: #1f2937; color: #f9fafb;'>
@@ -1755,43 +1752,51 @@ else:
                         </tr>
                     </thead><tbody>"""
 
-                total_target_quota = 0; total_installed_quota = 0; total_deviation_quota = 0
-                loop_date = start_bound_dt
-                while loop_date <= end_bound_dt:
-                    loop_date_str = str(loop_date)
+                total_target_quota = 0.0; total_installed_quota = 0.0; total_deviation_quota = 0.0
+                
+                # Create comprehensive date array grouping all logs and base timelines safely
+                all_calendar_dates = set(logs_lookup.keys())
+                curr_date_cursor = start_bound_dt
+                while curr_date_cursor <= end_bound_dt:
+                    if curr_date_cursor.weekday() < 5:
+                        all_calendar_dates.add(str(curr_date_cursor))
+                    curr_date_cursor += timedelta(days=1)
+                
+                for loop_date_str in sorted(list(all_calendar_dates)):
                     matched_log = logs_lookup.get(loop_date_str)
                     
-                    if loop_date.weekday() < 5 or matched_log:
-                        inst_count = matched_log["installed_units"] if matched_log else 0
-                        t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(target_runrate)
-                        cur_dev = int(inst_count - t_val)
-                        remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
-                        
-                        # 🎯 HIGHLIGHT CURRENT DAY ROW IN ADMIN MATRIX VIEW
-                        if loop_date_str == current_date_str:
-                            row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
-                        else:
-                            row_style_attr = ""
-                        
-                        total_target_quota += int(t_val)
-                        total_installed_quota += inst_count
-                        total_deviation_quota += cur_dev
-                        
-                        admin_table_html += f"""<tr {row_style_attr}>
-                            <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
-                            <td style='padding:10px; border:1px solid #374151;'>{int(t_val)} Units</td>
-                            <td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td>
-                            <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td>
-                            <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
-                        </tr>"""
-                    loop_date += timedelta(days=1)
+                    # Compute completed tracking unit cell structures directly from live database state metrics
+                    inst_count = sum(1 for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview) and b.get(f"{selected_sched_aspect}_status") == "completed" and b.get(f"{selected_sched_aspect}_date") == loop_date_str)
+                    t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                    cur_dev = float(inst_count - t_val)
+                    remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
+                    
+                    if loop_date_str == current_date_str:
+                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
+                    else:
+                        row_style_attr = ""
+                    
+                    total_target_quota += t_val
+                    total_installed_quota += float(inst_count)
+                    total_deviation_quota += cur_dev
+                    
+                    admin_table_html += f"""<tr {row_style_attr}>
+                        <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{round(t_val)} Units</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
+                    </tr>"""
                 
-                # 📊 ADD UNIFIED TOTALS FOOTER ROLLUP ROW AT THE BOTTOM
+                if abs(total_target_quota - zone_specific_element_count) <= 5:
+                    total_target_quota = zone_specific_element_count
+                    total_deviation_quota = total_installed_quota - total_target_quota
+
                 admin_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
                     <td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
-                    <td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td>
-                    <td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td>
-                    <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{round(total_target_quota)} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{round(total_installed_quota)} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{round(total_deviation_quota)}</td>
                     <td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td>
                 </tr></tbody></table>"""
                 st.markdown(admin_table_html, unsafe_allow_html=True)
@@ -1802,13 +1807,13 @@ else:
                     if st.form_submit_button("⚠️ Reset & Clear Active Timeline milestones", type="primary"):
                         supabase.table("project_schedules").delete().eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                         supabase.table("daily_progress_logs").delete().eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
+                        st.cache_resource.clear()
                         st.success("Target scheduling vector timeline cleared cleanly!")
                         time.sleep(0.5); st.rerun()
 
         # --- STAGE 6: HISTORICAL PROGRESS AUDIT LOGS ---
         with setup_tabs[5]:
             st.markdown("### 📈 Historical Operations Playback & Audit Engine Logs")
-            st.caption("Select an operational layer aspect and historical date point below to evaluate precisely what milestones your crew captured during that shift.")
             
             hist_cols = st.columns(2)
             with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="admin_hist_lookup_asp")
@@ -1816,7 +1821,6 @@ else:
             
             lookup_date_str = str(lookup_crew_date)
 
-            # 🎨 SUB-ELEMENT A: AD-TERMINAL PLAYBACK MONITOR PROGRESSION INTERACTIVE VISUAL ENGINE MAP
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -1886,7 +1890,6 @@ else:
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=390)
 
-            # 📊 SUB-ELEMENT B: SEPARATE & DECOUPLED MATRIX DATA LEDGER BY TARGET ZONE SECTOR
             st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
@@ -1894,14 +1897,15 @@ else:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
-                # 🏁 Separate processing logic loops cleanly per individual zone sector context area
-                for sched in hist_sched_records:
+                for zone_name in [z for z in st.session_state.managed_zones if z != "Unassigned"]:
+                    sched = next((s for s in hist_sched_records if s["zone"] == zone_name), None)
+                    if not sched: continue
+                    
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
-                    z_bound = sched["zone"]
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
-                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
+                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{zone_name.upper()}**")
                     
                     hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
                         <thead>
@@ -1914,45 +1918,47 @@ else:
                             </tr>
                         </thead><tbody>"""
 
-                    z_total_target = 0; z_total_installed = 0; z_total_deviation = 0
+                    z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
                     
-                    loop_dt = s_bound
-                    while loop_dt <= e_bound:
-                        loop_dt_str = str(loop_dt)
-                        matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
+                    # Collate specific date index arrays cleanly to safely kill any NameErrors
+                    all_zone_dates = set([l_key[1] for l_key in hist_logs_lookup.keys() if l_key[0] == zone_name])
+                    c_cursor = s_bound
+                    while c_cursor <= e_bound:
+                        if c_cursor.weekday() < 5:
+                            all_zone_dates.add(str(c_cursor))
+                        c_cursor += timedelta(days=1)
                         
-                        if loop_dt.weekday() < 5 or matched_log:
-                            inst_val = matched_log["installed_units"] if matched_log else 0
-                            t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(t_runrate)
-                            dev_val = int(inst_val - t_val)
-                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
-                            
-                            # 🎯 HIGHLIGHT SELECTED EVALUATION DATE WINDOW IN BLUE
-                            if loop_dt_str == lookup_date_str:
-                                row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
-                            else:
-                                row_style = ""
-                                
-                            z_total_target += int(t_val)
-                            z_total_installed += inst_val
-                            z_total_deviation += dev_val
-                            
-                            hist_table_html += f"""<tr {row_style}>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{int(t_val)} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
-                            </tr>"""
-                        loop_dt += timedelta(days=1)
+                    for loop_dt_str in sorted(list(all_zone_dates)):
+                        matched_log = hist_logs_lookup.get((zone_name, loop_dt_str))
+                        inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
                         
-                    # Inject sub-total rollup calculations footer directly inside the specific zone sheet
+                        t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
+                        dev_val = float(inst_val - t_val)
+                        rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                        
+                        if loop_dt_str == lookup_date_str:
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                        else:
+                            row_style = ""
+                            
+                        z_total_target += t_val
+                        z_total_installed += float(inst_val)
+                        z_total_deviation += dev_val
+                        
+                        hist_table_html += f"""<tr {row_style}>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
+                        </tr>"""
+                        
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td>
                     </tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
             else:
@@ -2304,7 +2310,7 @@ else:
                         st.success("🎉 Shift log metrics updated successfully!")
                         time.sleep(0.5)
                         st.rerun()
-                        
+
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
                 

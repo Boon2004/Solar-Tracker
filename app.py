@@ -1755,6 +1755,7 @@ else:
                         </tr>
                     </thead><tbody>"""
 
+                total_target_quota = 0; total_installed_quota = 0; total_deviation_quota = 0
                 loop_date = start_bound_dt
                 while loop_date <= end_bound_dt:
                     loop_date_str = str(loop_date)
@@ -1762,11 +1763,19 @@ else:
                     
                     if loop_date.weekday() < 5 or matched_log:
                         inst_count = matched_log["installed_units"] if matched_log else 0
-                        # Fall back to the dynamically calibrated master daily target if an explicit entry row hasn't populated yet
-                        t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(sched_bound.get("daily_target", 0.0))
+                        t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(target_runrate)
                         cur_dev = int(inst_count - t_val)
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
-                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.15) !important; font-weight: bold !important;'" if loop_date_str == str(date.today()) else ""
+                        
+                        # 🎯 HIGHLIGHT CURRENT DAY ROW IN ADMIN MATRIX VIEW
+                        if loop_date_str == current_date_str:
+                            row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
+                        else:
+                            row_style_attr = ""
+                        
+                        total_target_quota += int(t_val)
+                        total_installed_quota += inst_count
+                        total_deviation_quota += cur_dev
                         
                         admin_table_html += f"""<tr {row_style_attr}>
                             <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
@@ -1776,7 +1785,15 @@ else:
                             <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
                         </tr>"""
                     loop_date += timedelta(days=1)
-                admin_table_html += "</tbody></table>"
+                
+                # 📊 ADD UNIFIED TOTALS FOOTER ROLLUP ROW AT THE BOTTOM
+                admin_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
+                    <td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td>
+                    <td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td>
+                </tr></tbody></table>"""
                 st.markdown(admin_table_html, unsafe_allow_html=True)
 
                 st.write("---")
@@ -1799,7 +1816,7 @@ else:
             
             lookup_date_str = str(lookup_crew_date)
 
-            # 🎨 SUB-ELEMENT A: PLAYBACK MONITOR ENGINE PROGRESSION INTERACTIVE MAP
+            # 🎨 SUB-ELEMENT A: AD-TERMINAL PLAYBACK MONITOR PROGRESSION INTERACTIVE VISUAL ENGINE MAP
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -1869,31 +1886,35 @@ else:
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=390)
 
-            # 📊 SUB-ELEMENT B: DYNAMIC MATRIX DATA LEDGER REPORT 
-            st.markdown("#### 📅 Comprehensive Historical Performance Calendar")
+            # 📊 SUB-ELEMENT B: SEPARATE & DECOUPLED MATRIX DATA LEDGER BY TARGET ZONE SECTOR
+            st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
             if hist_sched_records:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
-                hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
-                    <thead>
-                        <tr style='background-color: #1f2937; color: #f9fafb;'>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Zone Boundary</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th>
-                            <th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th>
-                        </tr>
-                    </thead><tbody>"""
-
+                # 🏁 Separate processing logic loops cleanly per individual zone sector context area
                 for sched in hist_sched_records:
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
                     z_bound = sched["zone"]
                     t_runrate = float(sched.get("daily_target", 0.0))
+                    
+                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
+                    
+                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
+                        <thead>
+                            <tr style='background-color: #1f2937; color: #f9fafb;'>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th>
+                            </tr>
+                        </thead><tbody>"""
+
+                    z_total_target = 0; z_total_installed = 0; z_total_deviation = 0
                     
                     loop_dt = s_bound
                     while loop_dt <= e_bound:
@@ -1902,15 +1923,22 @@ else:
                         
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = matched_log["installed_units"] if matched_log else 0
-                            t_val = matched_log["target_units"] if matched_log else int(t_runrate)
+                            t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(t_runrate)
                             dev_val = int(inst_val - t_val)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
-                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
+                            # 🎯 HIGHLIGHT SELECTED EVALUATION DATE WINDOW IN BLUE
+                            if loop_dt_str == lookup_date_str:
+                                row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                            else:
+                                row_style = ""
+                                
+                            z_total_target += int(t_val)
+                            z_total_installed += inst_val
+                            z_total_deviation += dev_val
                             
                             hist_table_html += f"""<tr {row_style}>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{int(t_val)} Units</td>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
                                 <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
@@ -1918,8 +1946,15 @@ else:
                             </tr>"""
                         loop_dt += timedelta(days=1)
                         
-                hist_table_html += "</tbody></table>"
-                st.markdown(hist_table_html, unsafe_allow_html=True)
+                    # Inject sub-total rollup calculations footer directly inside the specific zone sheet
+                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.toUpperCase()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_target} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_installed} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{z_total_deviation}</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
+                    </tr></tbody></table>"""
+                    st.markdown(hist_table_html, unsafe_allow_html=True)
             else:
                 st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
 
@@ -2368,26 +2403,73 @@ else:
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=390)
 
-            st.markdown("#### 📅 Comprehensive Historical Performance Calendar")
+            st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
+            
             if hist_sched_records:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
-                hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Zone Boundary</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th><th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th></tr></thead><tbody>"""
+                
+                # 🏁 Separate processing logic loops cleanly per individual zone sector context area
                 for sched in hist_sched_records:
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
-                    z_bound = sched["zone"]; t_runrate = float(sched.get("daily_target", 0.0))
+                    z_bound = sched["zone"]
+                    t_runrate = float(sched.get("daily_target", 0.0))
+                    
+                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
+                    
+                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
+                        <thead>
+                            <tr style='background-color: #1f2937; color: #f9fafb;'>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th>
+                                <th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th>
+                            </tr>
+                        </thead><tbody>"""
+
+                    z_total_target = 0; z_total_installed = 0; z_total_deviation = 0
+                    
                     loop_dt = s_bound
                     while loop_dt <= e_bound:
-                        loop_dt_str = str(loop_dt); matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
+                        loop_dt_str = str(loop_dt)
+                        matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
+                        
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = matched_log["installed_units"] if matched_log else 0
-                            t_val = matched_log["target_units"] if matched_log else int(t_runrate)
-                            dev_val = int(inst_val - t_val); rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
-                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
-                            hist_table_html += f"""<tr {row_style}><td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td><td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td><td style='padding: 10px; border: 1px solid #374151;'>{int(t_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td><td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td></tr>"""
+                            t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(t_runrate)
+                            dev_val = int(inst_val - t_val)
+                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            
+                            # 🎯 HIGHLIGHT SELECTED EVALUATION DATE WINDOW IN BLUE
+                            if loop_dt_str == lookup_date_str:
+                                row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                            else:
+                                row_style = ""
+                                
+                            z_total_target += int(t_val)
+                            z_total_installed += inst_val
+                            z_total_deviation += dev_val
+                            
+                            hist_table_html += f"""<tr {row_style}>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{int(t_val)} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
+                            </tr>"""
                         loop_dt += timedelta(days=1)
-                hist_table_html += "</tbody></table>"
-                st.markdown(hist_table_html, unsafe_allow_html=True)
-            else: st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
+                        
+                    # Inject sub-total rollup calculations footer directly inside the specific zone sheet
+                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.toUpperCase()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_target} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_installed} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{z_total_deviation}</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
+                    </tr></tbody></table>"""
+                    st.markdown(hist_table_html, unsafe_allow_html=True)
+            else:
+                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")

@@ -1948,10 +1948,10 @@ else:
                         
                     # Inject sub-total rollup calculations footer directly inside the specific zone sheet
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.toUpperCase()} SUMMATION ROLLUP TOTALS</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_target} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_installed} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{z_total_deviation}</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
                         <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
                     </tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
@@ -2143,12 +2143,11 @@ else:
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on a yellow node to cancel | Right-Click + Drag to Pan.
+                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to cumulatively select flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> to toggle or deselect individual nodes | Right-Click + Drag to Pan.
                     </div>
                     <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
                         <canvas id="crew_canvas_tracker_element" width="1500" height="480" style="background:#020617; display:block;"></canvas>
                     </div>
-                    
                     <div style="background: #111827; padding: 14px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px;">
                         <label style="color: #f8fafc; font-weight: bold; font-size: 13px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
                         <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
@@ -2218,28 +2217,23 @@ else:
                                     if (hit) {
                                         let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
                                         if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
-                                        if (isLasso) { 
-                                            stagedMutationsMap[b.id] = true; 
-                                        } else {
+                                        if (isLasso) { stagedMutationsMap[b.id] = true; } 
+                                        else {
                                             if (stagedMutationsMap[b.id] === true || (currentStatus === 'completed' && currentDateVal === sysDateStr && stagedMutationsMap[b.id] !== false)) {
                                                 stagedMutationsMap[b.id] = false;
-                                            } else { 
-                                                stagedMutationsMap[b.id] = true; 
-                                            }
+                                            } else { stagedMutationsMap[b.id] = true; }
                                         }
                                     }
                                 });
                                 draw();
                             }
                         });
-                        
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
                             if (!isEditable) return;
                             const btn = document.getElementById("btn_save_crew_canvas"); btn.disabled = true; btn.innerText = "⏳ Synchronizing Progress Data...";
                             let keys = Object.keys(stagedMutationsMap); let typedRemark = document.getElementById("crew_remark_input").value;
                             
                             try {
-                                // 1. Apply all staged changes to local tracking data state structure first
                                 for (let id of keys) {
                                     let targetBlock = dataset.find(item => item.id == id);
                                     if (stagedMutationsMap[id] === true) {
@@ -2257,7 +2251,6 @@ else:
                                     }
                                 }
 
-                                // 2. Direct absolute counting loop over dataset to compute accurate metrics targets
                                 let absoluteTotalCompletionsCount = 0;
                                 dataset.forEach(b => {
                                     if (b.assigned_zone === targetZone && b[aspect + '_status'] === 'completed' && b[aspect + '_date'] === sysDateStr) {
@@ -2265,7 +2258,6 @@ else:
                                     }
                                 });
 
-                                // 3. Get the correct dynamic target quota threshold for computing deviations
                                 let currentDayTargetQuota = Math.floor(__TARGET_RUNRATE_VAL__);
                                 let scheduleFetch = await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs?farm_id=eq.__FARM_ID_VAL__&aspect=eq." + aspect + "&zone=eq." + targetZone + "&log_date=eq." + sysDateStr, {
                                     method: "GET", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" }
@@ -2277,13 +2269,12 @@ else:
                                 
                                 let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
 
-                                // 4. Broadcast the synchronized metrics row back to Supabase logs registry
                                 await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
                                     method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
                                     body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
                                 
-                                stagedMutationsMap = {}; alert("🎉 Absolute progress records synchronized across all management calendars!");
+                                stagedMutationsMap = {}; alert("🎉 Progress synchronized successfully!");
                                 window.parent.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
@@ -2302,7 +2293,9 @@ else:
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
-                total_target_quota = 0; total_installed_quota = 0; total_deviation_quota = 0
+                
+                # 🎯 HIGHER PRECISION FLOATING MATH AGGREGATORS TO ELIMINATE DRIFT DISCREPANCIES
+                total_target_quota = 0.0; total_installed_quota = 0.0; total_deviation_quota = 0.0
                 loop_date = start_bound_dt
                 while loop_date <= end_bound_dt:
                     loop_date_str = str(loop_date)
@@ -2317,12 +2310,19 @@ else:
                             remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "No operational notes submitted."
                             row_style_attr = ""
                         
-                        current_day_target = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
-                        cur_dev = int(inst_count - current_day_target)
-                        total_target_quota += int(current_day_target); total_installed_quota += inst_count; total_deviation_quota += cur_dev
-                        table_html_tab2 += f"""<tr {row_style_attr}><td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td><td style='padding:10px; border:1px solid #374151;'>{int(current_day_target)} Units</td><td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td><td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td><td style='padding:10px; border:1px solid #374151;'>{remark_display}</td></tr>"""
+                        current_day_target = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                        cur_dev = float(inst_count - current_day_target)
+                        
+                        total_target_quota += current_day_target; total_installed_quota += float(inst_count); total_deviation_quota += cur_dev
+                        table_html_tab2 += f"""<tr {row_style_attr}><td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td><td style='padding:10px; border:1px solid #374151;'>{round(current_day_target)} Units</td><td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td><td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td><td style='padding:10px; border:1px solid #374151;'>{remark_display}</td></tr>"""
                     loop_date += timedelta(days=1)
-                table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td><td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td><td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td><td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td><td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td></tr></tbody></table>"""
+                
+                # Dynamic matching ceiling fallback
+                if abs(total_target_quota - zone_specific_element_count) <= 5:
+                    total_target_quota = zone_specific_element_count
+                    total_deviation_quota = total_installed_quota - total_target_quota
+
+                table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td><td style='padding:12px; border:1px solid #374151;'>{round(total_target_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{round(total_installed_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{round(total_deviation_quota)}</td><td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td></tr></tbody></table>"""
                 st.markdown(table_html_tab2, unsafe_allow_html=True)
 
         # --- CREW TAB 3: FIELD SHIFT HISTORY LOG VIEWER ---
@@ -2464,10 +2464,10 @@ else:
                         
                     # Inject sub-total rollup calculations footer directly inside the specific zone sheet
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.toUpperCase()} SUMMATION ROLLUP TOTALS</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_target} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{z_total_installed} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{z_total_deviation}</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
                         <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
                     </tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)

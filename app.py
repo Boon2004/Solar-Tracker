@@ -2139,7 +2139,9 @@ else:
                 
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
-                try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
+                # Safe topology fetching
+                raw_bg = current_farm_record.get("background_image_url") if current_farm_record else None
+                try: topo_meta_obj = json.loads(raw_bg) if raw_bg else {}
                 except Exception: topo_meta_obj = {}
                 
                 crew_zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_crew_zone)]
@@ -2159,7 +2161,7 @@ else:
                 elif selected_crew_aspect == "transformer":
                     crew_zone_element_count = len(topo_meta_obj.get("transformers", []))
 
-                # Interactive map component container with immediate real-time background sync
+                # Canvas UI (stripped of internal HTML inputs/buttons)
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -2251,16 +2253,32 @@ else:
                     })();
                 </script>
                 """
-                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false").replace("EXISTING_REMARK_VAL", existing_remark).replace("__INSTALLED_TODAY_VAL__", str(installed_today_count)).replace("__TARGET_RUNRATE_VAL__", str(target_runrate)).replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
-                components.html(html_crew_engine, height=515)
+                
+                # SAFE REPLACEMENT CHAIN (Bypasses NameError completely)
+                safe_b64_topo = base64.b64encode((current_farm_record.get("background_image_url") or "{}").encode("utf-8")).decode("utf-8")
+                
+                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data)
+                html_crew_engine = html_crew_engine.replace("__TOPOLOGY_METADATA_B64__", safe_b64_topo)
+                html_crew_engine = html_crew_engine.replace("ACTIVE_ASPECT_VAL", selected_crew_aspect)
+                html_crew_engine = html_crew_engine.replace("ACTIVE_ZONE_VAL", selected_crew_zone)
+                html_crew_engine = html_crew_engine.replace("SYSTEM_DATE_VAL", current_date_str)
+                html_crew_engine = html_crew_engine.replace("MIN_C_VAL", str(min_c))
+                html_crew_engine = html_crew_engine.replace("MAX_C_VAL", str(max_c))
+                html_crew_engine = html_crew_engine.replace("MIN_R_VAL", str(min_r))
+                html_crew_engine = html_crew_engine.replace("MAX_R_VAL", str(max_r))
+                html_crew_engine = html_crew_engine.replace("SUPABASE_URL_VAL", SUPABASE_URL)
+                html_crew_engine = html_crew_engine.replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
+                html_crew_engine = html_crew_engine.replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
 
-                # 📝 NATIVE STREAMLIT SHIFT CONTROLS (Bypasses Frame Restrictions Completely)
+                components.html(html_crew_engine, height=520)
+
+                # NATIVE STREAMLIT REMARK & SAVE CONTROLS
                 st.write("")
                 typed_remark = st.text_input("📝 Append Shift Remarks & Blockage Mitigation Notes:", value=existing_remark, key="crew_live_remark_field_input")
                 
                 if st.button("💾 Save Target Progress & Shift Logs", type="primary", use_container_width=True, disabled=not is_editable_window):
                     with st.spinner("Synchronizing operations ledger logs..."):
-                        # Calculate the exact completion count directly from the structural tables
+                        # Fetch the live total tally from the database immediately
                         fresh_db_blocks = supabase.table("structures").select("id").eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", selected_crew_zone).eq(f"{selected_crew_aspect}_status", "completed").eq(f"{selected_crew_aspect}_date", current_date_str).execute().data
                         absolute_total_completions = len(fresh_db_blocks) if fresh_db_blocks else 0
                         
@@ -2272,7 +2290,7 @@ else:
                         
                         supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
                             "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
-                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_totalCompletionsCount if 'absoluteTotalCompletionsCount' in locals() else absolute_total_completions),
+                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_total_completions),
                             "deviation": int(computed_deviation), "remark": str(typed_remark)
                         }, on_conflict="farm_id, aspect, zone, log_date").execute()
                         
@@ -2289,7 +2307,7 @@ else:
                     loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     if loop_date.weekday() < 5 or matched_log:
-                        # Shared calculation logic engine pulls exact block entries
+                        # Pull live completions count from the cached data map
                         inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == loop_date_str)
                         
                         if loop_date_str == current_date_str:

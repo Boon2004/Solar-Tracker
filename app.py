@@ -2288,16 +2288,23 @@ else:
                             
                         computed_deviation = absolute_total_completions - current_day_target_quota
                         
-                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
-                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
-                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_total_completions),
-                            "deviation": int(computed_deviation), "remark": str(typed_remark)
+                        # 🎯 FIXED: Proper upsert structure using clean variables and valid header payload modifiers
+                        supabase.table("daily_progress_logs").upsert({
+                            "farm_id": str(st.session_state.active_site_id), 
+                            "aspect": str(selected_crew_aspect), 
+                            "zone": str(selected_crew_zone),
+                            "log_date": current_date_str, 
+                            "target_units": int(current_day_target_quota), 
+                            "installed_units": int(absolute_total_completions),
+                            "deviation": int(computed_deviation), 
+                            "remark": str(typed_remark)
                         }, on_conflict="farm_id, aspect, zone, log_date").execute()
                         
                         st.cache_resource.clear()
                         st.success("🎉 Shift log metrics updated successfully!")
-                        time.sleep(0.5); st.rerun()
-
+                        time.sleep(0.5)
+                        st.rerun()
+                        
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
                 

@@ -2079,28 +2079,28 @@ else:
                 if not is_editable_window:
                     st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active bounds.")
                 
-                # Fetch existing remark note from database to pre-populate our text field
-                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).eq("log_date", current_date_str).execute().data
-                existing_remark = raw_logs[0].get("remark", "") if raw_logs else ""
+                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
+                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
+                existing_remark = logs_lookup.get(current_date_str, {}).get("remark", "")
                 
-                # Fetch live database completions count for today to compute deviation metrics
                 installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
+                # Note: Increased iframe height component container boundary constraints to 780 to show unified controls cleanly
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select and toggle staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on an active yellow node to cancel/deselect it | Right-Click + Drag to Pan.
+                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on a yellow node to cancel | Right-Click + Drag to Pan.
                     </div>
-                    <div style="width:100%; max-height:500px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
-                        <canvas id="crew_canvas_tracker_element" width="1500" height="500" style="background:#020617; display:block;"></canvas>
+                    <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
+                        <canvas id="crew_canvas_tracker_element" width="1500" height="480" style="background:#020617; display:block;"></canvas>
                     </div>
                     
-                    <div style="background: #111827; padding: 16px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 10px;">
-                        <label style="color: #f8fafc; font-weight: bold; font-size: 14px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
-                        <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
-                        <div style="text-align: right; margin-top: 5px;">
-                            <button id="btn_save_crew_canvas" style="background: #3b82f6; border: none; padding: 12px 32px; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">💾 Save Target Progress & Shift Logs</button>
+                    <div style="background: #111827; padding: 14px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px;">
+                        <label style="color: #f8fafc; font-weight: bold; font-size: 13px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
+                        <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+                        <div style="text-align: right; margin-top: 4px;">
+                            <button id="btn_save_crew_canvas" style="background: #3b82f6; border: none; padding: 10px 28px; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">💾 Save Target Progress & Shift Logs</button>
                         </div>
                     </div>
                 </div>
@@ -2186,47 +2186,53 @@ else:
                         
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
                             if (!isEditable) return;
+                            const btn = document.getElementById("btn_save_crew_canvas");
+                            btn.disabled = true; btn.innerText = "⏳ Synchronizing Progress Data...";
                             
                             let keys = Object.keys(stagedMutationsMap);
                             let typedRemark = document.getElementById("crew_remark_input").value;
                             
-                            // 1. Calculate live completion totals based on mutations map status change updates
                             let newlyAdded = 0;
                             keys.forEach(id => { if(stagedMutationsMap[id] === true) newlyAdded++; });
                             let totalCompletionsForLog = __INSTALLED_TODAY_VAL__ + newlyAdded;
                             let computedTarget = Math.floor(__TARGET_RUNRATE_VAL__);
                             let computedDeviation = totalCompletionsForLog - computedTarget;
 
-                            // 2. Broadcast single block coordinates changes to Supabase structures ledger registry
-                            for (let id of keys) {
-                                let p = {};
-                                if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
-                                else { p[aspect + '_status'] = "pending"; p[aspect + '_date'] = null; }
-                                await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                    method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                    body: JSON.stringify(p)
+                            try {
+                                for (let id of keys) {
+                                    let p = {};
+                                    if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
+                                    else { p[aspect + '_status'] = "pending"; p[aspect + '_date'] = null; }
+                                    await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                        method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                        body: JSON.stringify(p)
+                                    });
+                                }
+
+                                let logPayload = {
+                                    "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone,
+                                    "log_date": sysDateStr, "target_units": computedTarget,
+                                    "installed_units": totalCompletionsForLog, "deviation": computedDeviation,
+                                    "remark": typedRemark
+                                };
+                                
+                                await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
+                                    method: "POST", 
+                                    headers: { 
+                                        "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", 
+                                        "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" 
+                                    },
+                                    body: JSON.stringify(logPayload)
                                 });
+
+                                // 🔥 IN-PLACE STATE RETENTION: Clear mutation memory flags instead of refreshing the window shell
+                                stagedMutationsMap = {};
+                                alert("🎉 Operational metrics and field layout logs synchronized successfully!");
+                                btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs";
+                            } catch(err) {
+                                alert("Data synchronization exception dropped: " + err);
+                                btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs";
                             }
-
-                            // 3. Simultaneously broadcast operational run-sheets and remarks update parameters
-                            let logPayload = {
-                                "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone,
-                                "log_date": sysDateStr, "target_units": computedTarget,
-                                "installed_units": totalCompletionsForLog, "deviation": computedDeviation,
-                                "remark": typedRemark
-                            };
-                            
-                            await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
-                                method: "POST", 
-                                headers: { 
-                                    "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", 
-                                    "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" 
-                                },
-                                body: JSON.stringify(logPayload)
-                            });
-
-                            alert("🎉 Progress metrics and shift ledger records synchronized successfully!");
-                            window.parent.location.reload();
                         });
                         
                         canvas.addEventListener('wheel', e => {
@@ -2243,9 +2249,7 @@ else:
                 components.html(html_crew_engine, height=695)
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
-                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
-                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
-
+                
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
                     <thead>
                         <tr style='background-color: #1f2937; color: #f9fafb;'>
@@ -2263,31 +2267,33 @@ else:
                     loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     
-                    if loop_date_str == current_date_str:
-                        inst_count = installed_today_count
-                        remark_display = matched_log.get("remark") if matched_log else "Logs submitted today."
-                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.18) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
-                    else:
-                        inst_count = matched_log["installed_units"] if matched_log else 0
-                        remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
-                        row_style_attr = ""
+                    # 📅 WEEKDAY RULE ENFORCEMENT: Only include date rows in the base schedule view if it's a weekday OR if the database contains a manual entry override log for that weekend date.
+                    if loop_date.weekday() < 5 or matched_log:
+                        if loop_date_str == current_date_str:
+                            inst_count = installed_today_count
+                            remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "Real-time field session tracking active."
+                            row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
+                        else:
+                            inst_count = matched_log["installed_units"] if matched_log else 0
+                            remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "No operational notes submitted."
+                            row_style_attr = ""
+                            
+                        cur_dev = int(inst_count - target_runrate)
+                        total_target_quota += int(target_runrate)
+                        total_installed_quota += inst_count
+                        total_deviation_quota += cur_dev
                         
-                    cur_dev = int(inst_count - target_runrate)
-                    total_target_quota += int(target_runrate)
-                    total_installed_quota += inst_count
-                    total_deviation_quota += cur_dev
-                    
-                    table_html_tab2 += f"""<tr {row_style_attr}>
-                        <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{int(target_runrate)} Units</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
-                    </tr>"""
+                        table_html_tab2 += f"""<tr {row_style_attr}>
+                            <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{int(target_runrate)} Units</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
+                        </tr>"""
                     loop_date += timedelta(days=1)
 
                 table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'>
-                    <td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
+                    <td style='padding:12px; border:1px solid #374151;'>拉 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
                     <td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td>
                     <td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td>
                     <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td>
@@ -2338,17 +2344,17 @@ else:
             
             lookup_date_str = str(lookup_crew_date)
 
-            # 🎨 SUB-ELEMENT A: INTERACTIVE REAL-TIME PROGRESS CALENDAR CANVAS OVERVIEW
+            # 🎨 HISTORICAL PROGRESS PLAYBACK MONITOR MAP DESIGN WITH INTERACTIVE VIEWPORTS
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    🗺️ <b>Historic Progress Map:</b> Move cursor to view cell details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent installations complete up to this historical date. Right-Click + Drag to Pan | Scroll to Zoom.
+                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window. Right-Click + Drag to Pan | Scroll to Zoom.
                 </div>
                 
-                <div id="hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+                <div id="hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
 
-                <div style="width:100%; max-height:300px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="hist_overview_canvas" width="1500" height="300" style="background:#020617; display:block;"></canvas>
+                <div style="width:100%; max-height:350px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
@@ -2371,8 +2377,16 @@ else:
                             let status = b[aspect + '_status'] || 'pending';
                             let compDate = b[aspect + '_date'];
                             
-                            if (status === 'completed' && compDate && compDate <= evaluationDateStr) {
-                                ctx.fillStyle = '#22c55e';
+                            if (status === 'completed' && compDate) {
+                                if (compDate === evaluationDateStr) {
+                                    // 🟡 YELLOW FOR ACTIVE EVALUATION SHIFT
+                                    ctx.fillStyle = '#eab308';
+                                } else if (compDate < evaluationDateStr) {
+                                    // 🟢 GREEN FOR COMPLETED PRIOR DAYS
+                                    ctx.fillStyle = '#22c55e';
+                                } else {
+                                    ctx.fillStyle = '#1e293b';
+                                }
                             } else {
                                 ctx.fillStyle = '#1e293b';
                             }
@@ -2426,9 +2440,9 @@ else:
             </script>
             """
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
-            components.html(html_hist_zone_map, height=340)
+            components.html(html_hist_zone_map, height=390)
 
-            # 📊 SUB-ELEMENT B: HISTORICAL DATA LEDGER GRID LAYOUT View
+            # 📊 HISTORICAL OPERATION LEDGER DATA GRID LISTING
             st.markdown("#### 📅 Comprehensive Historical Performance Calendar")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
@@ -2459,24 +2473,26 @@ else:
                         loop_dt_str = str(loop_dt)
                         matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
                         
-                        inst_val = matched_log["installed_units"] if matched_log else 0
-                        dev_val = matched_log["deviation"] if matched_log else int(0 - t_runrate)
-                        rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
-                        
-                        # 🔥 FIXED: Apply high-visibility blue color style explicitly onto the matching evaluation date row
-                        if loop_dt_str == lookup_date_str:
-                            row_style_attr = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6;'"
-                        else:
-                            row_style_attr = ""
-                        
-                        hist_table_html += f"""<tr {row_style_attr}>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{int(t_runrate)} Units</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
-                        </tr>"""
+                        # 📅 WEEKDAY RULE ENFORCEMENT: Keep grid rows limited to weekdays, except when an override log row exists for a weekend entry
+                        if loop_dt.weekday() < 5 or matched_log:
+                            inst_val = matched_log["installed_units"] if matched_log else 0
+                            dev_val = matched_log["deviation"] if matched_log else int(0 - t_runrate)
+                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            
+                            # Apply dynamic highlight matching to the crew's chosen lookup criteria target selection parameter
+                            if loop_dt_str == lookup_date_str:
+                                row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                            else:
+                                row_style = ""
+                            
+                            hist_table_html += f"""<tr {row_style}>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{int(t_runrate)} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
+                                <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
+                            </tr>"""
                         loop_dt += timedelta(days=1)
                         
                 hist_table_html += "</tbody></table>"

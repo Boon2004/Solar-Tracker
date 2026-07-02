@@ -2108,11 +2108,12 @@ else:
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to cumulatively select flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> to toggle or deselect individual nodes | Right-Click + Drag to Pan.
+                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on a yellow node to cancel | Right-Click + Drag to Pan.
                     </div>
                     <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
                         <canvas id="crew_canvas_tracker_element" width="1500" height="480" style="background:#020617; display:block;"></canvas>
                     </div>
+                    
                     <div style="background: #111827; padding: 14px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px;">
                         <label style="color: #f8fafc; font-weight: bold; font-size: 13px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
                         <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
@@ -2142,7 +2143,8 @@ else:
                         function getNodeColor(b, aspectKey) {
                             if (b.assigned_zone !== targetZone) return '#222d3d'; 
                             let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
-                            if (stagedMutationsMap[b.id]) return '#eab308';
+                            if (stagedMutationsMap[b.id] === true) return '#eab308';
+                            if (stagedMutationsMap[b.id] === false) return '#1f2937';
                             if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
                             return '#1f2937';
                         }
@@ -2181,40 +2183,73 @@ else:
                                     if (hit) {
                                         let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
                                         if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
-                                        if (isLasso) { stagedMutationsMap[b.id] = true; } 
-                                        else {
-                                            if (stagedMutationsMap[b.id] || (currentStatus === 'completed' && currentDateVal === sysDateStr)) {
-                                                stagedMutationsMap[b.id] = false; b[aspect + '_status'] = 'pending'; b[aspect + '_date'] = null;
-                                            } else { stagedMutationsMap[b.id] = true; }
+                                        if (isLasso) { 
+                                            stagedMutationsMap[b.id] = true; 
+                                        } else {
+                                            if (stagedMutationsMap[b.id] === true || (currentStatus === 'completed' && currentDateVal === sysDateStr && stagedMutationsMap[b.id] !== false)) {
+                                                stagedMutationsMap[b.id] = false;
+                                            } else { 
+                                                stagedMutationsMap[b.id] = true; 
+                                            }
                                         }
                                     }
                                 });
                                 draw();
                             }
                         });
+                        
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
                             if (!isEditable) return;
                             const btn = document.getElementById("btn_save_crew_canvas"); btn.disabled = true; btn.innerText = "⏳ Synchronizing Progress Data...";
                             let keys = Object.keys(stagedMutationsMap); let typedRemark = document.getElementById("crew_remark_input").value;
-                            let newlyAdded = 0; keys.forEach(id => { if(stagedMutationsMap[id] === true) newlyAdded++; });
-                            let totalCompletionsForLog = __INSTALLED_TODAY_VAL__ + newlyAdded;
-                            let computedTarget = Math.floor(__TARGET_RUNRATE_VAL__); let computedDeviation = totalCompletionsForLog - computedTarget;
+                            
                             try {
+                                // 1. Apply all staged changes to local tracking data state structure first
                                 for (let id of keys) {
-                                    let p = {};
-                                    if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
-                                    else { p[aspect + '_status'] = "pending"; p[aspect + '_date'] = null; }
-                                    await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                        method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                        body: JSON.stringify(p)
-                                    });
+                                    let targetBlock = dataset.find(item => item.id == id);
+                                    if (stagedMutationsMap[id] === true) {
+                                        if (targetBlock) { targetBlock[aspect + '_status'] = "completed"; targetBlock[aspect + '_date'] = sysDateStr; }
+                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                            body: JSON.stringify({ [aspect + '_status']: "completed", [aspect + '_date']: sysDateStr })
+                                        });
+                                    } else if (stagedMutationsMap[id] === false) {
+                                        if (targetBlock) { targetBlock[aspect + '_status'] = "pending"; targetBlock[aspect + '_date'] = null; }
+                                        await fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
+                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                            body: JSON.stringify({ [aspect + '_status']: "pending", [aspect + '_date']: null })
+                                        });
+                                    }
                                 }
+
+                                // 2. Direct absolute counting loop over dataset to compute accurate metrics targets
+                                let absoluteTotalCompletionsCount = 0;
+                                dataset.forEach(b => {
+                                    if (b.assigned_zone === targetZone && b[aspect + '_status'] === 'completed' && b[aspect + '_date'] === sysDateStr) {
+                                        absoluteTotalCompletionsCount++;
+                                    }
+                                });
+
+                                // 3. Get the correct dynamic target quota threshold for computing deviations
+                                let currentDayTargetQuota = Math.floor(__TARGET_RUNRATE_VAL__);
+                                let scheduleFetch = await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs?farm_id=eq.__FARM_ID_VAL__&aspect=eq." + aspect + "&zone=eq." + targetZone + "&log_date=eq." + sysDateStr, {
+                                    method: "GET", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" }
+                                });
+                                let resLogs = await scheduleFetch.json();
+                                if (resLogs && resLogs.length > 0 && resLogs[0].target_units > 0) {
+                                    currentDayTargetQuota = resLogs[0].target_units;
+                                }
+                                
+                                let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
+
+                                // 4. Broadcast the synchronized metrics row back to Supabase logs registry
                                 await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
                                     method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
-                                    body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": computedTarget, "installed_units": totalCompletionsForLog, "deviation": computedDeviation, "remark": typedRemark })
+                                    body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
-                                stagedMutationsMap = {}; alert("🎉 Progress synchronized successfully!");
-                                window.location.reload();
+                                
+                                stagedMutationsMap = {}; alert("🎉 Absolute progress records synchronized across all management calendars!");
+                                window.parent.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
                         canvas.addEventListener('wheel', e => {

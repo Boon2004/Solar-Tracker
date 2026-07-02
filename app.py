@@ -1859,20 +1859,15 @@ else:
         # ==============================================================================
         # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
         # ==============================================================================
-        # ==============================================================================
-        # 🗺️ TAB 1: WHOLE PLANT MASTER BLUEPRINT INDEX
-        # ==============================================================================
         with crew_tabs[0]:
             if site_bg_img and not site_bg_img.startswith("{"):
                 st.image(site_bg_img, caption="Active Site Layout Blueprint", width=500)
-                
-            # Fetch whatever active schedules currently exist in the database
+        
             saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
             sched_lookup = {(r["aspect"], r["zone"]): r for r in saved_schedules_res} if saved_schedules_res else {}
-            
+    
             st.markdown("##### 📅 Whole Plant Master Schedule Matrix Index")
-            
-            # Inject raw CSS to color-code active rows cleanly
+    
             st.markdown("""
                 <style>
                 .active-schedule-row {
@@ -1887,9 +1882,8 @@ else:
                 </style>
             """, unsafe_allow_html=True)
 
-            # Build full table architecture explicitly
-            table_html = """
-            <table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
+            # ✅ FIXED: Completely clean HTML string initialization
+            table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
                 <thead>
                     <tr style='background-color: #1f2937; color: #f9fafb;'>
                         <th style='padding: 12px; border: 1px solid #374151;'>Aspect Layer Profile</th>
@@ -1899,10 +1893,8 @@ else:
                         <th style='padding: 12px; border: 1px solid #374151;'>Target Rate Quantity</th>
                     </tr>
                 </thead>
-                <tbody>
-            """
+                <tbody>"""
             
-            # Loop through ALL aspects and ALL clean zones to generate a complete overview
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
             
             for asp in aspect_options_list:
@@ -1919,24 +1911,22 @@ else:
                         end_txt = match["end_date"]
                         target_txt = f"{match['daily_target']} Units/Day"
                     else:
-                        # Fallback for combinations the admin hasn't scheduled yet
                         row_class = "class='pending-schedule-row'"
                         start_txt = "⏳ Pending"
                         end_txt = "⏳ Pending"
                         target_txt = "⏱️ Unscheduled"
                         
-                    table_html += f"""
-                        <tr {row_class}>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{asp.upper()}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{zone}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{start_txt}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{end_txt}</td>
-                            <td style='padding: 12px; border: 1px solid #374151;'>{target_txt}</td>
-                        </tr>
-                    """
+                    table_html += f"""<tr {row_class}>
+                        <td style='padding: 12px; border: 1px solid #374151;'>{asp.upper()}</td>
+                        <td style='padding: 12px; border: 1px solid #374151;'>{zone}</td>
+                        <td style='padding: 12px; border: 1px solid #374151;'>{start_txt}</td>
+                        <td style='padding: 12px; border: 1px solid #374151;'>{end_txt}</td>
+                        <td style='padding: 12px; border: 1px solid #374151;'>{target_txt}</td>
+                    </tr>"""
                     
             table_html += "</tbody></table>"
             st.markdown(table_html, unsafe_allow_html=True)
+            
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
         # ==============================================================================

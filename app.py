@@ -1934,118 +1934,28 @@ else:
         crew_tabs = st.tabs(["🗺️ Whole Plant Master Blueprint Index", "🛠️ Execution Workspace Tracker Deck", "🕒 Field Shift History Log Viewer"])
         
         # ------------------------------------------------------------------------------
-        # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW & TIMELINES
+        # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW & EXECUTIVE MATRIX
         # ------------------------------------------------------------------------------
         with crew_tabs[0]:
-            st.markdown("### 🗺️ Whole Plant Operational Status & Progress Summary")
+            st.markdown("### 🗺️ Whole Plant Layout Structural Blueprint Grid Ledger")
             
-            # Master metrics calculations
-            grand_total_trackers = 0
-            grand_total_pegging_points = 0
-            grand_total_actual_modules = 0  
-            zone_module_counts = {}
-            
-            for block in active_table_data:
-                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
-                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
-                
-                if enc_val > 100:
-                    pins_per_unit = int((enc_val // 100) * (enc_val % 100))
-                else:
-                    pins_per_unit = 12
-                
-                grid_rows = int(block["max_r"] - block["min_r"] + 1)
-                grid_cols = int(block["max_c"] - block["min_c"] + 1)
-                modules_per_tracker = int(grid_rows * grid_cols)
-                
-                if z_name not in zone_module_counts:
-                    zone_module_counts[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
-                zone_module_counts[z_name]["trackers"] += 1
-                zone_module_counts[z_name]["pins"] += pins_per_unit
-                zone_module_counts[z_name]["modules"] += modules_per_tracker
-                
-                grand_total_trackers += 1
-                grand_total_pegging_points += pins_per_unit
-                grand_total_actual_modules += modules_per_tracker
-
-            col_p1, col_p2, col_p3 = st.columns(3)
-            with col_p1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
-            with col_p2: st.metric("📌 Total Layout Pins", f"{grand_total_pegging_points} Pts")
-            with col_p3: st.metric("📦 Total Target PV Modules", f"{grand_total_actual_modules} Panels")
-            
-            st.write("---")
-            st.markdown("#### 📅 Active Project Timelines & Work Windows Schedule")
-            st.caption("Rows highlighted in blue indicate tasks that are currently undergoing based on your current operational date context.")
-            
-            all_schedules = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            
-            if not all_schedules:
-                st.info("ℹ️ No operational schedule timelines have been broadcasted by administration panels yet.")
-            else:
-                aspect_display_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
-                
-                for zone_name in clean_zones:
-                    zone_schedules = [s for s in all_schedules if s["zone"] == zone_name]
-                    if not zone_schedules: continue
-                    
-                    st.markdown(f"##### 🗺️ Schedule Master Timeline Matrix: **{zone_name.upper()}**")
-                    
-                    timeline_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
-                        <thead>
-                            <tr style='background-color: #1f2937; color: #f9fafb;'>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Work Aspect Layer</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Target Completion Date</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Allocated Workdays</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Calculated Daily Target</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Current Phase Status</th>
-                            </tr>
-                        </thead><tbody>"""
-                    
-                    for aspect in aspect_display_list:
-                        sched = next((s for s in zone_schedules if s["aspect"] == aspect), None)
-                        if not sched: continue
-                        
-                        s_dt = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
-                        e_dt = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
-                        
-                        # 🎯 UNDERGOING BLUE HIGHLIGHT TRACER
-                        is_undergoing = (s_dt <= current_system_date <= e_dt)
-                        if is_undergoing:
-                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
-                            status_badge = "<span style='color: #60a5fa; font-weight: bold;'>⚡ UNDERGOING</span>"
-                        elif current_system_date > e_dt:
-                            row_style = ""
-                            status_badge = "<span style='color: #10b981;'>🏁 Concluded</span>"
-                        else:
-                            row_style = ""
-                            status_badge = "<span style='color: #94a3b8;'>⏳ Scheduled</span>"
-                            
-                        timeline_html += f"""<tr {row_style}>
-                            <td style='padding: 10px; border: 1px solid #374151;'><b>{aspect.replace('_', ' ').upper()}</b></td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['start_date']}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['end_date']}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('working_days', 0)} Days</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('daily_target', 0.0)} Units/Day</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{status_badge}</td>
-                        </tr>"""
-                        
-                    timeline_html += "</tbody></table>"
-                    st.markdown(timeline_html, unsafe_allow_html=True)
-            
-            st.write("---")
-            st.markdown("#### 🗺️ Whole Plant Physical Layout Reference Grid")
-            
-            html_blueprint_engine = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
-                <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_blueprint_master_canvas" width="1500" height="480" style="background:#020617; display:block;"></canvas>
+            # --- SECTOR 1: INTERACTIVE MASTER MAP WITH ACTIVE ZONE HOVER COLORS ---
+            html_master_zone_blueprint = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    🗺️ <b>Navigation Controls:</b> Move your cursor over any tracker cell block to dynamically analyze zone profile metrics. Right-Click + Drag to Pan | Scroll wheel to Zoom.
+                </div>
+                <div id="crew_master_blueprint_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+                <div style="width:100%; max-height:450px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="crew_master_blueprint_canvas" width="1500" height="450" style="background:#020617; display:block;"></canvas>
                 </div>
             </div>
             <script>
                 (function() {
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("crew_blueprint_master_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    const canvas = document.getElementById("crew_master_blueprint_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    const tooltip = document.getElementById("crew_master_blueprint_tooltip");
+                    
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
@@ -2053,19 +1963,39 @@ else:
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     let isPanning = false; let startX = 0, startY = 0;
                     
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    function getZoneColor(zoneName) {
+                        if (!zoneName || zoneName.toLowerCase() === 'unassigned' || zoneName.trim() === '') return '#1e293b';
+                        let hash = 0; let cleaned = zoneName.toUpperCase().trim();
+                        for (let i = 0; i < cleaned.length; i++) { hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); }
+                        let hue = Math.abs(hash * 45) % 360;
+                        return `hsl(${hue}, 80%, 42%)`;
+                    }
+                    
                     function draw() {
-                        ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
                         blocks.forEach(b => {
-                            ctx.fillStyle = '#1e293b';
+                            ctx.fillStyle = getZoneColor(b.assigned_zone);
                             let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
                         ctx.restore();
                     }
-                    canvas.addEventListener('mousemove', e => { if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); } });
-                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
+                    
+                    canvas.addEventListener('mousemove', e => {
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                        if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); tooltip.style.display = "none"; return; }
+                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) { hoveredBlock = b; break; }
+                        }
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
+                            tooltip.innerHTML = `📍 Block ID Tag: ${hoveredBlock.table_label}<br>🗺️ Allocated Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
+                        } else tooltip.style.display = "none";
+                    });
+                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; tooltip.style.display = "none"; } });
                     canvas.addEventListener('mouseup', () => { isPanning = false; });
                     canvas.addEventListener('wheel', e => {
                         e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
@@ -2077,9 +2007,177 @@ else:
                 })();
             </script>
             """
-            html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data)
-            html_master_view = html_master_view.replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
-            components.html(html_master_view, height=500)
+            html_master_zone_blueprint = html_master_zone_blueprint.replace("__JSON_DATA_B64__", b64_json_data).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
+            components.html(html_master_zone_blueprint, height=490)
+            
+            # --- SECTOR 2: COMPREHENSIVE EXECUTIVE ANALYTICAL SUMMARY BREAKDOWNS ---
+            st.write("---")
+            st.markdown("### 📊 Executive Analytical Operational Summary")
+            
+            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception: topo_meta = {}
+            inverters_list = topo_meta.get("inverters", [])
+            transformers_list = topo_meta.get("transformers", [])
+            string_groups = topo_meta.get("stringGroups", {})
+            
+            global_inv_string_distribution = {}
+            for str_id, inv_id in string_groups.items():
+                global_inv_string_distribution[inv_id] = global_inv_string_distribution.get(inv_id, 0) + 1
+            
+            layout_analysis = {}
+            zone_module_counts = {}
+            grand_total_trackers = 0
+            grand_total_pegging_points = 0
+            grand_total_actual_modules = 0  
+            
+            for block in active_table_data:
+                l_type = block.get("structure_type", "single_3x9")
+                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
+                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
+                
+                if enc_val > 100:
+                    r_f = int(enc_val // 100); c_f = int(enc_val % 100)
+                    pins_per_unit = int(r_f * c_f)
+                else:
+                    pins_per_unit = 12; r_f = 4; c_f = 3
+                
+                grid_rows = int(block["max_r"] - block["min_r"] + 1)
+                grid_cols = int(block["max_c"] - block["min_c"] + 1)
+                modules_per_tracker = int(grid_rows * grid_cols)
+                
+                if l_type not in layout_analysis:
+                    layout_analysis[l_type] = {
+                        "tracker_count": 0, "pins_per_unit": pins_per_unit,
+                        "matrix_shape": f"{r_f}×{c_f}", "total_pins": 0, "total_modules": 0
+                    }
+                layout_analysis[l_type]["tracker_count"] += 1
+                layout_analysis[l_type]["total_pins"] += pins_per_unit
+                layout_analysis[l_type]["total_modules"] += modules_per_tracker
+                
+                if z_name not in zone_module_counts:
+                    zone_module_counts[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
+                zone_module_counts[z_name]["trackers"] += 1
+                zone_module_counts[z_name]["pins"] += pins_per_unit
+                zone_module_counts[z_name]["modules"] += modules_per_tracker
+                
+                grand_total_trackers += 1
+                grand_total_pegging_points += pins_per_unit
+                grand_total_actual_modules += modules_per_tracker
+
+            col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+            with col_p1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
+            with col_p2: st.metric("📌 Total Pegging Pins", f"{grand_total_pegging_points} Pts")
+            with col_p3: st.metric("📦 Total PV Modules", f"{grand_total_actual_modules} Panels")
+            with col_p4: st.metric("⚡ Active Inverter Hubs", f"{len(inverters_list)} INVs")
+            
+            st.write("")
+            split_cols = st.columns([5, 5])
+            with split_cols[0]:
+                st.markdown("**Structural Pattern Breakdowns**")
+                summary_metrics_rows = []
+                for l_name, metrics in layout_analysis.items():
+                    summary_metrics_rows.append({
+                        "Architecture": l_name.upper(), "Trackers": f"{metrics['tracker_count']} Units",
+                        "Matrix": metrics["matrix_shape"], "Pins/Unit": f"{metrics['pins_per_unit']} Pts",
+                        "Total Panels": f"{metrics['total_modules']} Modules"
+                    })
+                st.table(summary_metrics_rows)
+                
+            with split_cols[1]:
+                st.markdown("**Dynamic Modules Count by Zone**")
+                sub_cards = st.columns(len(zone_module_counts) if zone_module_counts else 1)
+                for idx, z_key in enumerate(sorted(zone_module_counts.keys())):
+                    with sub_cards[idx]:
+                        st.info(f"**{z_key.upper()}**\n\n🔹 `{zone_module_counts[z_key]['trackers']}` Trackers\n\n🔹 `{zone_module_counts[z_key]['modules']}` Panels")
+
+            zone_inverters_map = {z: [] for z in zone_module_counts.keys()}
+            CELL = 14
+            for inv in inverters_list:
+                inv_id = inv.get("id"); inv_x = inv.get("x", 0); inv_y = inv.get("y", 0)
+                matched_zone = "Unassigned"
+                for b in active_table_data:
+                    if (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL):
+                        matched_zone = b.get("assigned_zone") if b.get("assigned_zone") else "Unassigned"
+                        break
+                if matched_zone not in zone_inverters_map: zone_inverters_map[matched_zone] = []
+                zone_inverters_map[matched_zone].append(inv_id)
+
+            st.write("")
+            st.markdown("##### 🗺️ Regional Zone Operations Summary Ledger")
+            zone_metrics_rows = []
+            for zone_name in sorted(zone_module_counts.keys()):
+                metrics = zone_module_counts[zone_name]
+                assigned_inv_ids = sorted(zone_inverters_map.get(zone_name, []))
+                inv_sequence_pool = ", ".join([f"INV #{i}" for i in assigned_inv_ids]) if assigned_inv_ids else "None Routed"
+                zone_metrics_rows.append({
+                    "Zone Sector Area": str(zone_name).upper(), "Total Tracker Tables": f"{metrics['trackers']} Units",
+                    "Pegging Pinpoints Total": f"{metrics['pins']} Pts", "Total PV Modules (Panels)": f"{metrics['modules']} Panels",
+                    "Active Inverters Count": f"{len(assigned_inv_ids)} INVs", "Numerical Sequence Inverters Pool": inv_sequence_pool
+                })
+            st.table(zone_metrics_rows)
+            
+            # --- SECTOR 3: UNIFIED BROADCAST TIMELINES WITH LIVE BLUE UNDERGOING TRACERS ---
+            st.write("---")
+            st.markdown("#### 📅 Master Production Schedules & Milestone Tracker Ledger")
+            
+            all_schedules = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
+            sched_lookup = {(s["zone"], s["aspect"]): s for s in all_schedules} if all_schedules else {}
+            
+            aspect_display_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
+            
+            # 🎯 ALL ASPECT-ZONE CONFIGURATIONS IN ONE CONSOLIDATED TABLE
+            master_schedule_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
+                <thead>
+                    <tr style='background-color: #1f2937; color: #f9fafb;'>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Target Sector Zone</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Work Aspect Layer</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Target Completion Date</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Allocated Workdays</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Calculated Daily Target</th>
+                        <th style='padding: 12px; border: 1px solid #374151;'>Current Phase Status</th>
+                    </tr>
+                </thead><tbody>"""
+            
+            for zone_name in clean_zones:
+                for aspect in aspect_display_list:
+                    sched = sched_lookup.get((zone_name, aspect))
+                    
+                    if sched:
+                        s_dt = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
+                        e_dt = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
+                        
+                        is_undergoing = (s_dt <= current_system_date <= e_dt)
+                        if is_undergoing:
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
+                            status_badge = "<span style='color: #60a5fa; font-weight: bold;'>⚡ UNDERGOING</span>"
+                        elif current_system_date > e_dt:
+                            row_style = ""
+                            status_badge = "<span style='color: #10b981;'>🏁 Concluded</span>"
+                        else:
+                            row_style = ""
+                            status_badge = "<span style='color: #94a3b8;'>⏳ Scheduled</span>"
+                            
+                        master_schedule_html += f"""<tr {row_style}>
+                            <td style='padding: 10px; border: 1px solid #374151;'><b>{zone_name.upper()}</b></td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{aspect.replace('_', ' ').upper()}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['start_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched['end_date']}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('working_days', 0)} Days</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{sched.get('daily_target', 0.0)} Units/Day</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{status_badge}</td>
+                        </tr>"""
+                    else:
+                        # Fallback row if an admin has not broadcast milestone timelines yet
+                        master_schedule_html += f"""<tr>
+                            <td style='padding: 10px; border: 1px solid #374151; color: #64748b;'><b>{zone_name.upper()}</b></td>
+                            <td style='padding: 10px; border: 1px solid #374151; color: #64748b;'>{aspect.replace('_', ' ').upper()}</td>
+                            <td style='padding: 10px; border: 1px solid #374151; color: #64748b; text-align: center;' colspan='4'>Awaiting Administrative Timeline Release Planning Coordinates</td>
+                            <td style='padding: 10px; border: 1px solid #374151; color: #64748b;'>⏳ Awaiting Release</td>
+                        </tr>"""
+                        
+            master_schedule_html += "</tbody></table>"
+            st.markdown(master_schedule_html, unsafe_allow_html=True)
 
         # ------------------------------------------------------------------------------
         # 🛠️ CREW TAB 2: LIVE RUNRATE WORKSPACE TRACKER DECK
@@ -2099,8 +2197,7 @@ else:
                 end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
-                if not is_editable_window: 
-                    st.error(f"🔒 Locked: Active timeline bounded context is closed.")
+                if not is_editable_window: st.error(f"🔒 Locked: Active timeline bounded context is closed.")
                 
                 raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
@@ -2359,5 +2456,4 @@ else:
                         
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td><td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td></tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
-            else: 
-                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
+            else: st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")

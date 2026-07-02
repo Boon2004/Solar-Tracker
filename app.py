@@ -2215,19 +2215,19 @@ else:
                             if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
                         }
                         canvas.addEventListener('mousemove', e => {
-                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                             if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
                             if (isSelecting) { cX = mX; cY = mY; draw(); return; }
                         });
                         canvas.addEventListener('mousedown', e => {
-                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                             if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
                             else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
                         });
                         canvas.addEventListener('mouseup', e => {
                             if (isPanning) isPanning = false;
                             if (isSelecting) {
-                                isSelecting = false; const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                                isSelecting = false; const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                                 let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
                                 let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
                                 let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
@@ -2296,21 +2296,20 @@ else:
                                 
                                 let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
 
-                                # 🎯 ALWAYS EXECUTE UPSERT REGARDLESS OF CHANGED BLOCKS COUNT TO CAPTURE REMARK ENTRIES Safely
                                 await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
                                     method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
                                     body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
                                 });
                                 
-                                stagedMutationsMap = {}; alert("🎉 Absolute progress records and notes successfully synchronized!");
+                                stagedMutationsMap = {}; alert("🎉 Progress records and notes successfully synchronized!");
                                 window.parent.location.reload();
                             } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
                         canvas.addEventListener('wheel', e => {
-                            e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
-                            const wX = (mX - offsetX) / scale; const wY = (mY - offsetY) / scale;
+                            e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                            const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
                             scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
-                            offsetX = mX - wX * scale; offsetY = mY - wY * scale; draw();
+                            offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
                         }, { passive: false });
                         draw();
                     })();

@@ -1862,7 +1862,7 @@ else:
         with crew_tabs[0]:
             st.markdown("### 🖼️ Whole Plant Spatial Allocation & Fleet Metrics Index")
             
-            # 🎨 SUB-ELEMENT A: THE LIVE COLOR-CODED REGIONAL ZONE MAP
+            # 🎨 SUB-ELEMENT A: THE LIVE ZONE OVERVIEW MAP WITH DYNAMIC PIXEL LABELS
             html_crew_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -1882,20 +1882,49 @@ else:
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                     let isPanning = false; let startX = 0, startY = 0;
-                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    
                     function getZoneColor(zoneName) {
                         if (!zoneName || zoneName.toLowerCase() === 'unassigned') return '#1f2937';
                         let hash = 0; let cleaned = zoneName.toUpperCase().trim();
                         for (let i = 0; i < cleaned.length; i++) { hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); }
                         return `hsl(${Math.abs(hash * 45) % 360}, 75%, 45%)`;
                     }
+                    
                     function draw() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
+                        
+                        // Calculate center points for rendering textual zone labels on canvas overlay
+                        let zoneCenters = {};
+                        
                         blocks.forEach(b => {
                             ctx.fillStyle = getZoneColor(b.assigned_zone);
                             let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            
+                            if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') {
+                                if (!zoneCenters[b.assigned_zone]) zoneCenters[b.assigned_zone] = { sumX: 0, sumY: 0, count: 0 };
+                                zoneCenters[b.assigned_zone].sumX += x + (w / 2);
+                                zoneCenters[b.assigned_zone].sumY += y + (h / 2);
+                                zoneCenters[b.assigned_zone].count++;
+                            }
                         });
+                        
+                        // Overlay dynamic textual string headers on top of matching regional clusters
+                        Object.keys(zoneCenters).forEach(zName => {
+                            let c = zoneCenters[zName];
+                            let centerX = c.sumX / c.count;
+                            let centerY = c.sumY / c.count;
+                            
+                            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+                            ctx.font = "bold 13px sans-serif";
+                            let textWidth = ctx.measureText(zName.toUpperCase()).width;
+                            ctx.fillRect(centerX - (textWidth/2) - 8, centerY - 10, textWidth + 16, 20);
+                            
+                            ctx.fillStyle = "#ffffff";
+                            ctx.textAlign = "center";
+                            ctx.fillText(zName.toUpperCase(), centerX, centerY + 4);
+                        });
+                        
                         ctx.restore();
                     }
                     canvas.addEventListener('mousemove', e => { if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); } });
@@ -1914,68 +1943,61 @@ else:
             html_crew_zone_map = html_crew_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_crew_zone_map, height=440)
 
-            # 📊 SUB-ELEMENT B: EXECUTIVE METRICS SUMMARY ROLLS
+            # 📊 SUB-ELEMENT B: FULL EXECUTIVE METRICS DECK PARSER
+            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
+            except Exception: topo_meta = {}
+            inverters_list = topo_meta.get("inverters", [])
+            transformers_list = topo_meta.get("transformers", [])
+            
             st.markdown("#### 🏭 Executive Regional Allocation Summary Ledger")
+            col_m1, col_p2, col_p3, col_p4 = st.columns(4)
+            
+            grand_total_trackers = len(active_table_data)
+            grand_total_pins = sum([int((b["section_group"] // 100) * (b["section_group"] % 100)) if (b.get("section_group") and b["section_group"] > 100) else 12 for b in active_table_data])
+            grand_total_panels = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in active_table_data])
+            
+            with col_m1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
+            with col_p2: st.metric("📌 Total Pegging Pins", f"{grand_total_pins} Pts")
+            with col_p3: st.metric("📦 Total PV Modules", f"{grand_total_panels} Panels")
+            with col_p4: st.metric("⚡ Active Inverter Hubs", f"{len(inverters_list)} INVs")
+            
             zone_analysis = {}
+            zone_inverters_map = {z: [] for z in clean_zones}
+            
             for block in active_table_data:
                 z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
-                l_type = block.get("structure_type", "single_3x9")
                 enc_val = block.get("section_group") if block.get("section_group") is not None else 403
                 pins = int(enc_val // 100 * (enc_val % 100)) if enc_val > 100 else 12
                 panels = int((block["max_r"] - block["min_r"] + 1) * (block["max_c"] - block["min_c"] + 1))
                 
-                if z_name not in zone_analysis:
-                    zone_analysis[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
+                if z_name not in zone_analysis: zone_analysis[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
                 zone_analysis[z_name]["trackers"] += 1
                 zone_analysis[z_name]["pins"] += pins
                 zone_analysis[z_name]["modules"] += panels
 
+            for inv in inverters_list:
+                inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
+                CELL = 14
+                matched_z = "Unassigned"
+                for b in active_table_data:
+                    if (b["min_c"] * CELL) <= inv_x <= ((b["max_c"] + 1) * CELL) and (b["min_r"] * CELL) <= inv_y <= ((b["max_r"] + 1) * CELL):
+                        matched_z = b.get("assigned_zone") or "Unassigned"
+                        break
+                if matched_z in zone_inverters_map: zone_inverters_map[matched_z].append(inv.get("id"))
+
             executive_rows = []
             for zone_name, metrics in sorted(zone_analysis.items()):
+                if zone_name == "Unassigned": continue
+                invs_pool = zone_inverters_map.get(zone_name, [])
                 executive_rows.append({
                     "Zone Sector Area Context": zone_name.upper(),
                     "Total Tracker Tables": f"{metrics['trackers']} Units",
                     "Pegging Pinpoints Total": f"{metrics['pins']} Pts",
-                    "Total PV Modules (Panels)": f"{metrics['modules']} Panels"
+                    "Total PV Modules (Panels)": f"{metrics['modules']} Panels",
+                    "Active Inverters Pool": f"{len(invs_pool)} INVs (" + (", ".join([f"INV #{i}" for i in sorted(invs_pool)]) if invs_pool else "None") + ")"
                 })
             st.table(executive_rows)
 
-            # 📅 SUB-ELEMENT C: TIMELINE MATRIX REFERENCE
-            st.markdown("#### 📅 Master Schedule Milestones Timeline")
-            saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            sched_lookup = {(r["aspect"], r["zone"]): r for r in saved_schedules_res} if saved_schedules_res else {}
-            
-            st.markdown("""
-                <style>
-                .active-schedule-row { background-color: rgba(234, 179, 8, 0.15) !important; font-weight: bold !important; border-left: 5px solid #eab308 !important; }
-                .pending-schedule-row { color: #64748b !important; font-style: italic; }
-                </style>
-            """, unsafe_allow_html=True)
-
-            table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
-                <thead>
-                    <tr style='background-color: #1f2937; color: #f9fafb;'>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Aspect Layer Profile</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Target Sector Zone</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Commencement Date</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Wrap Deadline Date</th>
-                        <th style='padding: 10px; border: 1px solid #374151;'>Target Rate Quantity</th>
-                    </tr>
-                </thead><tbody>"""
-            
-            for asp_item in ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]:
-                for zone_item in clean_zones:
-                    match = sched_lookup.get((asp_item, zone_item))
-                    if match:
-                        s_dt = datetime.strptime(match["start_date"], "%Y-%m-%d").date()
-                        e_dt = datetime.strptime(match["end_date"], "%Y-%m-%d").date()
-                        is_active = (s_dt <= current_system_date <= e_dt)
-                        row_class = "class='active-schedule-row'" if is_active else ""
-                        table_html += f"<tr {row_class}><td style='padding:10px; border:1px solid #374151;'>{asp_item.upper()}</td><td style='padding:10px; border:1px solid #374151;'>{zone_item}</td><td style='padding:10px; border:1px solid #374151;'>{match['start_date']}</td><td style='padding:10px; border:1px solid #374151;'>{match['end_date']}</td><td style='padding:10px; border:1px solid #374151;'>{match['daily_target']} Units/Day</td></tr>"
-                    else:
-                        table_html += f"<tr class='pending-schedule-row'><td style='padding:10px; border:1px solid #374151;'>{asp_item.upper()}</td><td style='padding:10px; border:1px solid #374151;'>{zone_item}</td><td style='padding:10px; border:1px solid #374151;'>⏳ Pending</td><td style='padding:10px; border:1px solid #374151;'>⏳ Pending</td><td style='padding:10px; border:1px solid #374151;'>⏱️ Unscheduled</td></tr>"
-            table_html += "</tbody></table>"
-            st.markdown(table_html, unsafe_allow_html=True)
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
         # ==============================================================================
@@ -2028,42 +2050,33 @@ else:
                             let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
                             if (stagedMutationsMap[b.id]) return '#eab308';
                             if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
-                            return '#1e293b';
+                            return '#1f2937';
                         }
-
+                        
                         function draw() {
-                            ctx.fillStyle = isLight ? '#f8fafc' : '#020617';
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
                             ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-                            
                             dataset.forEach(b => {
-                                let x = b.min_c * CELL; let y = b.min_r * CELL;
-                                let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                
-                                let isLocked = false;
-                                if (aspect === 'inverter_structure' || aspect === 'inverter' || aspect === 'ac_cabling') {
-                                    let hasInv = (topology.inverters || []).some(inv => (b.min_c*CELL) <= inv.x && inv.x <= (b.max_c+1)*CELL && (b.min_r*CELL) <= inv.y && inv.y <= (b.max_r+1)*CELL);
-                                    if (!hasInv) isLocked = true;
-                                } else if (aspect === 'transformer') {
-                                    let hasXfmr = (topology.transformers || []).some(t => (b.min_c*CELL) <= t.x && t.x <= (b.max_c+1)*CELL && (b.min_r*CELL) <= t.y && t.y <= (b.max_r+1)*CELL);
-                                    if (!hasXfmr) isLocked = true;
-                                }
-                                
-                                if (isLocked) {
-                                    ctx.fillStyle = isLight ? '#e2e8f0' : '#1e293b';
-                                } else {
-                                    ctx.fillStyle = stagedMutationsMap[b.id] ? '#eab308' : getNodeColor(b, aspect);
-                                }
-                                ctx.fillRect(x, y, w, h);
-                                ctx.strokeStyle = isLight ? '#cbd5e1' : '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                                let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                ctx.fillStyle = getNodeColor(b, aspect); ctx.fillRect(x, y, w, h);
+                                ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                             });
-                            
                             ctx.restore();
-                            if (isSelecting) {
-                                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY);
-                            }
+                            if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
                         }
-
+                        
+                        canvas.addEventListener('mousemove', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
+                            if (isSelecting) { cX = mX; cY = mY; draw(); return; }
+                        });
+                        
+                        canvas.addEventListener('mousedown', e => {
+                            const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
+                            if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
+                            else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
+                        });
+                        
                         canvas.addEventListener('mouseup', e => {
                             if (isPanning) isPanning = false;
                             if (isSelecting) {
@@ -2079,10 +2092,8 @@ else:
                                     if (hit) {
                                         let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
                                         if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
-                                        
                                         if (isLasso) {
                                             stagedMutationsMap[b.id] = true;
-                                            b[aspect + '_status'] = 'completed'; b[aspect + '_date'] = sysDateStr;
                                         } else {
                                             if (stagedMutationsMap[b.id] || (currentStatus === 'completed' && currentDateVal === sysDateStr)) {
                                                 stagedMutationsMap[b.id] = false; b[aspect + '_status'] = 'pending'; b[aspect + '_date'] = null;
@@ -2095,6 +2106,7 @@ else:
                                 draw();
                             }
                         });
+                        
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
                             let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No changes staged."); return; }
                             for (let id of keys) {
@@ -2106,8 +2118,9 @@ else:
                                     body: JSON.stringify(p)
                                 });
                             }
-                            alert("Field logs uploaded successfully!"); window.parent.location.reload();
+                            alert("Field metrics saved!"); window.parent.location.reload();
                         });
+                        
                         canvas.addEventListener('wheel', e => {
                             e.preventDefault(); const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
                             const wX = (mX - offsetX) / scale; const wY = (mY - offsetY) / scale;
@@ -2213,18 +2226,16 @@ else:
             st.caption("Select an operational layer aspect and historical date point below to evaluate precisely what milestones your crew captured during that shift.")
             
             hist_cols = st.columns(2)
-            with hist_cols[0]: 
-                lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
-            with hist_cols[1]: 
-                lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
+            with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
+            with hist_cols[1]: lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
             
             lookup_date_str = str(lookup_crew_date)
 
-            # 🎨 SUB-ELEMENT A: HISTORICAL READ-ONLY ZONE MAP
+            # 🎨 SUB-ELEMENT A: THE PROGRESS MAPPING CANVAS ENGINE
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    🗺️ <b>Historical Overview:</b> Colors reflect the master regional zones allocation mapping configuration.
+                    🗺️ <b>Historic Progress Tracker:</b> <span style="color:#22c55e; font-weight:bold;">Green Blocks</span> represent installations deployed on or before your selected evaluation date window.
                 </div>
                 <div style="width:100%; max-height:300px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="hist_overview_canvas" width="1500" height="300" style="background:#020617; display:block;"></canvas>
@@ -2234,20 +2245,25 @@ else:
                 (function() {
                     const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
                     const canvas = document.getElementById("hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    const aspect = "ACTIVE_ASPECT_VAL"; const evaluationDateStr = "EVALUATION_DATE_VAL";
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                     let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                     let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned') return '#1f2937';
-                        let hash = 0; let cleaned = zoneName.toUpperCase().trim();
-                        for (let i = 0; i < cleaned.length; i++) { hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash * 45) % 360}, 75%, 45%)`;
-                    }
+                    
                     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
                     blocks.forEach(b => {
-                        ctx.fillStyle = getZoneColor(b.assigned_zone);
+                        let status = b[aspect + '_status'] || 'pending';
+                        let compDate = b[aspect + '_date'];
+                        
+                        // Highlight green ONLY if the structure was completed on or before the user's selected date window
+                        if (status === 'completed' && compDate && compDate <= evaluationDateStr) {
+                            ctx.fillStyle = '#22c55e';
+                        } else {
+                            ctx.fillStyle = '#1e293b';
+                        }
+                        
                         let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                         ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                     });
@@ -2255,31 +2271,28 @@ else:
                 })();
             </script>
             """
-            html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
+            html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=340)
 
-            # 📊 SUB-ELEMENT B: MULTI-DAY CALENDAR SCHEDULE LOG VIEW WITH HIGHLIGHTING
+            # 📊 SUB-ELEMENT B: THE FIXED HISTORICAL DATA MATRIX
             st.markdown("#### 📅 Comprehensive Historical Performance Calendar")
-            
-            # Fetch schedules to locate tracking date parameters bounds
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
             if hist_sched_records:
-                # Group our logs database records by zone for easier processing loops
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
-                # Custom raw styling injection to cleanly highlight row states matching evaluated dates
                 st.markdown("""
                     <style>
                     .evaluated-history-row {
-                        background-color: rgba(59, 130, 246, 0.18) !important;
+                        background-color: rgba(59, 130, 246, 0.20) !important;
                         font-weight: bold !important;
                         border-left: 5px solid #3b82f6 !important;
                     }
                     </style>
                 """, unsafe_allow_html=True)
 
+                # FIXED: Initializing string with clean table wrappers, completely free of code block ticks!
                 hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
                     <thead>
                         <tr style='background-color: #1f2937; color: #f9fafb;'>
@@ -2307,23 +2320,18 @@ else:
                         dev_val = matched_log["deviation"] if matched_log else int(0 - t_runrate)
                         rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                         
-                        # Apply row highlighting when current index matches the chosen dropdown evaluation target date
                         row_class = "class='evaluated-history-row'" if loop_dt_str == lookup_date_str else ""
-                        
-                        hist_table_html += f"""
-                            <tr {row_class}>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{int(t_runrate)} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
-                            </tr>
-                        """
+                        hist_table_html += f"""<tr {row_class}>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{int(t_runrate)} Units</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{inst_val} Units</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{dev_val}</td>
+                            <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
+                        </tr>"""
                         loop_dt += timedelta(days=1)
                         
                 hist_table_html += "</tbody></table>"
                 st.markdown(hist_table_html, unsafe_allow_html=True)
             else:
-                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
-        
+                st.info("ℹ专 No active milestone configuration layers match this aspect layer context.")

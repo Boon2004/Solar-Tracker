@@ -2069,7 +2069,7 @@ else:
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
             
             if not schedule_meta:
-                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** have not been initialized by management yet.")
+                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational run-rates and timeline metrics for **{selected_crew_aspect.upper()}** inside **{selected_crew_zone}** have not been initialized yet.")
             else:
                 sched_bound = schedule_meta[0]
                 start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
@@ -2077,23 +2077,37 @@ else:
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
                 if not is_editable_window:
-                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active windows boundaries.")
+                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active bounds.")
                 
+                # Fetch existing remark note from database to pre-populate our text field
+                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).eq("log_date", current_date_str).execute().data
+                existing_remark = raw_logs[0].get("remark", "") if raw_logs else ""
+                
+                # Fetch live database completions count for today to compute deviation metrics
+                installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
+                target_runrate = float(sched_bound.get("daily_target", 0.0))
+
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
                         🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select and toggle staging flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> on an active yellow node to cancel/deselect it | Right-Click + Drag to Pan.
                     </div>
-                    <div style="width:100%; max-height:600px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                        <canvas id="crew_canvas_tracker_element" width="1500" height="600" style="background:#020617; display:block;"></canvas>
+                    <div style="width:100%; max-height:500px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
+                        <canvas id="crew_canvas_tracker_element" width="1500" height="500" style="background:#020617; display:block;"></canvas>
                     </div>
-                    <div style="margin-top:10px; text-align:right;">
-                        <button id="btn_save_crew_canvas" style="background:#3b82f6; border:none; padding:12px 28px; color:white; font-weight:bold; border-radius:6px; cursor:pointer; font-size:14px;">💾 Update Target Field Progress Entries</button>
+                    
+                    <div style="background: #111827; padding: 16px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 10px;">
+                        <label style="color: #f8fafc; font-weight: bold; font-size: 14px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
+                        <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+                        <div style="text-align: right; margin-top: 5px;">
+                            <button id="btn_save_crew_canvas" style="background: #3b82f6; border: none; padding: 12px 32px; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">💾 Save Target Progress & Shift Logs</button>
+                        </div>
                     </div>
                 </div>
                 <script>
                     (function() {
                         const dataset = JSON.parse(atob("__JSON_DATA_B64__"));
+                        const topology = JSON.parse(atob("__TOPOLOGY_METADATA_B64__"));
                         const aspect = "ACTIVE_ASPECT_VAL"; const targetZone = "ACTIVE_ZONE_VAL"; const sysDateStr = "SYSTEM_DATE_VAL"; const isEditable = __IS_EDITABLE_VAL__;
                         const canvas = document.getElementById("crew_canvas_tracker_element"); const ctx = canvas.getContext('2d'); const CELL = 14;
                         let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
@@ -2102,11 +2116,17 @@ else:
                         let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                         let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
                         let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let stagedMutationsMap = {};
+                        
+                        if (!isEditable) {
+                            document.getElementById("crew_remark_input").disabled = true;
+                            document.getElementById("btn_save_crew_canvas").style.background = "#4b5563";
+                            document.getElementById("btn_save_crew_canvas").style.cursor = "not-allowed";
+                        }
+                        
                         canvas.addEventListener('contextmenu', e => e.preventDefault());
+                        
                         function getNodeColor(b, aspectKey) {
-                            // 🔒 VISUAL LOCK: Grey graphite color for unassigned/locked zones
                             if (b.assigned_zone !== targetZone) return '#222d3d'; 
-                            
                             let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
                             if (stagedMutationsMap[b.id]) return '#eab308';
                             if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
@@ -2124,19 +2144,16 @@ else:
                             ctx.restore();
                             if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
                         }
-                        
                         canvas.addEventListener('mousemove', e => {
                             const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
                             if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
                             if (isSelecting) { cX = mX; cY = mY; draw(); return; }
                         });
-                        
                         canvas.addEventListener('mousedown', e => {
                             const r = canvas.getBoundingClientRect(); const mX = e.clientX - r.left; const mY = e.clientY - r.top;
                             if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
                             else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
                         });
-                        
                         canvas.addEventListener('mouseup', e => {
                             if (isPanning) isPanning = false;
                             if (isSelecting) {
@@ -2168,7 +2185,19 @@ else:
                         });
                         
                         document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
-                            let keys = Object.keys(stagedMutationsMap); if (keys.length === 0) { alert("No changes staged."); return; }
+                            if (!isEditable) return;
+                            
+                            let keys = Object.keys(stagedMutationsMap);
+                            let typedRemark = document.getElementById("crew_remark_input").value;
+                            
+                            // 1. Calculate live completion totals based on mutations map status change updates
+                            let newlyAdded = 0;
+                            keys.forEach(id => { if(stagedMutationsMap[id] === true) newlyAdded++; });
+                            let totalCompletionsForLog = __INSTALLED_TODAY_VAL__ + newlyAdded;
+                            let computedTarget = Math.floor(__TARGET_RUNRATE_VAL__);
+                            let computedDeviation = totalCompletionsForLog - computedTarget;
+
+                            // 2. Broadcast single block coordinates changes to Supabase structures ledger registry
                             for (let id of keys) {
                                 let p = {};
                                 if (stagedMutationsMap[id] === true) { p[aspect + '_status'] = "completed"; p[aspect + '_date'] = sysDateStr; }
@@ -2178,7 +2207,26 @@ else:
                                     body: JSON.stringify(p)
                                 });
                             }
-                            alert("Field metrics saved!"); window.parent.location.reload();
+
+                            // 3. Simultaneously broadcast operational run-sheets and remarks update parameters
+                            let logPayload = {
+                                "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone,
+                                "log_date": sysDateStr, "target_units": computedTarget,
+                                "installed_units": totalCompletionsForLog, "deviation": computedDeviation,
+                                "remark": typedRemark
+                            };
+                            
+                            await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
+                                method: "POST", 
+                                headers: { 
+                                    "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", 
+                                    "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" 
+                                },
+                                body: JSON.stringify(logPayload)
+                            });
+
+                            alert("🎉 Progress metrics and shift ledger records synchronized successfully!");
+                            window.parent.location.reload();
                         });
                         
                         canvas.addEventListener('wheel', e => {
@@ -2191,28 +2239,25 @@ else:
                     })();
                 </script>
                 """
-                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
-                components.html(html_crew_engine, height=670)
+                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false").replace("EXISTING_REMARK_VAL", existing_remark).replace("__INSTALLED_TODAY_VAL__", str(installed_today_count)).replace("__TARGET_RUNRATE_VAL__", str(target_runrate)).replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
+                components.html(html_crew_engine, height=695)
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
-                
-                # Fetch actual historical progress log records from database
                 raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
-                
-                # Fetch target quantity calculation from canvas metrics
-                installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
-                
-                start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
-                end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
-                target_runrate = float(sched_bound.get("daily_target", 0.0))
 
-                compiled_ui_matrix_rows = []
-                total_target_quota = 0
-                total_installed_quota = 0
-                total_deviation_quota = 0
-                
-                # 📅 GENERATE ALL ROWS FROM WINDOW COMMENCEMENT UNTIL WRAP DEADLINE
+                table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'>
+                    <thead>
+                        <tr style='background-color: #1f2937; color: #f9fafb;'>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th>
+                            <th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th>
+                        </tr>
+                    </thead><tbody>"""
+
+                total_target_quota = 0; total_installed_quota = 0; total_deviation_quota = 0
                 loop_date = start_bound_dt
                 while loop_date <= end_bound_dt:
                     loop_date_str = str(loop_date)
@@ -2220,34 +2265,35 @@ else:
                     
                     if loop_date_str == current_date_str:
                         inst_count = installed_today_count
-                        remark_display = matched_log.get("remark") if matched_log else ""
+                        remark_display = matched_log.get("remark") if matched_log else "Logs submitted today."
+                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.18) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
                     else:
                         inst_count = matched_log["installed_units"] if matched_log else 0
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
+                        row_style_attr = ""
                         
                     cur_dev = int(inst_count - target_runrate)
-                    
                     total_target_quota += int(target_runrate)
                     total_installed_quota += inst_count
                     total_deviation_quota += cur_dev
                     
-                    compiled_ui_matrix_rows.append({
-                        "Date Snapshot Window": loop_date_str,
-                        "Production Target": f"{int(target_runrate)} Units",
-                        "Assembled Quantity": f"{inst_count} Units",
-                        "Performance Deviation Run-Rate": f"🟢 +{cur_dev}" if cur_dev >= 0 else f"🔴 {cur_dev}",
-                        "Field Operational Remark Notes": "📝 Editable via form entry block below" if loop_date_str == current_date_str else remark_display
-                    })
+                    table_html_tab2 += f"""<tr {row_style_attr}>
+                        <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{int(target_runrate)} Units</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td>
+                        <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
+                    </tr>"""
                     loop_date += timedelta(days=1)
 
-                compiled_ui_matrix_rows.append({
-                    "Date Snapshot Window": "📊 CUMULATIVE SITE COMPONENT BALANCE FOOTPRINT TOTALS",
-                    "Production Target": f"{total_target_quota} Units",
-                    "Assembled Quantity": f"{total_installed_quota} Units",
-                    "Performance Deviation Run-Rate": f"🟢 +{total_deviation_quota}" if total_deviation_quota >= 0 else f"🔴 {total_deviation_quota} (Remaining Balance Uninstalled Target)",
-                    "Field Operational Remark Notes": "🏁 Master Balance Ledger Log"
-                })
-                st.table(compiled_ui_matrix_rows)
+                table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'>
+                    <td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{total_target_quota} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{total_installed_quota} Units</td>
+                    <td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{total_deviation_quota}</td>
+                    <td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td>
+                </tr></tbody></table>"""
+                st.markdown(table_html_tab2, unsafe_allow_html=True)
 
                 if is_editable_window:
                     st.markdown("##### 📝 Active Shift Field Reporting Ledger Updates Deck")
@@ -2261,6 +2307,7 @@ else:
                             safe_target_val = int(target_runrate)
                             safe_deviation_val = int(installed_today_count - safe_target_val)
                             
+                            # Record latest metric accumulation count safely to cloud
                             supabase.table("daily_progress_logs").upsert({
                                 "farm_id": str(st.session_state.active_site_id),
                                 "aspect": str(selected_crew_aspect),
@@ -2416,10 +2463,13 @@ else:
                         dev_val = matched_log["deviation"] if matched_log else int(0 - t_runrate)
                         rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                         
-                        # Apply row highlighting using explicit style attributes directly
-                        row_style = "style='background-color: rgba(59, 130, 246, 0.18) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
+                        # 🔥 FIXED: Apply high-visibility blue color style explicitly onto the matching evaluation date row
+                        if loop_dt_str == lookup_date_str:
+                            row_style_attr = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6;'"
+                        else:
+                            row_style_attr = ""
                         
-                        hist_table_html += f"""<tr {row_style}>
+                        hist_table_html += f"""<tr {row_style_attr}>
                             <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
                             <td style='padding: 10px; border: 1px solid #374151;'>{z_bound}</td>
                             <td style='padding: 10px; border: 1px solid #374151;'>{int(t_runrate)} Units</td>

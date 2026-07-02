@@ -2137,7 +2137,6 @@ else:
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
                 existing_remark = logs_lookup.get(current_date_str, {}).get("remark", "")
                 
-                installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
                 try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
@@ -2145,7 +2144,6 @@ else:
                 
                 crew_zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_crew_zone)]
                 crew_zone_element_count = 0
-                
                 if selected_crew_aspect in ["pegging", "piling"]:
                     for b in crew_zone_filtered_blocks:
                         ev = b.get("section_group") if b.get("section_group") is not None else 403
@@ -2161,20 +2159,14 @@ else:
                 elif selected_crew_aspect == "transformer":
                     crew_zone_element_count = len(topo_meta_obj.get("transformers", []))
 
+                # Interactive map component container with immediate real-time background sync
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                        🎮 <b>Lasso Controls:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to cumulatively select flags | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> to toggle or deselect individual nodes | Right-Click + Drag to Pan.
+                        🎮 <b>Real-Time Tracking:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select items | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> to toggle individual nodes. Selections sync to the database instantly.
                     </div>
-                    <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden; margin-bottom: 12px;">
+                    <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                         <canvas id="crew_canvas_tracker_element" width="1500" height="480" style="background:#020617; display:block;"></canvas>
-                    </div>
-                    <div style="background: #111827; padding: 14px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px;">
-                        <label style="color: #f8fafc; font-weight: bold; font-size: 13px;">📝 Append Shift Remarks & Blockage Mitigation Notes:</label>
-                        <input type="text" id="crew_remark_input" value="EXISTING_REMARK_VAL" placeholder="Enter operational notes here..." style="width: 100%; background: #1f2937; color: #ffffff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        <div style="text-align: right; margin-top: 4px;">
-                            <button id="btn_save_crew_canvas" style="background: #3b82f6; border: none; padding: 10px 28px; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">💾 Save Target Progress & Shift Logs</button>
-                        </div>
                     </div>
                 </div>
                 <script>
@@ -2187,19 +2179,13 @@ else:
                         let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
                         let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
                         let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0; let stagedMutationsMap = {};
+                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0;
                         
-                        if (!isEditable) {
-                            document.getElementById("crew_remark_input").disabled = true;
-                            document.getElementById("btn_save_crew_canvas").style.background = "#4b5563"; document.getElementById("btn_save_crew_canvas").style.cursor = "not-allowed";
-                        }
                         canvas.addEventListener('contextmenu', e => e.preventDefault());
                         
                         function getNodeColor(b, aspectKey) {
                             if (b.assigned_zone !== targetZone) return '#222d3d'; 
                             let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
-                            if (stagedMutationsMap[b.id] === true) return '#eab308';
-                            if (stagedMutationsMap[b.id] === false) return '#1f2937';
                             if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
                             return '#1f2937';
                         }
@@ -2224,89 +2210,36 @@ else:
                             if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
                             else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
                         });
-                        canvas.addEventListener('mouseup', e => {
-                            if (isPanning) isPanning = false;
+                        canvas.addEventListener('mouseup', async (e) => {
+                            if (isPanning) { isPanning = false; return; }
                             if (isSelecting) {
                                 isSelecting = false; const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
                                 let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
                                 let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
                                 let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
-                                dataset.forEach(b => {
-                                    if (b.assigned_zone !== targetZone) return;
+                                
+                                for (let b of dataset) {
+                                    if (b.assigned_zone !== targetZone) continue;
                                     let cx = b.min_c * CELL; let cy = b.min_r * CELL;
                                     let hit = isLasso ? (cx >= wX1 && cx <= wX2 && cy >= wY1 && cy <= wY2) : (wX1 >= cx && wX1 <= (b.max_c+1)*CELL && wY1 >= cy && wY1 <= (b.max_r+1)*CELL);
                                     if (hit) {
                                         let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
-                                        if (currentStatus === 'completed' && currentDateVal !== sysDateStr) return;
-                                        if (isLasso) { stagedMutationsMap[b.id] = true; } 
-                                        else {
-                                            if (stagedMutationsMap[b.id] === true || (currentStatus === 'completed' && currentDateVal === sysDateStr && stagedMutationsMap[b.id] !== false)) {
-                                                stagedMutationsMap[b.id] = false;
-                                            } else { stagedMutationsMap[b.id] = true; }
-                                        }
+                                        if (currentStatus === 'completed' && currentDateVal !== sysDateStr) continue;
+                                        
+                                        let nextStatus = (currentStatus === 'completed') ? 'pending' : 'completed';
+                                        let nextDate = (nextStatus === 'completed') ? sysDateStr : null;
+                                        
+                                        b[aspect + '_status'] = nextStatus; b[aspect + '_date'] = nextDate;
+                                        
+                                        // Push updates to the database instantly
+                                        fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + b.id, {
+                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                            body: JSON.stringify({ [aspect + '_status']: nextStatus, [aspect + '_date']: nextDate })
+                                        });
                                     }
-                                });
+                                }
                                 draw();
                             }
-                        });
-                        
-                        document.getElementById("btn_save_crew_canvas").addEventListener("click", async () => {
-                            if (!isEditable) return;
-                            const btn = document.getElementById("btn_save_crew_canvas"); btn.disabled = true; btn.innerText = "⏳ Synchronizing Progress Data...";
-                            let keys = Object.keys(stagedMutationsMap); let typedRemark = document.getElementById("crew_remark_input").value;
-                            
-                            try {
-                                let updatePromises = [];
-                                for (let id of keys) {
-                                    let targetBlock = dataset.find(item => item.id == id);
-                                    if (stagedMutationsMap[id] === true) {
-                                        if (targetBlock) { targetBlock[aspect + '_status'] = "completed"; targetBlock[aspect + '_date'] = sysDateStr; }
-                                        updatePromises.push(fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                            body: JSON.stringify({ [aspect + '_status']: "completed", [aspect + '_date']: sysDateStr })
-                                        }));
-                                    } else if (stagedMutationsMap[id] === false) {
-                                        if (targetBlock) { targetBlock[aspect + '_status'] = "pending"; targetBlock[aspect + '_date'] = null; }
-                                        updatePromises.push(fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + id, {
-                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
-                                            body: JSON.stringify({ [aspect + '_status']: "pending", [aspect + '_date']: null })
-                                        }));
-                                    }
-                                }
-                                
-                                if (updatePromises.length > 0) {
-                                    await Promise.all(updatePromises);
-                                }
-
-                                let absoluteTotalCompletionsCount = 0;
-                                dataset.forEach(b => {
-                                    if (b.assigned_zone === targetZone && b[aspect + '_status'] === 'completed' && b[aspect + '_date'] === sysDateStr) {
-                                        absoluteTotalCompletionsCount++;
-                                    }
-                                });
-
-                                let currentDayTargetQuota = Math.floor(__TARGET_RUNRATE_VAL__);
-                                let scheduleFetch = await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs?farm_id=eq.__FARM_ID_VAL__&aspect=eq." + aspect + "&zone=eq." + targetZone + "&log_date=eq." + sysDateStr, {
-                                    method: "GET", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL" }
-                                });
-                                let resLogs = await scheduleFetch.json();
-                                if (resLogs && resLogs.length > 0 && resLogs[0].target_units > 0) {
-                                    currentDayTargetQuota = resLogs[0].target_units;
-                                }
-                                
-                                let computedDeviation = absoluteTotalCompletionsCount - currentDayTargetQuota;
-
-                                await fetch("SUPABASE_URL_VAL/rest/v1/daily_progress_logs", {
-                                    method: "POST", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
-                                    body: JSON.stringify({ "farm_id": "__FARM_ID_VAL__", "aspect": aspect, "zone": targetZone, "log_date": sysDateStr, "target_units": currentDayTargetQuota, "installed_units": absoluteTotalCompletionsCount, "deviation": computedDeviation, "remark": typedRemark })
-                                });
-                                
-                                stagedMutationsMap = {}; 
-                                alert("🎉 Progress records and notes successfully synchronized!");
-                                
-                                // 🎯 FIXED: Bypass frame security blocks by using localized frame refresh actions
-                                window.location.reload();
-                            } catch(err) { alert("Sync error occurred: " + err); btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs"; }
                         });
                         canvas.addEventListener('wheel', e => {
                             e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
@@ -2319,9 +2252,33 @@ else:
                 </script>
                 """
                 html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", base64.b64encode(current_farm_record.get("background_image_url", "{}").encode("utf-8")).decode("utf-8")).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", str(current_system_date)).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false").replace("EXISTING_REMARK_VAL", existing_remark).replace("__INSTALLED_TODAY_VAL__", str(installed_today_count)).replace("__TARGET_RUNRATE_VAL__", str(target_runrate)).replace("__FARM_ID_VAL__", str(st.session_state.active_site_id))
-                components.html(html_crew_engine, height=695)
+                components.html(html_crew_engine, height=515)
 
-                st.cache_resource.clear()
+                # 📝 NATIVE STREAMLIT SHIFT CONTROLS (Bypasses Frame Restrictions Completely)
+                st.write("")
+                typed_remark = st.text_input("📝 Append Shift Remarks & Blockage Mitigation Notes:", value=existing_remark, key="crew_live_remark_field_input")
+                
+                if st.button("💾 Save Target Progress & Shift Logs", type="primary", use_container_width=True, disabled=not is_editable_window):
+                    with st.spinner("Synchronizing operations ledger logs..."):
+                        # Calculate the exact completion count directly from the structural tables
+                        fresh_db_blocks = supabase.table("structures").select("id").eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", selected_crew_zone).eq(f"{selected_crew_aspect}_status", "completed").eq(f"{selected_crew_aspect}_date", current_date_str).execute().data
+                        absolute_total_completions = len(fresh_db_blocks) if fresh_db_blocks else 0
+                        
+                        current_day_target_quota = int(target_runrate)
+                        if current_date_str in logs_lookup and logs_lookup[current_date_str].get("target_units", 0) > 0:
+                            current_day_target_quota = logs_lookup[current_date_str]["target_units"]
+                            
+                        computed_deviation = absolute_total_completions - current_day_target_quota
+                        
+                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
+                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
+                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_totalCompletionsCount if 'absoluteTotalCompletionsCount' in locals() else absolute_total_completions),
+                            "deviation": int(computed_deviation), "remark": str(typed_remark)
+                        }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                        
+                        st.cache_resource.clear()
+                        st.success("🎉 Shift log metrics updated successfully!")
+                        time.sleep(0.5); st.rerun()
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
@@ -2332,12 +2289,13 @@ else:
                     loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     if loop_date.weekday() < 5 or matched_log:
+                        # Shared calculation logic engine pulls exact block entries
+                        inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == loop_date_str)
+                        
                         if loop_date_str == current_date_str:
-                            inst_count = installed_today_count
                             remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "Real-time field session tracking active."
                             row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
                         else:
-                            inst_count = matched_log["installed_units"] if matched_log else 0
                             remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "No operational notes submitted."
                             row_style_attr = ""
                         
@@ -2366,7 +2324,6 @@ else:
             
             lookup_date_str = str(lookup_crew_date)
 
-            # 🎨 SUB-ELEMENT A: PLAYBACK MONITOR ENGINE PROGRESSION INTERACTIVE MAP
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -2436,29 +2393,28 @@ else:
             html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_hist_zone_map, height=390)
 
-            # 📊 SUB-ELEMENT B: ALL ACTIVE ZONES STACKED ON A SINGLE PAGE AS REQUESTED
             st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
             hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
             
             if hist_sched_records:
-                # 🎯 BYPASS CALENDAR RE-COMPILATION DELAYS BY POOLING REAL-TIME LOG OVERVIEWS DIRECTLY FROM SYSTEM ENTRIES
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
                 try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
                 except Exception: topo_meta_obj = {}
 
-                # 🗺️ Stack tables for each zone back-to-back dynamically
-                for sched in hist_sched_records:
+                # Stack multiple historical tracker sheets back-to-back dynamically on one page layout as requested
+                for zone_name in clean_zones:
+                    sched = next((s for s in hist_sched_records if s["zone"] == zone_name), None)
+                    if not sched: continue
+                    
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
-                    z_bound = sched["zone"]
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
-                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
+                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{zone_name.upper()}**")
                     
-                    # Compute strict total element constraints for this specific zone to calibrate totals row
-                    loop_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(z_bound)]
+                    loop_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(zone_name)]
                     z_element_count = 0
                     if lookup_crew_aspect in ["pegging", "piling"]:
                         for b in loop_filtered_blocks:
@@ -2470,7 +2426,7 @@ else:
                         z_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in loop_filtered_blocks])
                     elif lookup_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
                         for inv in topo_meta_obj.get("inverters", []):
-                            if any(str(b.get("assigned_zone")) == str(z_bound) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
+                            if any(str(b.get("assigned_zone")) == str(zone_name) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
                                 z_element_count += 1
                     elif lookup_crew_aspect == "transformer":
                         z_element_count = len(topo_meta_obj.get("transformers", []))
@@ -2487,20 +2443,17 @@ else:
                         </thead><tbody>"""
 
                     z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
-                    
                     loop_dt = s_bound
                     while loop_dt <= e_bound:
                         loop_dt_str = str(loop_dt)
-                        matched_log = hist_logs_lookup.get((z_bound, loop_dt_str))
+                        matched_log = hist_logs_lookup.get((zone_name, loop_dt_str))
                         
                         if loop_dt.weekday() < 5 or matched_log:
-                            # Pull metrics counts directly from live synced logs
-                            inst_val = matched_log["installed_units"] if matched_log else 0
+                            inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
                             t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
                             dev_val = float(inst_val - t_val)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
-                            # 🎯 HIGHLIGHT CORRESPONDING DATE ROW IN BLUE INSIDE THE CREW LOOKUP WINDOW
                             if loop_dt_str == lookup_date_str:
                                 row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
                             else:
@@ -2523,13 +2476,12 @@ else:
                         z_total_target = z_element_count
                         z_total_deviation = z_total_installed - z_total_target
 
-                    # Inject calculations totals footer using native Python .upper() methods safely
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Log Balance</td>
+                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td>
                     </tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
             else:

@@ -1927,6 +1927,7 @@ else:
             selected_crew_aspect = st.selectbox("Select Active Work Execution Protocol Aspect Layer Context:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_run_layer")
             selected_crew_zone = st.selectbox("Select Active Operational Field Working Zone Sector Area Context:", clean_zones, key="crew_run_zone")
             
+            # 🎯 FIXED PLACEMENT: Fetch database schedules first before any calendar math runs!
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
             
             if not schedule_meta:
@@ -1940,14 +1941,15 @@ else:
                 if not is_editable_window:
                     st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active bounds.")
                 
+                # Fetch existing remark note from database to pre-populate our text field
                 raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
                 existing_remark = logs_lookup.get(current_date_str, {}).get("remark", "")
                 
+                # Fetch live database completions count for today to compute deviation metrics
                 installed_today_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == current_date_str)
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
-                # Note: Increased iframe height component container boundary constraints to 780 to show unified controls cleanly
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -2086,7 +2088,6 @@ else:
                                     body: JSON.stringify(logPayload)
                                 });
 
-                                // 🔥 IN-PLACE STATE RETENTION: Clear mutation memory flags instead of refreshing the window shell
                                 stagedMutationsMap = {};
                                 alert("🎉 Operational metrics and field layout logs synchronized successfully!");
                                 btn.disabled = false; btn.innerText = "💾 Save Target Progress & Shift Logs";
@@ -2128,7 +2129,6 @@ else:
                     loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     
-                    # 📅 WEEKDAY RULE ENFORCEMENT: Only include date rows in the base schedule view if it's a weekday OR if the database contains a manual entry override log for that weekend date.
                     if loop_date.weekday() < 5 or matched_log:
                         if loop_date_str == current_date_str:
                             inst_count = installed_today_count
@@ -2139,14 +2139,17 @@ else:
                             remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "No operational notes submitted."
                             row_style_attr = ""
                             
-                        cur_dev = int(inst_count - target_runrate)
-                        total_target_quota += int(target_runrate)
+                        # Handle target calculation overrides gracefully for custom dates
+                        current_day_target = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                        cur_dev = int(inst_count - current_day_target)
+                        
+                        total_target_quota += int(current_day_target)
                         total_installed_quota += inst_count
                         total_deviation_quota += cur_dev
                         
                         table_html_tab2 += f"""<tr {row_style_attr}>
                             <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
-                            <td style='padding:10px; border:1px solid #374151;'>{int(target_runrate)} Units</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{int(current_day_target)} Units</td>
                             <td style='padding:10px; border:1px solid #374151;'>{inst_count} Units</td>
                             <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{cur_dev}</td>
                             <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
@@ -2161,5 +2164,3 @@ else:
                     <td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td>
                 </tr></tbody></table>"""
                 st.markdown(table_html_tab2, unsafe_allow_html=True)
-
-        

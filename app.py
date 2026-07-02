@@ -2430,31 +2430,13 @@ else:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
                 
-                # 🏁 Separate processing logic loops cleanly per individual zone sector context area
+                # Separate processing logic loops cleanly per individual zone sector context area
                 for sched in hist_sched_records:
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
                     z_bound = sched["zone"]
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
-                    # Compute total master items for this explicit aspect layer & zone combination
-                    crew_hist_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(z_bound)]
-                    crew_hist_element_count = 0
-                    if lookup_crew_aspect in ["pegging", "piling"]:
-                        for b in crew_hist_filtered_blocks:
-                            ev = b.get("section_group") if b.get("section_group") is not None else 403
-                            crew_hist_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
-                    elif lookup_crew_aspect in ["mounting", "dc_cabling"]:
-                        crew_hist_element_count = len(crew_hist_filtered_blocks)
-                    elif lookup_crew_aspect == "modules":
-                        crew_hist_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in crew_hist_filtered_blocks])
-                    elif lookup_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
-                        for inv in topo_meta.get("inverters", []):
-                            if any(str(b.get("assigned_zone")) == str(z_bound) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
-                                crew_hist_element_count += 1
-                    elif lookup_crew_aspect == "transformer":
-                        crew_hist_element_count = len(topo_meta.get("transformers", []))
-
                     st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{z_bound.upper()}**")
                     
                     hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
@@ -2478,9 +2460,10 @@ else:
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = matched_log["installed_units"] if matched_log else 0
                             t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
-                            dev_val = float(inst_val - t_val); rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            dev_val = float(inst_val - t_val)
+                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
                             
-                            # 🎯 HIGHLIGHT SELECTED EVALUATION DATE WINDOW IN BLUE
+                            # 🎯 BLUE ROW HIGHLIGHT FOR SELECTED HISTORICAL EVALUATION DATE WINDOW
                             if loop_dt_str == lookup_date_str:
                                 row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
                             else:
@@ -2499,11 +2482,7 @@ else:
                             </tr>"""
                         loop_dt += timedelta(days=1)
                         
-                    if abs(z_total_target - crew_hist_element_count) <= 5:
-                        z_total_target = crew_hist_element_count
-                        z_total_deviation = z_total_installed - z_total_target
-
-                    # Inject sub-total rollup calculations footer directly inside the specific zone sheet
+                    # Inject sub-total rollup calculations footer inside specific zone sheet using native Python upper()
                     hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
                         <td style='padding:12px; border: 1px solid #374151;'>📊 {z_bound.upper()} SUMMATION ROLLUP TOTALS</td>
                         <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>

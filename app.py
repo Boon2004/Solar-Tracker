@@ -1956,10 +1956,12 @@ else:
         st.markdown("## 🛰️ Live Production Crew Workspace Mapping Dashboards")
         crew_tabs = st.tabs(["🗺️ Whole Plant Master Blueprint Index", "🛠️ Execution Workspace Tracker Deck", "🕒 Field Shift History Log Viewer"])
         
+        # ------------------------------------------------------------------------------
+        # 🗺️ CREW TAB 1: MASTER BLUEPRINT OVERVIEW
+        # ------------------------------------------------------------------------------
         with crew_tabs[0]:
             st.markdown("### 🗺️ Whole Plant Layout Structural Blueprint Grid Ledger")
             
-            # 🎯 RESTORED MISSING TEMPLATE ENGINE VARIABLE TO FIX NAMEERROR
             html_blueprint_engine = """
             <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                 <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
@@ -2005,6 +2007,287 @@ else:
             html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data)
             html_master_view = html_master_view.replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_master_view, height=500)
+
+        # ------------------------------------------------------------------------------
+        # 🛠️ CREW TAB 2: LIVE RUNRATE WORKSPACE TRACKER DECK
+        # ------------------------------------------------------------------------------
+        with crew_tabs[1]:
+            st.markdown("### 🛰️ Live Assembly Deployment Workspace Trackers Console Deck")
+            selected_crew_aspect = st.selectbox("Select Active Work Aspect Layer Profile Context:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_run_layer")
+            selected_crew_zone = st.selectbox("Select Active Operational Sector Zone Working Context Area:", clean_zones, key="crew_run_zone")
+            
+            schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
+            
+            if not schedule_meta:
+                st.warning(f"📅 **Awaiting Calendar Broadcast:** Operational timelines for **{selected_crew_aspect.upper()}** inside **{selected_crew_zone}** have not been initialized yet.")
+            else:
+                sched_bound = schedule_meta[0]
+                start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
+                end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
+                is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
+                
+                if not is_editable_window: 
+                    st.error(f"🔒 Locked: Active timeline bounded context is closed for the current date.")
+                
+                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
+                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
+                existing_remark = logs_lookup.get(current_date_str, {}).get("remark", "")
+                target_runrate = float(sched_bound.get("daily_target", 0.0))
+
+                crew_zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_crew_zone)]
+                crew_zone_element_count = len(crew_zone_filtered_blocks)
+
+                html_crew_engine = """
+                <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
+                    <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                        🎮 <b>Real-Time Tracking:</b> <span style="color:#22c55e; font-weight:bold;">Left-Click + Drag Box</span> to select items | <span style="color:#ef4444; font-weight:bold;">Single Left-Click</span> to toggle individual nodes. Selections sync to the database instantly.
+                    </div>
+                    <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                        <canvas id="crew_canvas_tracker_element" width="1500" height="480" style="background:#020617; display:block;"></canvas>
+                    </div>
+                </div>
+                <script>
+                    (function() {
+                        const dataset = JSON.parse(atob("__JSON_DATA_B64__"));
+                        const aspect = "ACTIVE_ASPECT_VAL"; const targetZone = "ACTIVE_ZONE_VAL"; const sysDateStr = "SYSTEM_DATE_VAL"; const isEditable = __IS_EDITABLE_VAL__;
+                        const canvas = document.getElementById("crew_canvas_tracker_element"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                        let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                        const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                        let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                        let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                        let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                        let isPanning = false, isSelecting = false; let sX = 0, sY = 0; let cX = 0, cY = 0;
+                        
+                        canvas.addEventListener('contextmenu', e => e.preventDefault());
+                        function getNodeColor(b, aspectKey) {
+                            if (b.assigned_zone !== targetZone) return '#222d3d'; 
+                            let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
+                            if (status === 'completed') { if (dateVal === sysDateStr) return '#eab308'; return '#22c55e'; }
+                            return '#1f2937';
+                        }
+                        function draw() {
+                            ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                            dataset.forEach(b => {
+                                let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                                ctx.fillStyle = getNodeColor(b, aspect); ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                            });
+                            ctx.restore(); if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
+                        }
+                        canvas.addEventListener('mousemove', e => {
+                            const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                            if (isPanning) { offsetX = e.clientX - sX; offsetY = e.clientY - sY; draw(); return; }
+                            if (isSelecting) { cX = mX; cY = mY; draw(); return; }
+                        });
+                        canvas.addEventListener('mousedown', e => {
+                            const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                            if (e.button === 2) { isPanning = true; sX = e.clientX - offsetX; sY = e.clientY - offsetY; }
+                            else if (e.button === 0 && isEditable) { isSelecting = true; sX = mX; sY = mY; cX = mX; cY = mY; }
+                        });
+                        canvas.addEventListener('mouseup', async (e) => {
+                            if (isPanning) { isPanning = false; return; }
+                            if (isSelecting) {
+                                isSelecting = false; const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                                let wX1 = Math.min((sX - offsetX)/scale, (mX - offsetX)/scale); let wX2 = Math.max((sX - offsetX)/scale, (mX - offsetX)/scale);
+                                let wY1 = Math.min((sY - offsetY)/scale, (mY - offsetY)/scale); let wY2 = Math.max((sY - offsetY)/scale, (mY - offsetY)/scale);
+                                let isLasso = Math.abs(mX - sX) > 4 || Math.abs(mY - sY) > 4;
+                                
+                                for (let b of dataset) {
+                                    if (b.assigned_zone !== targetZone) continue;
+                                    let cx = b.min_c * CELL; let cy = b.min_r * CELL;
+                                    let hit = isLasso ? (cx >= wX1 && cx <= wX2 && cy >= wY1 && cy <= wY2) : (wX1 >= cx && wX1 <= (b.max_c+1)*CELL && wY1 >= cy && wY1 <= (b.max_r+1)*CELL);
+                                    if (hit) {
+                                        let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
+                                        if (currentStatus === 'completed' && currentDateVal !== sysDateStr) continue;
+                                        let nextStatus = (currentStatus === 'completed') ? 'pending' : 'completed';
+                                        let nextDate = (nextStatus === 'completed') ? sysDateStr : null;
+                                        b[aspect + '_status'] = nextStatus; b[aspect + '_date'] = nextDate;
+                                        fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + b.id, {
+                                            method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
+                                            body: JSON.stringify({ [aspect + '_status']: nextStatus, [aspect + '_date']: nextDate })
+                                        });
+                                    }
+                                }
+                                draw();
+                            }
+                        });
+                        canvas.addEventListener('wheel', e => {
+                            e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                            const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                            scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                            offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                        }, { passive: false });
+                        draw();
+                    })();
+                </script>
+                """
+                
+                safe_b64_topo = base64.b64encode((current_farm_record.get("background_image_url") or "{}").encode("utf-8")).decode("utf-8")
+                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", safe_b64_topo).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", current_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
+                components.html(html_crew_engine, height=520)
+
+                st.write("")
+                typed_remark = st.text_input("📝 Append Shift Remarks & Blockage Mitigation Notes:", value=existing_remark, key="crew_live_remark_field_input")
+                
+                if st.button("💾 Save Target Progress & Shift Logs", type="primary", use_container_width=True, disabled=not is_editable_window):
+                    with st.spinner("Synchronizing operations ledger logs..."):
+                        fresh_db_blocks = supabase.table("structures").select("id").eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", selected_crew_zone).eq(f"{selected_crew_aspect}_status", "completed").eq(f"{selected_crew_aspect}_date", current_date_str).execute().data
+                        absolute_total_completions = len(fresh_db_blocks) if fresh_db_blocks else 0
+                        
+                        current_day_target_quota = int(target_runrate)
+                        if current_date_str in logs_lookup and logs_lookup[current_date_str].get("target_units", 0) > 0:
+                            current_day_target_quota = logs_lookup[current_date_str]["target_units"]
+                        computed_deviation = absolute_total_completions - current_day_target_quota
+                        
+                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
+                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
+                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_total_completions),
+                            "deviation": int(computed_deviation), "remark": str(typed_remark)
+                        }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                        st.cache_resource.clear()
+                        st.success("🎉 Shift log metrics updated successfully!")
+                        time.sleep(0.5); st.rerun()
+
+                st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
+                table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
+                
+                total_target_quota = 0.0; total_installed_quota = 0.0; total_deviation_quota = 0.0
+                loop_date = start_bound_dt
+                while loop_date <= end_bound_dt:
+                    loop_date_str = str(loop_date)
+                    matched_log = logs_lookup.get(loop_date_str)
+                    if loop_date.weekday() < 5 or matched_log:
+                        inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == loop_date_str)
+                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'" if loop_date_str == current_date_str else ""
+                        
+                        current_day_target = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else target_runrate
+                        cur_dev = float(inst_count - current_day_target)
+                        remark_display = matched_log.get("remark") or "No operational notes submitted." if matched_log else "No operational notes submitted."
+                        
+                        total_target_quota += current_day_target; total_installed_quota += float(inst_count); total_deviation_quota += cur_dev
+                        table_html_tab2 += f"""<tr {row_style_attr}><td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td><td style='padding:10px; border:1px solid #374151;'>{round(current_day_target)} Units</td><td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td><td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td><td style='padding:10px; border:1px solid #374151;'>{remark_display}</td></tr>"""
+                    loop_date += timedelta(days=1)
+                
+                if abs(total_target_quota - crew_zone_element_count) <= 5:
+                    total_target_quota = crew_zone_element_count
+                    total_deviation_quota = total_installed_quota - total_target_quota
+
+                table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td><td style='padding:12px; border:1px solid #374151;'>{round(total_target_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{round(total_installed_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{round(total_deviation_quota)}</td><td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td></tr></tbody></table>"""
+                st.markdown(table_html_tab2, unsafe_allow_html=True)
+
+        # ------------------------------------------------------------------------------
+        # 🕒 CREW TAB 3: FIELD SHIFT HISTORY LOG VIEWER
+        # ------------------------------------------------------------------------------
+        with crew_tabs[2]:
+            st.markdown("### 🕒 Historic Operational Field Execution Ledger Lookups")
+            hist_cols = st.columns(2)
+            with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
+            with hist_cols[1]: lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
+            lookup_date_str = str(lookup_crew_date)
+
+            html_hist_zone_map = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
+                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
+                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window.
+                </div>
+                <div id="crew_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
+                <div style="width:100%; max-height:350px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="crew_hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("crew_hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    const tooltip = document.getElementById("crew_hist_canvas_tooltip");
+                    const aspect = "ACTIVE_ASPECT_VAL"; const evaluationDateStr = "EVALUATION_DATE_VAL";
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false; let startX = 0, startY = 0;
+                    
+                    function draw() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
+                        blocks.forEach(b => {
+                            let status = b[aspect + '_status'] || 'pending'; let compDate = b[aspect + '_date'];
+                            if (status === 'completed' && compDate) {
+                                if (compDate === evaluationDateStr) ctx.fillStyle = '#eab308';
+                                else if (compDate < evaluationDateStr) ctx.fillStyle = '#22c55e';
+                                else ctx.fillStyle = '#1e293b';
+                            } else ctx.fillStyle = '#1e293b';
+                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        });
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousemove', e => {
+                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
+                        if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); tooltip.style.display = "none"; return; }
+                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
+                        let hoveredBlock = null;
+                        for (let b of blocks) {
+                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) { hoveredBlock = b; break; }
+                        }
+                        if (hoveredBlock) {
+                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
+                            let status = hoveredBlock[aspect + '_status'] || 'pending'; let compDate = hoveredBlock[aspect + '_date'] || 'N/A';
+                            tooltip.innerHTML = `📍 Unit: ${hoveredBlock.table_label}<br>🗺️ Zone: ${hoveredBlock.assigned_zone}<br>⚡ Status: ${status.toUpperCase()}<br>📅 Built Date: ${compDate}`;
+                        } else tooltip.style.display = "none";
+                    });
+                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; tooltip.style.display = "none"; } });
+                    canvas.addEventListener('mouseup', () => { isPanning = false; });
+                    canvas.addEventListener('wheel', e => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            html_hist_zone_map = html_hist_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", lookup_crew_aspect).replace("EVALUATION_DATE_VAL", lookup_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
+            components.html(html_hist_zone_map, height=390)
+
+            st.markdown("#### 📅 Comprehensive Historical Performance Calendars")
+            hist_sched_records = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
+            
+            if hist_sched_records:
+                raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
+                hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
+
+                for zone_name in clean_zones:
+                    sched = next((s for s in hist_sched_records if s["zone"] == zone_name), None)
+                    if not sched: continue
+                    s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
+                    e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
+                    t_runrate = float(sched.get("daily_target", 0.0))
+                    
+                    st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{zone_name.upper()}**")
+                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th><th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th></tr></thead><tbody>"""
+
+                    z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
+                    loop_dt = s_bound
+                    while loop_dt <= e_bound:
+                        loop_dt_str = str(loop_dt)
+                        matched_log = hist_logs_lookup.get((zone_name, loop_dt_str))
+                        if loop_dt.weekday() < 5 or matched_log:
+                            inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
+                            t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else t_runrate
+                            dev_val = float(inst_val - t_val)
+                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
+                            
+                            z_total_target += t_val; z_total_installed += float(inst_val); z_total_deviation += dev_val
+                            hist_table_html += f"""<tr {row_style}><td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td><td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td><td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td></tr>"""
+                        loop_dt += timedelta(days=1)
+                        
+                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td><td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td></tr></tbody></table>"""
+                    st.markdown(hist_table_html, unsafe_allow_html=True)
+            else: 
+                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
 
         # ==============================================================================
         # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK

@@ -1678,65 +1678,102 @@ else:
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: MANAGE CUSTOM EXTENSIONS (ZONE SPECIFIC WITH DUMMY GUARD & DELETION)
-            schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-            
-            # Initial safe fallback assignments to kill NameErrors entirely
-            target_runrate = 0.0
-            start_bound_dt = date.today()
-            end_bound_dt = date.today() + timedelta(days=1)
-            
-            if schedule_meta:
-                sched_bound = schedule_meta[0]
-                start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
-                end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
-                target_runrate = float(sched_bound.get("daily_target", 0.0))
-                
-                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
-                
+            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH IMMUTABLE BALANCE REDISTRIBUTION)
                 st.write("---")
-                st.markdown("#### 🛠️ Manage Custom Weekend Extensions & Special Shifts")
+                st.markdown("#### ⚙️ Manage Weekend Extensions & Special Shifts")
                 
-                col_add_panel, col_del_panel = st.columns(2)
-                
-                with col_add_panel:
+                col_add, col_del = st.columns(2)
+                with col_add:
                     with st.form("admin_custom_date_injector_form"):
                         st.markdown("##### ➕ Add Shift Extension")
-                        extension_date = st.date_input("Select Weekend / Extension Shift Date:", value=current_system_date)
-                        custom_target_quota = st.number_input("Assign FIXED Target Quantity for this Extension Shift:", min_value=0, value=100)
+                        extension_date = st.date_input("Select Extension Shift Date:", value=current_system_date)
+                        custom_target_quota = st.number_input("Assign FIXED Target Quantity:", min_value=0, value=100)
                         
-                        if st.form_submit_button("➕ Inject Custom Shift Day Row"):
-                            # 🛡️ ANTI-DUMMY CALENDAR GUARD: Prevent duplicates or existing weekday overrides
-                            if start_bound_dt <= extension_date <= end_bound_dt and extension_date.weekday() < 5:
-                                st.error("🛑 **Dummy Guard Error:** This date is already a standard production weekday inside the base schedule boundaries.")
-                            elif str(extension_date) in logs_lookup and logs_lookup[str(extension_date)].get("target_units", 0) > 0:
-                                st.error("🛑 **Dummy Guard Error:** An operational configuration target already exists for this date.")
+                        if st.form_submit_button("➕ Inject Shift Day"):
+                            if str(extension_date) in logs_lookup and "Special Shift" in (logs_lookup[str(extension_date)].get("remark") or ""):
+                                st.error("🛑 Dummy Guard Error: This special shift extension date already exists in the ledger rows!")
                             else:
+                                # 1. Inject the extension shift row entry with its fixed allocation footprint
                                 supabase.table("daily_progress_logs").upsert({
                                     "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                     "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
                                     "target_units": int(custom_target_quota), "installed_units": 0,
                                     "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                                 }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                                
+                                # 2. Fetch the newly expanded dataset logs pool array
+                                refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                                
+                                total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
+                                remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
+                                new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
+                                
+                                # 3. Update master project schedule profile parameter value
+                                supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
+                                
+                                # 4. FORCE RE-CALCULATION OVER ALL WORKING WEEKDAYS (Even if work was already performed)
+                                loop_dt = start_bound_dt
+                                while loop_dt <= end_bound_dt:
+                                    loop_dt_str = str(loop_dt)
+                                    if loop_dt.weekday() < 5:
+                                        matched = next((r for r in refreshed_logs if r["log_date"] == loop_dt_str), None)
+                                        cur_inst = int(matched.get("installed_units") or 0) if matched else 0
+                                        cur_rem = matched.get("remark") or "No operational notes submitted." if matched else "No operational notes submitted."
+                                        
+                                        supabase.table("daily_progress_logs").upsert({
+                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
+                                            "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
+                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst,
+                                            "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
+                                        }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                                    loop_dt += timedelta(days=1)
+                                    
                                 st.cache_resource.clear()
-                                st.success("Custom special shift extension recorded successfully!")
+                                st.success("Shift injected & standard day targets redistributed successfully!")
                                 time.sleep(0.5); st.rerun()
                                 
-                with col_del_panel:
+                with col_del:
                     with st.form("admin_custom_date_removal_form"):
                         st.markdown("##### 🗑️ Remove Shift Extension")
-                        # Only scan special entries that contain the authorization keyword remark
-                        removable_dates = [d for d, r in logs_lookup.items() if "Special Shift" in str(r.get("remark", ""))]
-                        
-                        selected_removal_date = st.selectbox("Select Target Extension Row to Delete:", removable_dates if removable_dates else ["No extensions created"])
-                        
-                        if st.form_submit_button("🗑️ Delete Extension Shift Row", type="primary", disabled=not removable_dates):
-                            supabase.table("daily_progress_logs").delete().eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", selected_removal_date).execute()
-                            st.cache_resource.clear()
-                            st.success(f"Successfully pruned custom extension row for {selected_removal_date}!")
-                            time.sleep(0.5); st.rerun()
-
+                        special_shift_options = [d for d, l in logs_lookup.items() if "Special Shift" in (l.get("remark") or "") or datetime.strptime(d, "%Y-%m-%d").date().weekday() >= 5]
+                        if special_shift_options:
+                            target_removal_date = st.selectbox("Select Special Shift to Remove:", special_shift_options)
+                            if st.form_submit_button("🗑️ Delete Selected Day Extension", type="primary"):
+                                # 1. Clear out the targeted extension row log entry completely
+                                supabase.table("daily_progress_logs").delete().eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", target_removal_date).execute()
+                                
+                                # 2. Gather remaining log balances matrix sets
+                                refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                                
+                                total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
+                                remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
+                                new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
+                                
+                                # 3. Update main schedule runtime tracking entry row parameters
+                                supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
+                                
+                                # 4. FORCE OVERWRITE TARGETS ON ALL REMAINING BASE WEEKDAYS
+                                loop_dt = start_bound_dt
+                                while loop_dt <= end_bound_dt:
+                                    loop_dt_str = str(loop_dt)
+                                    if loop_dt.weekday() < 5:
+                                        matched = next((r for r in refreshed_logs if r["log_date"] == loop_dt_str), None)
+                                        cur_inst = int(matched.get("installed_units") or 0) if matched else 0
+                                        cur_rem = matched.get("remark") or "No operational notes submitted." if matched else "No operational notes submitted."
+                                        
+                                        supabase.table("daily_progress_logs").upsert({
+                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
+                                            "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
+                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst,
+                                            "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
+                                        }, on_conflict="farm_id, aspect, zone, log_date").execute()
+                                    loop_dt += timedelta(days=1)
+                                    
+                                st.cache_resource.clear()
+                                st.success(f"Successfully deleted shift on {target_removal_date} & refreshed baseline targets!")
+                                time.sleep(0.5); st.rerun()
+                        else:
+                            st.info("No removable special shift extensions found in this zone layer.")
                 # 📊 SUB-ELEMENT C: THE ACTIVE CALENDAR GRID VIEW SHEET
                 st.write("---")
                 st.markdown(f"#### 📅 Mapped Production Operations Calendar: `{selected_sched_aspect.upper()}` — `{selected_target_zone_preview.upper()}`")

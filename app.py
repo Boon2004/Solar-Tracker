@@ -1636,7 +1636,7 @@ else:
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             selected_target_zone_preview = st.selectbox("Select Target Sector Zone Area:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # Count total tracking nodes assigned to this sector zone profile area (Total Scope Pool)
+            # Count total tracking nodes assigned to this sector zone profile area (Total Fixed Master Scope)
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
             zone_specific_element_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1677,7 +1677,7 @@ else:
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH REMAINING BALANCE RECALCULATION)
+            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH STRICT TOTAL CAPACITY TRACKING SUBTRACITON)
             schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
             if schedule_meta:
                 sched_bound = schedule_meta[0]
@@ -1694,7 +1694,7 @@ else:
                     
                     if st.form_submit_button("➕ Inject Custom Shift Day Row & Recalculate Quotas", type="primary"):
                         try:
-                            # 1. Insert/Update the custom special shift log entry with its explicitly fixed target quota
+                            # 1. First insert or update the special extension row with its exact assigned capacity footprint
                             supabase.table("daily_progress_logs").upsert({
                                 "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                 "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
@@ -1702,45 +1702,38 @@ else:
                                 "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                             }, on_conflict="farm_id, aspect, zone, log_date").execute()
                             
-                            # 2. Pull all progress logs to discover what special weekend dates are currently logged
+                            # 2. Grab all existing logs for this combination to run full array verification loops
                             all_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
                             
-                            # 3. Sum up the target units handled by special shifts
-                            total_special_shifts_quota = 0
-                            special_dates_set = set()
+                            # 3. Sum up the absolute assigned metrics targets for ALL special extension shifts
+                            total_allocated_to_special_shifts = 0
                             for log in all_logs:
                                 log_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
-                                # It's a special extension if it is a weekend OR falls outside the standard timeline range boundary
+                                # Row counts as a special extension if it falls on a weekend or outside standard boundary limits
                                 if log_dt.weekday() >= 5 or not (start_bound_dt <= log_dt <= end_bound_dt):
-                                    total_special_shifts_quota += log.get("target_units", 0)
-                                    special_dates_set.add(log["log_date"])
-                            
-                            # If the newly added extension_date isn't caught in the logs fetch yet, count it manually
-                            if str(extension_date) not in special_dates_set:
-                                if extension_date.weekday() >= 5 or not (start_bound_dt <= extension_date <= end_bound_dt):
-                                    total_special_shifts_quota += custom_target_quota
+                                    total_allocated_to_special_shifts += int(log.get("target_units", 0))
 
-                            # 4. FIXED-SCOPE BALANCE REDISTRIBUTION MATH: 
-                            # Deduct the special shift allocation from total scope, then divide by base weekdays count
-                            remaining_base_scope = max(0, zone_specific_element_count - total_special_shifts_quota)
+                            # 4. CRITICAL MATHEMATICAL CORRECTIVE RECONCILIATION: 
+                            # Deduct special shift targets directly from the immutable master zone scope pool count!
+                            remaining_base_scope = max(0, int(zone_specific_element_count) - total_allocated_to_special_shifts)
                             new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                             
-                            # 5. Update the primary calendar timeline benchmark tracking entry
+                            # 5. Lock this fresh run-rate baseline target value back into our master schedule profile configuration
                             supabase.table("project_schedules").update({
                                 "daily_target": float(new_base_daily_target)
                             }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                             
-                            # 6. Normalize and write back the recalculated targets to all base working days
+                            # 6. Re-loop over all logs and forcefully apply the refreshed daily target balance value to all standard weekdays
                             for log in all_logs:
                                 l_dt = datetime.strptime(log["log_date"], "%Y-%m-%d").date()
-                                # Leave special shift rows alone, only overwrite base weekdays
                                 if l_dt.weekday() < 5 and (start_bound_dt <= l_dt <= end_bound_dt):
+                                    current_installed = int(log.get("installed_units") or 0)
                                     supabase.table("daily_progress_logs").update({
                                         "target_units": int(new_base_daily_target),
-                                        "deviation": int((log.get("installed_units") or 0) - int(new_base_daily_target))
+                                        "deviation": int(current_installed - int(new_base_daily_target))
                                     }).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", log["log_date"]).execute()
 
-                            st.success(f"🎉 Redistribution complete! Deducted custom shifts ({total_special_shifts_quota} units total). Recalculated remaining {remaining_base_scope} units evenly to {new_base_daily_target} units/day across your standard {base_working_days} weekdays.")
+                            st.success(f"🎉 Scope Balanced! Master Scope Pool ({zone_specific_element_count} total cells) minus special shift allocations leaves {remaining_base_scope} cells remaining. Weekday runrates recalculated cleanly to {new_base_daily_target} units/day across all {base_working_days} standard calendar days.")
                             time.sleep(0.5); st.rerun()
                         except Exception as err: st.error(f"Recalculation rejected: {str(err)}")
 
@@ -1769,7 +1762,7 @@ else:
                     
                     if loop_date.weekday() < 5 or matched_log:
                         inst_count = matched_log["installed_units"] if matched_log else 0
-                        # Pull specific override values if available, else fall back to the dynamic schedule runtime rate
+                        # Fall back to the dynamically calibrated master daily target if an explicit entry row hasn't populated yet
                         t_val = matched_log["target_units"] if (matched_log and matched_log.get("target_units", 0) > 0) else int(sched_bound.get("daily_target", 0.0))
                         cur_dev = int(inst_count - t_val)
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."

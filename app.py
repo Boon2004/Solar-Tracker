@@ -1958,7 +1958,52 @@ else:
         
         with crew_tabs[0]:
             st.markdown("### 🗺️ Whole Plant Layout Structural Blueprint Grid Ledger")
-            html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", "pegging").replace("__IS_EDITABLE_VAL__", "false")
+            
+            # 🎯 RESTORED MISSING TEMPLATE ENGINE VARIABLE TO FIX NAMEERROR
+            html_blueprint_engine = """
+            <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
+                <div style="width:100%; max-height:480px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
+                    <canvas id="crew_blueprint_master_canvas" width="1500" height="480" style="background:#020617; display:block;"></canvas>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
+                    const canvas = document.getElementById("crew_blueprint_master_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
+                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
+                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
+                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
+                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
+                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
+                    let isPanning = false; let startX = 0, startY = 0;
+                    
+                    canvas.addEventListener('contextmenu', e => e.preventDefault());
+                    function draw() {
+                        ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                        blocks.forEach(b => {
+                            ctx.fillStyle = '#1e293b';
+                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
+                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                        });
+                        ctx.restore();
+                    }
+                    canvas.addEventListener('mousemove', e => { if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); } });
+                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; } });
+                    canvas.addEventListener('mouseup', () => { isPanning = false; });
+                    canvas.addEventListener('wheel', e => {
+                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
+                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
+                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
+                    }, { passive: false });
+                    draw();
+                })();
+            </script>
+            """
+            
+            html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data)
+            html_master_view = html_master_view.replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
             components.html(html_master_view, height=500)
 
         # ==============================================================================

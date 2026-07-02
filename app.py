@@ -1625,7 +1625,7 @@ else:
         # --- STAGE 5: SCHEDULERS & TARGETS MANAGER ---
         with setup_tabs[4]:
             st.markdown("### 📅 Aspect & Zone Specific Scheduling Timeline Matrix")
-            st.caption("Select an explicit configuration layer profile below to review or inject custom shift extensions into that target calendar matrix window.")
+            st.caption("Select an explicit configuration profile below to review or inject custom shift extensions.")
             
             aspect_options_list = ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]
             selected_sched_aspect = st.selectbox("Select Target Aspect Layer Profile:", aspect_options_list, key="admin_sched_aspect_sel")
@@ -1636,7 +1636,7 @@ else:
             zones_to_configure = ["Global"] if selected_sched_aspect == "transformer" else [z for z in st.session_state.managed_zones if z != "Unassigned"]
             selected_target_zone_preview = st.selectbox("Select Target Sector Zone Area:", zones_to_configure, key="zone_preview_filter_idx")
             
-            # Count total tracking nodes assigned to this sector zone profile area
+            # Master Scope Calculation
             zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview)]
             zone_specific_element_count = 0
             if selected_sched_aspect in ["pegging", "piling"]:
@@ -1654,9 +1654,8 @@ else:
             elif selected_sched_aspect == "transformer":
                 zone_specific_element_count = len(topo_meta_obj.get("transformers", []))
 
-            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` targets assigned to **{selected_target_zone_preview}** for this aspect layer.")
+            st.info(f"📊 **Live Spatial Audit:** Found `{zone_specific_element_count}` total items assigned to **{selected_target_zone_preview}**.")
 
-            # ⚙️ SUB-ELEMENT A: THE TIMELINE GENERATOR INITIALIZATION FORM
             with st.form("admin_schedule_broadcasting_form"):
                 st.markdown("##### 📅 Initialize Base Operations Timeline Boundaries")
                 sched_cols = st.columns(2)
@@ -1678,7 +1677,17 @@ else:
                         st.success("Milestones initialized successfully!")
                         time.sleep(0.5); st.rerun()
 
-            # 🛠️ SUB-ELEMENT B: CUSTOM SINGLE DAY LOG INJECTOR (WITH IMMUTABLE BALANCE REDISTRIBUTION)
+            schedule_meta = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+            if schedule_meta:
+                sched_bound = schedule_meta[0]
+                start_bound_dt = datetime.strptime(sched_bound["start_date"], "%Y-%m-%d").date()
+                end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
+                base_working_days = int(sched_bound.get("working_days", 1))
+                target_runrate = float(sched_bound.get("daily_target", 0.0))
+
+                raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
+                logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
+                
                 st.write("---")
                 st.markdown("#### ⚙️ Manage Weekend Extensions & Special Shifts")
                 
@@ -1693,7 +1702,6 @@ else:
                             if str(extension_date) in logs_lookup and "Special Shift" in (logs_lookup[str(extension_date)].get("remark") or ""):
                                 st.error("🛑 Dummy Guard Error: This special shift extension date already exists in the ledger rows!")
                             else:
-                                # 1. Inject the extension shift row entry with its fixed allocation footprint
                                 supabase.table("daily_progress_logs").upsert({
                                     "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                     "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
@@ -1701,17 +1709,13 @@ else:
                                     "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                                 }, on_conflict="farm_id, aspect, zone, log_date").execute()
                                 
-                                # 2. Fetch the newly expanded dataset logs pool array
                                 refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                                
                                 total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
                                 remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
                                 new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                                 
-                                # 3. Update master project schedule profile parameter value
                                 supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                                 
-                                # 4. FORCE RE-CALCULATION OVER ALL WORKING WEEKDAYS (Even if work was already performed)
                                 loop_dt = start_bound_dt
                                 while loop_dt <= end_bound_dt:
                                     loop_dt_str = str(loop_dt)
@@ -1739,20 +1743,15 @@ else:
                         if special_shift_options:
                             target_removal_date = st.selectbox("Select Special Shift to Remove:", special_shift_options)
                             if st.form_submit_button("🗑️ Delete Selected Day Extension", type="primary"):
-                                # 1. Clear out the targeted extension row log entry completely
                                 supabase.table("daily_progress_logs").delete().eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).eq("log_date", target_removal_date).execute()
                                 
-                                # 2. Gather remaining log balances matrix sets
                                 refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                                
                                 total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
                                 remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
                                 new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                                 
-                                # 3. Update main schedule runtime tracking entry row parameters
                                 supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                                 
-                                # 4. FORCE OVERWRITE TARGETS ON ALL REMAINING BASE WEEKDAYS
                                 loop_dt = start_bound_dt
                                 while loop_dt <= end_bound_dt:
                                     loop_dt_str = str(loop_dt)
@@ -1774,7 +1773,8 @@ else:
                                 time.sleep(0.5); st.rerun()
                         else:
                             st.info("No removable special shift extensions found in this zone layer.")
-                # 📊 SUB-ELEMENT C: THE ACTIVE CALENDAR GRID VIEW SHEET
+
+                # Mapped Production Operations Calendar Matrix
                 st.write("---")
                 st.markdown(f"#### 📅 Mapped Production Operations Calendar: `{selected_sched_aspect.upper()}` — `{selected_target_zone_preview.upper()}`")
                 
@@ -1790,40 +1790,34 @@ else:
                     </thead><tbody>"""
 
                 total_target_quota = 0.0; total_installed_quota = 0.0; total_deviation_quota = 0.0
-                
-                # Create comprehensive date array grouping all logs and base timelines safely
-                all_calendar_dates = set(logs_lookup.keys())
-                curr_date_cursor = start_bound_dt
-                while curr_date_cursor <= end_bound_dt:
-                    if curr_date_cursor.weekday() < 5:
-                        all_calendar_dates.add(str(curr_date_cursor))
-                    curr_date_cursor += timedelta(days=1)
-                
-                for loop_date_str in sorted(list(all_calendar_dates)):
+                loop_date = start_bound_dt
+                while loop_date <= end_bound_dt:
+                    loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     
-                    # Compute completed tracking unit cell structures directly from live database state metrics
-                    inst_count = sum(1 for b in active_table_data if str(b.get("assigned_zone")) == str(selected_target_zone_preview) and b.get(f"{selected_sched_aspect}_status") == "completed" and b.get(f"{selected_sched_aspect}_date") == loop_date_str)
-                    t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
-                    cur_dev = float(inst_count - t_val)
-                    remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
-                    
-                    if loop_date_str == current_date_str:
-                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
-                    else:
-                        row_style_attr = ""
-                    
-                    total_target_quota += t_val
-                    total_installed_quota += float(inst_count)
-                    total_deviation_quota += cur_dev
-                    
-                    admin_table_html += f"""<tr {row_style_attr}>
-                        <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{round(t_val)} Units</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td>
-                        <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
-                    </tr>"""
+                    if loop_date.weekday() < 5 or matched_log:
+                        inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_target_zone_preview and b.get(f"{selected_sched_aspect}_status") == "completed" and b.get(f"{selected_sched_aspect}_date") == loop_date_str)
+                        t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                        cur_dev = float(inst_count - t_val)
+                        remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
+                        
+                        if loop_date_str == current_date_str:
+                            row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
+                        else:
+                            row_style_attr = ""
+                        
+                        total_target_quota += t_val
+                        total_installed_quota += float(inst_count)
+                        total_deviation_quota += cur_dev
+                        
+                        admin_table_html += f"""<tr {row_style_attr}>
+                            <td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{round(t_val)} Units</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td>
+                            <td style='padding:10px; border:1px solid #374151;'>{remark_display}</td>
+                        </tr>"""
+                    loop_date += timedelta(days=1)
                 
                 if abs(total_target_quota - zone_specific_element_count) <= 5:
                     total_target_quota = zone_specific_element_count

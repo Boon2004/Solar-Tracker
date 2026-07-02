@@ -1668,7 +1668,7 @@ else:
                         st.error("Terminal exception: End date must exceed start date bounds.")
                     else:
                         computed_runrate_target = round(zone_specific_element_count / w_days, 2)
-                        supabase.table("project_schedules").upsert({
+                        supabase.table("project_schedules").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
                             "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                             "zone": str(selected_target_zone_preview), "start_date": str(start_sc_dt), "end_date": str(end_sc_dt),
                             "working_days": int(w_days), "daily_target": float(computed_runrate_target)
@@ -1699,32 +1699,26 @@ else:
                         custom_target_quota = st.number_input("Assign FIXED Target Quantity:", min_value=0, value=100)
                         
                         if st.form_submit_button("➕ Inject Shift Day"):
-                            # 🛡️ THE ULTIMATE DUMMY GUARD: Check if the date is already in the calendar table
                             is_regular_weekday = (start_bound_dt <= extension_date <= end_bound_dt) and (extension_date.weekday() < 5)
                             already_has_log_row = str(extension_date) in logs_lookup
                             
                             if is_regular_weekday or already_has_log_row:
                                 st.error(f"🛑 Dummy Guard Rejection: The date `{extension_date}` is already active inside this timeline sheet! You cannot add a duplicate day.")
                             else:
-                                # 1. Inject the extension shift row entry with its fixed allocation footprint
-                                supabase.table("daily_progress_logs").upsert({
+                                supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
                                     "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
                                     "zone": str(selected_target_zone_preview), "log_date": str(extension_date),
                                     "target_units": int(custom_target_quota), "installed_units": 0,
                                     "deviation": int(0 - custom_target_quota), "remark": "⚡ Special Shift Authorized by Admin Panel"
                                 }, on_conflict="farm_id, aspect, zone, log_date").execute()
                                 
-                                # 2. Fetch the newly expanded dataset logs pool array
                                 refreshed_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute().data
-                                
                                 total_special_quota = sum(int(l.get("target_units", 0)) for l in refreshed_logs if "Special Shift" in (l.get("remark") or "") or datetime.strptime(l["log_date"], "%Y-%m-%d").date().weekday() >= 5)
                                 remaining_base_scope = max(0, int(zone_specific_element_count) - total_special_quota)
                                 new_base_daily_target = round(remaining_base_scope / base_working_days, 2)
                                 
-                                # 3. Update master project schedule profile parameter value
                                 supabase.table("project_schedules").update({"daily_target": float(new_base_daily_target)}).eq("farm_id", str(st.session_state.active_site_id)).eq("aspect", selected_sched_aspect).eq("zone", selected_target_zone_preview).execute()
                                 
-                                # 4. Force re-calculation over all working weekdays
                                 loop_dt = start_bound_dt
                                 while loop_dt <= end_bound_dt:
                                     loop_dt_str = str(loop_dt)
@@ -1732,12 +1726,9 @@ else:
                                         matched = next((r for r in refreshed_logs if r["log_date"] == loop_dt_str), None)
                                         cur_inst = int(matched.get("installed_units") or 0) if matched else 0
                                         cur_rem = matched.get("remark") or "No operational notes submitted." if matched else "No operational notes submitted."
-                                        
-                                        supabase.table("daily_progress_logs").upsert({
-                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
-                                            "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
-                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst,
-                                            "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
+                                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
+                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect), "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
+                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst, "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
                                         }, on_conflict="farm_id, aspect, zone, log_date").execute()
                                     loop_dt += timedelta(days=1)
                                     
@@ -1768,12 +1759,9 @@ else:
                                         matched = next((r for r in refreshed_logs if r["log_date"] == loop_dt_str), None)
                                         cur_inst = int(matched.get("installed_units") or 0) if matched else 0
                                         cur_rem = matched.get("remark") or "No operational notes submitted." if matched else "No operational notes submitted."
-                                        
-                                        supabase.table("daily_progress_logs").upsert({
-                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect),
-                                            "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
-                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst,
-                                            "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
+                                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
+                                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_sched_aspect), "zone": str(selected_target_zone_preview), "log_date": loop_dt_str,
+                                            "target_units": int(new_base_daily_target), "installed_units": cur_inst, "deviation": int(cur_inst - int(new_base_daily_target)), "remark": cur_rem
                                         }, on_conflict="farm_id, aspect, zone, log_date").execute()
                                     loop_dt += timedelta(days=1)
                                     
@@ -1781,9 +1769,8 @@ else:
                                 st.success(f"Successfully deleted shift on {target_removal_date} & refreshed baseline targets!")
                                 time.sleep(0.5); st.rerun()
                         else:
-                            st.info("No removable special shift extensions found in this zone layer.")
+                            st.info("No removable special shift extensions found.")
 
-                # Mapped Production Operations Calendar Matrix
                 st.write("---")
                 st.markdown(f"#### 📅 Mapped Production Operations Calendar: `{selected_sched_aspect.upper()}` — `{selected_target_zone_preview.upper()}`")
                 
@@ -1806,7 +1793,7 @@ else:
                     
                     if loop_date.weekday() < 5 or matched_log:
                         inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_target_zone_preview and b.get(f"{selected_sched_aspect}_status") == "completed" and b.get(f"{selected_sched_aspect}_date") == loop_date_str)
-                        t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                        t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else target_runrate
                         cur_dev = float(inst_count - t_val)
                         remark_display = matched_log.get("remark") if matched_log else "No operational notes submitted."
                         
@@ -1854,19 +1841,17 @@ else:
         # --- STAGE 6: HISTORICAL PROGRESS AUDIT LOGS ---
         with setup_tabs[5]:
             st.markdown("### 📈 Historical Operations Playback & Audit Engine Logs")
-            
             hist_cols = st.columns(2)
             with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="admin_hist_lookup_asp")
             with hist_cols[1]: lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="admin_hist_lookup_dt")
-            
             lookup_date_str = str(lookup_crew_date)
 
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window. Right-Click + Drag to Pan | Scroll to Zoom.
+                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window.
                 </div>
-                <div id="admin_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+                <div id="admin_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
                 <div style="width:100%; max-height:350px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="admin_hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
                 </div>
@@ -1877,7 +1862,6 @@ else:
                     const canvas = document.getElementById("admin_hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
                     const tooltip = document.getElementById("admin_hist_canvas_tooltip");
                     const aspect = "ACTIVE_ASPECT_VAL"; const evaluationDateStr = "EVALUATION_DATE_VAL";
-                    
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
@@ -1894,7 +1878,6 @@ else:
                                 else if (compDate < evaluationDateStr) ctx.fillStyle = '#22c55e';
                                 else ctx.fillStyle = '#1e293b';
                             } else ctx.fillStyle = '#1e293b';
-                            
                             let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
@@ -1936,231 +1919,51 @@ else:
             if hist_sched_records:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
-                
-                for zone_name in [z for z in st.session_state.managed_zones if z != "Unassigned"]:
+
+                for zone_name in clean_zones:
                     sched = next((s for s in hist_sched_records if s["zone"] == zone_name), None)
                     if not sched: continue
-                    
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
                     st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{zone_name.upper()}**")
-                    
-                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
-                        <thead>
-                            <tr style='background-color: #1f2937; color: #f9fafb;'>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th>
-                            </tr>
-                        </thead><tbody>"""
+                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th><th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th></tr></thead><tbody>"""
 
                     z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
-                    
-                    # Collate specific date index arrays cleanly to safely kill any NameErrors
-                    all_zone_dates = set([l_key[1] for l_key in hist_logs_lookup.keys() if l_key[0] == zone_name])
-                    c_cursor = s_bound
-                    while c_cursor <= e_bound:
-                        if c_cursor.weekday() < 5:
-                            all_zone_dates.add(str(c_cursor))
-                        c_cursor += timedelta(days=1)
-                        
-                    for loop_dt_str in sorted(list(all_zone_dates)):
+                    loop_dt = s_bound
+                    while loop_dt <= e_bound:
+                        loop_dt_str = str(loop_dt)
                         matched_log = hist_logs_lookup.get((zone_name, loop_dt_str))
-                        inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
-                        
-                        t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
-                        dev_val = float(inst_val - t_val)
-                        rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
-                        
-                        if loop_dt_str == lookup_date_str:
-                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
-                        else:
-                            row_style = ""
+                        if loop_dt.weekday() < 5 or matched_log:
+                            inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
+                            t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else t_runrate
+                            dev_val = float(inst_val - t_val)
+                            rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str else ""
                             
-                        z_total_target += t_val
-                        z_total_installed += float(inst_val)
-                        z_total_deviation += dev_val
+                            z_total_target += t_val; z_total_installed += float(inst_val); z_total_deviation += dev_val
+                            hist_table_html += f"""<tr {row_style}><td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td><td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td><td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td></tr>"""
+                        loop_dt += timedelta(days=1)
                         
-                        hist_table_html += f"""<tr {row_style}>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td>
-                            <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
-                        </tr>"""
-                        
-                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td>
-                    </tr></tbody></table>"""
+                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td><td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td></tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
-            else:
-                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
-
-    # ==============================================================================
-    # 👷 LIVE PRODUCTION CREW WORKSPACE MAPPING DASHBOARDS
-    # ==============================================================================
+            else: st.info("ℹ️ No active layers match this context.")
     else:
-        st.markdown("### 🛰️ Live Production Crew Workspace Mapping Dashboards")
+        # ==============================================================================
+        # 🛰️ LIVE PRODUCTION CREW BLUEPRINT WORKSPACES
+        # ==============================================================================
+        st.markdown("## 🛰️ Live Production Crew Workspace Mapping Dashboards")
+        crew_tabs = st.tabs(["🗺️ Whole Plant Master Blueprint Index", "🛠️ Execution Workspace Tracker Deck", "🕒 Field Shift History Log Viewer"])
         
-        crew_tabs = st.tabs([
-            "🗺️ Whole Plant Master Blueprint Index", 
-            "🛠️ Execution Workspace Tracker Deck",
-            "🕒 Field Shift History Log Viewer"
-        ])
-        
-        # --- CREW TAB 1: WHOLE FARM OVERVIEW TAB ---
         with crew_tabs[0]:
-            st.markdown("### 🖼️ Whole Plant Spatial Allocation & Fleet Metrics Index")
-            
-            html_crew_zone_map = """
-            <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
-                <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    ✋ <b>Map Controls:</b> Move your cursor across cells to see Zone details | Right-Click + Drag to Pan &nbsp;|&nbsp; Scroll to Zoom.
-                </div>
-                <div id="crew_overview_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
-                <div style="width:100%; max-height:400px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
-                    <canvas id="crew_zone_overview_canvas" width="1500" height="400" style="background:#020617; display:block;"></canvas>
-                </div>
-            </div>
-            <script>
-                (function() {
-                    const blocks = JSON.parse(atob("__JSON_DATA_B64__"));
-                    const canvas = document.getElementById("crew_zone_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
-                    const tooltip = document.getElementById("crew_overview_tooltip");
-                    let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
-                    const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
-                    let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
-                    let offsetX = (canvas.width / 2) - (mapWidth * scale / 2) - (minX * CELL * scale);
-                    let offsetY = (canvas.height / 2) - (mapHeight * scale / 2) - (minY * CELL * scale);
-                    let isPanning = false; let startX = 0, startY = 0;
-                    
-                    function getZoneColor(zoneName) {
-                        if (!zoneName || zoneName.toLowerCase() === 'unassigned') return '#1f2937';
-                        let hash = 0; let cleaned = zoneName.toUpperCase().trim();
-                        for (let i = 0; i < cleaned.length; i++) { hash = cleaned.charCodeAt(i) + ((hash << 5) - hash); }
-                        return `hsl(${Math.abs(hash * 45) % 360}, 75%, 45%)`;
-                    }
-                    
-                    function draw() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale,scale);
-                        let zoneCenters = {};
-                        blocks.forEach(b => {
-                            ctx.fillStyle = getZoneColor(b.assigned_zone);
-                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
-                            if (b.assigned_zone && b.assigned_zone.toLowerCase() !== 'unassigned') {
-                                if (!zoneCenters[b.assigned_zone]) zoneCenters[b.assigned_zone] = { sumX: 0, sumY: 0, count: 0 };
-                                zoneCenters[b.assigned_zone].sumX += x + (w / 2); zoneCenters[b.assigned_zone].sumY += y + (h / 2); zoneCenters[b.assigned_zone].count++;
-                            }
-                        });
-                        Object.keys(zoneCenters).forEach(zName => {
-                            let c = zoneCenters[zName]; let centerX = c.sumX / c.count; let centerY = c.sumY / c.count;
-                            ctx.fillStyle = "rgba(15, 23, 42, 0.85)"; ctx.font = "bold 13px sans-serif";
-                            let textWidth = ctx.measureText(zName.toUpperCase()).width;
-                            ctx.fillRect(centerX - (textWidth/2) - 8, centerY - 10, textWidth + 16, 20);
-                            ctx.fillStyle = "#ffffff"; ctx.textAlign = "center"; ctx.fillText(zName.toUpperCase(), centerX, centerY + 4);
-                        });
-                        ctx.restore();
-                    }
-                    canvas.addEventListener('mousemove', e => {
-                        const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
-                        if (isPanning) { offsetX = e.clientX - startX; offsetY = e.clientY - startY; draw(); tooltip.style.display = "none"; return; }
-                        let worldX = (mX - offsetX) / scale; let worldY = (mY - offsetY) / scale;
-                        let hoveredBlock = null;
-                        for (let b of blocks) {
-                            let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                            if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) { hoveredBlock = b; break; }
-                        }
-                        if (hoveredBlock) {
-                            tooltip.style.display = "block"; tooltip.style.left = (mX + 15) + "px"; tooltip.style.top = (mY + 15) + "px";
-                            tooltip.innerHTML = `📍 Label: ${hoveredBlock.table_label}<br/>🗺️ Zone: ${hoveredBlock.assigned_zone || 'Unassigned'}`;
-                        } else tooltip.style.display = "none";
-                    });
-                    canvas.addEventListener('mousedown', e => { if (e.button === 2) { isPanning = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; tooltip.style.display = "none"; } });
-                    canvas.addEventListener('mouseup', () => { isPanning = false; });
-                    canvas.addEventListener('wheel', e => {
-                        e.preventDefault(); const rect = canvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                        const gridX = (mouseX - offsetX) / scale; const gridY = (mouseY - offsetY) / scale;
-                        scale *= (e.deltaY < 0 ? 1.15 : 0.85); scale = Math.max(0.01, Math.min(scale, 20));
-                        offsetX = mouseX - gridX * scale; offsetY = mouseY - gridY * scale; draw();
-                    }, { passive: false });
-                    draw();
-                })();
-            </script>
-            """
-            html_crew_zone_map = html_crew_zone_map.replace("__JSON_DATA_B64__", b64_json_data).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r))
-            components.html(html_crew_zone_map, height=440)
+            st.markdown("### 🗺️ Whole Plant Layout Structural Blueprint Grid Ledger")
+            html_master_view = html_blueprint_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("ACTIVE_ASPECT_VAL", "pegging").replace("__IS_EDITABLE_VAL__", "false")
+            components.html(html_master_view, height=500)
 
-            # Executive Metrics summary Cards Row
-            try: topo_meta = json.loads(current_farm_record.get("background_image_url") or "{}")
-            except Exception: topo_meta = {}
-            inverters_list = topo_meta.get("inverters", [])
-            st.markdown("#### 🏭 Executive Regional Allocation Summary Ledger")
-            col_m1, col_p2, col_p3, col_p4 = st.columns(4)
-            grand_total_trackers = len(active_table_data)
-            grand_total_pins = sum([int((b["section_group"] // 100) * (b["section_group"] % 100)) if (b.get("section_group") and b["section_group"] > 100) else 12 for b in active_table_data])
-            grand_total_panels = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in active_table_data])
-            with col_m1: st.metric("⚙️ Total Tracker Tables", f"{grand_total_trackers} Units")
-            with col_p2: st.metric("📌 Total Pegging Pins", f"{grand_total_pins} Pts")
-            with col_p3: st.metric("📦 Total PV Modules", f"{grand_total_panels} Panels")
-            with col_p4: st.metric("⚡ Active Inverter Hubs", f"{len(inverters_list)} INVs")
-            
-            zone_analysis = {}
-            zone_inverters_map = {z: [] for z in clean_zones}
-            for block in active_table_data:
-                z_name = block.get("assigned_zone") if block.get("assigned_zone") else "Unassigned"
-                enc_val = block.get("section_group") if block.get("section_group") is not None else 403
-                pins = int(enc_val // 100 * (enc_val % 100)) if enc_val > 100 else 12
-                panels = int((block["max_r"] - block["min_r"] + 1) * (block["max_c"] - block["min_c"] + 1))
-                if z_name not in zone_analysis: zone_analysis[z_name] = {"trackers": 0, "pins": 0, "modules": 0}
-                zone_analysis[z_name]["trackers"] += 1; zone_analysis[z_name]["pins"] += pins; zone_analysis[z_name]["modules"] += panels
-
-            for inv in inverters_list:
-                inv_x, inv_y = inv.get("x", 0), inv.get("y", 0)
-                matched_z = "Unassigned"
-                for b in active_table_data:
-                    if (b["min_c"] * 14) <= inv_x <= ((b["max_c"] + 1) * 14) and (b["min_r"] * 14) <= inv_y <= ((b["max_r"] + 1) * 14):
-                        matched_z = b.get("assigned_zone") or "Unassigned"; break
-                if matched_z in zone_inverters_map: zone_inverters_map[matched_z].append(inv.get("id"))
-
-            executive_rows = []
-            for zone_name, metrics in sorted(zone_analysis.items()):
-                if zone_name == "Unassigned": continue
-                invs_pool = zone_inverters_map.get(zone_name, [])
-                executive_rows.append({
-                    "Zone Sector Area Context": zone_name.upper(), "Total Tracker Tables": f"{metrics['trackers']} Units",
-                    "Pegging Pinpoints Total": f"{metrics['pins']} Pts", "Total PV Modules (Panels)": f"{metrics['modules']} Panels",
-                    "Active Inverters Pool": f"{len(invs_pool)} INVs (" + (", ".join([f"INV #{i}" for i in sorted(invs_pool)]) if invs_pool else "None") + ")"
-                })
-            st.table(executive_rows)
-
-            # Master schedule grid block
-            st.markdown("#### 📅 Whole Plant Master Schedule Matrix Index")
-            saved_schedules_res = supabase.table("project_schedules").select("*").eq("farm_id", st.session_state.active_site_id).execute().data
-            sched_lookup = {(r["aspect"], r["zone"]): r for r in saved_schedules_res} if saved_schedules_res else {}
-            table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Aspect Layer Profile</th><th style='padding: 12px; border: 1px solid #374151;'>Target Sector Zone</th><th style='padding: 12px; border: 1px solid #374151;'>Commencement Date</th><th style='padding: 12px; border: 1px solid #374151;'>Wrap Deadline Date</th><th style='padding: 12px; border: 1px solid #374151;'>Target Rate Quantity</th></tr></thead><tbody>"""
-            for asp in ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"]:
-                for zone in clean_zones:
-                    match = sched_lookup.get((asp, zone))
-                    if match:
-                        s_dt = datetime.strptime(match["start_date"], "%Y-%m-%d").date()
-                        e_dt = datetime.strptime(match["end_date"], "%Y-%m-%d").date()
-                        row_style = "style='background-color: rgba(234, 179, 8, 0.15); font-weight: bold; border-left: 5px solid #eab308;'" if (s_dt <= current_system_date <= e_dt) else ""
-                        table_html += f"<tr {row_style}><td style='padding:12px; border:1px solid #374151;'>{asp.upper()}</td><td style='padding:12px; border:1px solid #374151;'>{zone}</td><td style='padding:12px; border:1px solid #374151;'>{match['start_date']}</td><td style='padding:12px; border:1px solid #374151;'>{match['end_date']}</td><td style='padding:12px; border:1px solid #374151;'>{match['daily_target']} Units/Day</td></tr>"
-                    else:
-                        table_html += f"<tr style='color: #64748b; font-style: italic;'><td style='padding:12px; border:1px solid #374151;'>{asp.upper()}</td><td style='padding:12px; border:1px solid #374151;'>{zone}</td><td style='padding:12px; border:1px solid #374151;'>⏳ Pending</td><td style='padding:12px; border:1px solid #374151;'>⏳ Pending</td><td style='padding:12px; border:1px solid #374151;'>⏱️ Unscheduled</td></tr>"
-            table_html += "</tbody></table>"
-            st.markdown(table_html, unsafe_allow_html=True)
-
-        # --- CREW TAB 2: ACTIVE TRACKER MATRIX WORKSPACE ---
+        # ==============================================================================
+        # 🛠️ TAB 2: EXECUTION WORKSPACE TRACKER DECK
+        # ==============================================================================
         with crew_tabs[1]:
             st.markdown("### 🛰️ Live Assembly Deployment Workspace Trackers Console Deck")
             selected_crew_aspect = st.selectbox("Select Active Work Aspect Layer Profile Context:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_run_layer")
@@ -2176,38 +1979,17 @@ else:
                 end_bound_dt = datetime.strptime(sched_bound["end_date"], "%Y-%m-%d").date()
                 is_editable_window = (start_bound_dt <= current_system_date <= end_bound_dt)
                 
-                if not is_editable_window:
-                    st.error(f"🔒 **Operational Window Locked:** Editing access is frozen because your current system date ({current_date_str}) falls outside active bounds.")
+                if not is_editable_window: st.error(f"🔒 Locked: Active timeline bounded context is closed.")
                 
                 raw_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", selected_crew_aspect).eq("zone", selected_crew_zone).execute().data
                 logs_lookup = {r["log_date"]: r for r in raw_logs} if raw_logs else {}
                 existing_remark = logs_lookup.get(current_date_str, {}).get("remark", "")
-                
                 target_runrate = float(sched_bound.get("daily_target", 0.0))
 
-                # Safe topology fetching
-                raw_bg = current_farm_record.get("background_image_url") if current_farm_record else None
-                try: topo_meta_obj = json.loads(raw_bg) if raw_bg else {}
-                except Exception: topo_meta_obj = {}
-                
+                # Safe counting references 
                 crew_zone_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(selected_crew_zone)]
-                crew_zone_element_count = 0
-                if selected_crew_aspect in ["pegging", "piling"]:
-                    for b in crew_zone_filtered_blocks:
-                        ev = b.get("section_group") if b.get("section_group") is not None else 403
-                        crew_zone_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
-                elif selected_crew_aspect in ["mounting", "dc_cabling"]:
-                    crew_zone_element_count = len(crew_zone_filtered_blocks)
-                elif selected_crew_aspect == "modules":
-                    crew_zone_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in crew_zone_filtered_blocks])
-                elif selected_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
-                    for inv in topo_meta_obj.get("inverters", []):
-                        if any(str(b.get("assigned_zone")) == str(selected_crew_zone) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
-                            crew_zone_element_count += 1
-                elif selected_crew_aspect == "transformer":
-                    crew_zone_element_count = len(topo_meta_obj.get("transformers", []))
+                crew_zone_element_count = len(crew_zone_filtered_blocks)
 
-                # Canvas UI (stripped of internal HTML inputs/buttons)
                 html_crew_engine = """
                 <div style="background:#090d16; padding:12px; border-radius:12px; font-family:sans-serif; position:relative; touch-action:none; user-select:none;">
                     <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
@@ -2230,7 +2012,6 @@ else:
                         let isPanning = false, isSelecting = false; let sX = 0, sY = 0, cX = 0, cY = 0;
                         
                         canvas.addEventListener('contextmenu', e => e.preventDefault());
-                        
                         function getNodeColor(b, aspectKey) {
                             if (b.assigned_zone !== targetZone) return '#222d3d'; 
                             let status = b[aspectKey + '_status'] || 'pending'; let dateVal = b[aspectKey + '_date'];
@@ -2238,15 +2019,12 @@ else:
                             return '#1f2937';
                         }
                         function draw() {
-                            ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                            ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+                            ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
                             dataset.forEach(b => {
                                 let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
-                                ctx.fillStyle = getNodeColor(b, aspect); ctx.fillRect(x, y, w, h);
-                                ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
+                                ctx.fillStyle = getNodeColor(b, aspect); ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#090d16'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                             });
-                            ctx.restore();
-                            if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
+                            ctx.restore(); if (isSelecting && isEditable) { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.strokeRect(sX, sY, cX - sX, cY - sY); }
                         }
                         canvas.addEventListener('mousemove', e => {
                             const rect = canvas.getBoundingClientRect(); const mX = e.clientX - rect.left; const mY = e.clientY - rect.top;
@@ -2273,13 +2051,9 @@ else:
                                     if (hit) {
                                         let currentStatus = b[aspect + '_status'] || 'pending'; let currentDateVal = b[aspect + '_date'];
                                         if (currentStatus === 'completed' && currentDateVal !== sysDateStr) continue;
-                                        
                                         let nextStatus = (currentStatus === 'completed') ? 'pending' : 'completed';
                                         let nextDate = (nextStatus === 'completed') ? sysDateStr : null;
-                                        
                                         b[aspect + '_status'] = nextStatus; b[aspect + '_date'] = nextDate;
-                                        
-                                        // Push updates to the database instantly
                                         fetch("SUPABASE_URL_VAL/rest/v1/structures?id=eq." + b.id, {
                                             method: "PATCH", headers: { "apikey": "SUPABASE_KEY_VAL", "Authorization": "Bearer SUPABASE_KEY_VAL", "Content-Type": "application/json" },
                                             body: JSON.stringify({ [aspect + '_status']: nextStatus, [aspect + '_date']: nextDate })
@@ -2300,56 +2074,31 @@ else:
                 </script>
                 """
                 
-                # SAFE REPLACEMENT CHAIN (Bypasses NameError completely)
                 safe_b64_topo = base64.b64encode((current_farm_record.get("background_image_url") or "{}").encode("utf-8")).decode("utf-8")
-                
-                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data)
-                html_crew_engine = html_crew_engine.replace("__TOPOLOGY_METADATA_B64__", safe_b64_topo)
-                html_crew_engine = html_crew_engine.replace("ACTIVE_ASPECT_VAL", selected_crew_aspect)
-                html_crew_engine = html_crew_engine.replace("ACTIVE_ZONE_VAL", selected_crew_zone)
-                html_crew_engine = html_crew_engine.replace("SYSTEM_DATE_VAL", current_date_str)
-                html_crew_engine = html_crew_engine.replace("MIN_C_VAL", str(min_c))
-                html_crew_engine = html_crew_engine.replace("MAX_C_VAL", str(max_c))
-                html_crew_engine = html_crew_engine.replace("MIN_R_VAL", str(min_r))
-                html_crew_engine = html_crew_engine.replace("MAX_R_VAL", str(max_r))
-                html_crew_engine = html_crew_engine.replace("SUPABASE_URL_VAL", SUPABASE_URL)
-                html_crew_engine = html_crew_engine.replace("SUPABASE_KEY_VAL", SUPABASE_KEY)
-                html_crew_engine = html_crew_engine.replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
-
+                html_crew_engine = html_crew_engine.replace("__JSON_DATA_B64__", b64_json_data).replace("__TOPOLOGY_METADATA_B64__", safe_b64_topo).replace("ACTIVE_ASPECT_VAL", selected_crew_aspect).replace("ACTIVE_ZONE_VAL", selected_crew_zone).replace("SYSTEM_DATE_VAL", current_date_str).replace("MIN_C_VAL", str(min_c)).replace("MAX_C_VAL", str(max_c)).replace("MIN_R_VAL", str(min_r)).replace("MAX_R_VAL", str(max_r)).replace("SUPABASE_URL_VAL", SUPABASE_URL).replace("SUPABASE_KEY_VAL", SUPABASE_KEY).replace("__IS_EDITABLE_VAL__", "true" if is_editable_window else "false")
                 components.html(html_crew_engine, height=520)
 
-                # NATIVE STREAMLIT REMARK & SAVE CONTROLS
                 st.write("")
                 typed_remark = st.text_input("📝 Append Shift Remarks & Blockage Mitigation Notes:", value=existing_remark, key="crew_live_remark_field_input")
                 
                 if st.button("💾 Save Target Progress & Shift Logs", type="primary", use_container_width=True, disabled=not is_editable_window):
                     with st.spinner("Synchronizing operations ledger logs..."):
-                        # Fetch the live total tally from the database immediately
                         fresh_db_blocks = supabase.table("structures").select("id").eq("farm_id", st.session_state.active_site_id).eq("assigned_zone", selected_crew_zone).eq(f"{selected_crew_aspect}_status", "completed").eq(f"{selected_crew_aspect}_date", current_date_str).execute().data
                         absolute_total_completions = len(fresh_db_blocks) if fresh_db_blocks else 0
                         
                         current_day_target_quota = int(target_runrate)
                         if current_date_str in logs_lookup and logs_lookup[current_date_str].get("target_units", 0) > 0:
                             current_day_target_quota = logs_lookup[current_date_str]["target_units"]
-                            
                         computed_deviation = absolute_total_completions - current_day_target_quota
                         
-                        # 🎯 FIXED: Proper upsert structure using clean variables and valid header payload modifiers
-                        supabase.table("daily_progress_logs").upsert({
-                            "farm_id": str(st.session_state.active_site_id), 
-                            "aspect": str(selected_crew_aspect), 
-                            "zone": str(selected_crew_zone),
-                            "log_date": current_date_str, 
-                            "target_units": int(current_day_target_quota), 
-                            "installed_units": int(absolute_total_completions),
-                            "deviation": int(computed_deviation), 
-                            "remark": str(typed_remark)
+                        supabase.table("daily_progress_logs").with_options(headers={"Prefer": "resolution=merge-duplicates"}).upsert({
+                            "farm_id": str(st.session_state.active_site_id), "aspect": str(selected_crew_aspect), "zone": str(selected_crew_zone),
+                            "log_date": current_date_str, "target_units": int(current_day_target_quota), "installed_units": int(absolute_total_completions),
+                            "deviation": int(computed_deviation), "remark": str(typed_remark)
                         }, on_conflict="farm_id, aspect, zone, log_date").execute()
-                        
                         st.cache_resource.clear()
                         st.success("🎉 Shift log metrics updated successfully!")
-                        time.sleep(0.5)
-                        st.rerun()
+                        time.sleep(0.5); st.rerun()
 
                 st.markdown("#### 📊 Operational Run-Rate Performance Metrics Analytics Calendar")
                 table_html_tab2 = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Assembled Quantity</th><th style='padding: 12px; border: 1px solid #374151;'>Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Field Remark Notes</th></tr></thead><tbody>"""
@@ -2360,18 +2109,12 @@ else:
                     loop_date_str = str(loop_date)
                     matched_log = logs_lookup.get(loop_date_str)
                     if loop_date.weekday() < 5 or matched_log:
-                        # Pull live completions count from the cached data map
                         inst_count = sum(1 for b in active_table_data if b.get("assigned_zone") == selected_crew_zone and b.get(f"{selected_crew_aspect}_status") == "completed" and b.get(f"{selected_crew_aspect}_date") == loop_date_str)
+                        row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'" if loop_date_str == current_date_str else ""
                         
-                        if loop_date_str == current_date_str:
-                            remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "Real-time field session tracking active."
-                            row_style_attr = "style='background-color: rgba(234, 179, 8, 0.22) !important; font-weight: bold !important; border-left: 5px solid #eab308;'"
-                        else:
-                            remark_display = matched_log.get("remark") if (matched_log and matched_log.get("remark")) else "No operational notes submitted."
-                            row_style_attr = ""
-                        
-                        current_day_target = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else target_runrate
+                        current_day_target = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else target_runrate
                         cur_dev = float(inst_count - current_day_target)
+                        remark_display = matched_log.get("remark") or "No operational notes submitted." if matched_log else "No operational notes submitted."
                         
                         total_target_quota += current_day_target; total_installed_quota += float(inst_count); total_deviation_quota += cur_dev
                         table_html_tab2 += f"""<tr {row_style_attr}><td style='padding:10px; border:1px solid #374151;'>{loop_date_str}</td><td style='padding:10px; border:1px solid #374151;'>{round(current_day_target)} Units</td><td style='padding:10px; border:1px solid #374151;'>{int(inst_count)} Units</td><td style='padding:10px; border:1px solid #374151;'>{"🟢 +" if cur_dev >= 0 else "🔴 "}{round(cur_dev)}</td><td style='padding:10px; border:1px solid #374151;'>{remark_display}</td></tr>"""
@@ -2384,23 +2127,22 @@ else:
                 table_html_tab2 += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border:1px solid #374151;'>📊 RUNRATES FOOTPRINT ROLLUP TOTALS</td><td style='padding:12px; border:1px solid #374151;'>{round(total_target_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{round(total_installed_quota)} Units</td><td style='padding:12px; border:1px solid #374151;'>{"🟢 +" if total_deviation_quota >= 0 else "🔴 "}{round(total_deviation_quota)}</td><td style='padding:12px; border:1px solid #374151;'>🏁 Master Balance Ledger Log</td></tr></tbody></table>"""
                 st.markdown(table_html_tab2, unsafe_allow_html=True)
 
-        # --- CREW TAB 3: FIELD SHIFT HISTORY LOG VIEWER ---
+        # ==============================================================================
+        # 🕒 TAB 3: FIELD SHIFT HISTORY LOG VIEWER (CREW READ-ONLY LOOKUP PANEL)
+        # ==============================================================================
         with crew_tabs[2]:
             st.markdown("### 🕒 Historic Operational Field Execution Ledger Lookups")
-            st.caption("Select an operational layer aspect and historical date point below to evaluate precisely what milestones your crew captured during that shift.")
-            
             hist_cols = st.columns(2)
             with hist_cols[0]: lookup_crew_aspect = st.selectbox("Choose Historical Aspect Layer:", ["pegging", "piling", "mounting", "modules", "inverter_structure", "inverter", "transformer", "dc_cabling", "ac_cabling"], key="crew_hist_lookup_asp")
             with hist_cols[1]: lookup_crew_date = st.date_input("Target Evaluation Shift Date Window:", value=current_system_date, key="crew_hist_lookup_dt")
-            
             lookup_date_str = str(lookup_crew_date)
 
             html_hist_zone_map = """
             <div style="background:#090d16; padding:12px; border-radius:12px; position:relative; touch-action:none; user-select: none; font-family:sans-serif;">
                 <div style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">
-                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window. Right-Click + Drag to Pan | Scroll to Zoom.
+                    🗺️ <b>Playback Controls:</b> Move cursor to check unit details | <span style="color:#22c55e; font-weight:bold;">Green Cells</span> represent past completions | <span style="color:#eab308; font-weight:bold;">Yellow Cells</span> indicate items installed on this specific shift window.
                 </div>
-                <div id="crew_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: bold;"></div>
+                <div id="crew_hist_canvas_tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1px solid #3b82f6; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 99999; font-weight: bold;"></div>
                 <div style="width:100%; max-height:350px; border:2px solid #1e293b; border-radius:8px; overflow:hidden;">
                     <canvas id="crew_hist_overview_canvas" width="1500" height="350" style="background:#020617; display:block;"></canvas>
                 </div>
@@ -2411,7 +2153,6 @@ else:
                     const canvas = document.getElementById("crew_hist_overview_canvas"); const ctx = canvas.getContext('2d'); const CELL = 14;
                     const tooltip = document.getElementById("crew_hist_canvas_tooltip");
                     const aspect = "ACTIVE_ASPECT_VAL"; const evaluationDateStr = "EVALUATION_DATE_VAL";
-                    
                     let minX = MIN_C_VAL, maxX = MAX_C_VAL, minY = MIN_R_VAL, maxY = MAX_R_VAL;
                     const mapWidth = (maxX - minX + 1) * CELL; const mapHeight = (maxY - minY + 1) * CELL;
                     let scale = Math.min((canvas.width - 60) / mapWidth, (canvas.height - 60) / mapHeight);
@@ -2428,7 +2169,6 @@ else:
                                 else if (compDate < evaluationDateStr) ctx.fillStyle = '#22c55e';
                                 else ctx.fillStyle = '#1e293b';
                             } else ctx.fillStyle = '#1e293b';
-                            
                             let x = b.min_c * CELL; let y = b.min_r * CELL; let w = (b.max_c - b.min_c + 1) * CELL; let h = (b.max_r - b.min_r + 1) * CELL;
                             ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#020617'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
                         });
@@ -2470,90 +2210,33 @@ else:
             if hist_sched_records:
                 raw_hist_logs = supabase.table("daily_progress_logs").select("*").eq("farm_id", st.session_state.active_site_id).eq("aspect", lookup_crew_aspect).execute().data
                 hist_logs_lookup = {(r["zone"], r["log_date"]): r for r in raw_hist_logs} if raw_hist_logs else {}
-                
-                try: topo_meta_obj = json.loads(current_farm_record.get("background_image_url") or "{}")
-                except Exception: topo_meta_obj = {}
 
-                # Stack multiple historical tracker sheets back-to-back dynamically on one page layout as requested
                 for zone_name in clean_zones:
                     sched = next((s for s in hist_sched_records if s["zone"] == zone_name), None)
                     if not sched: continue
-                    
                     s_bound = datetime.strptime(sched["start_date"], "%Y-%m-%d").date()
                     e_bound = datetime.strptime(sched["end_date"], "%Y-%m-%d").date()
                     t_runrate = float(sched.get("daily_target", 0.0))
                     
                     st.markdown(f"##### 🗺️ Performance Metrics Log Schedule: **{zone_name.upper()}**")
-                    
-                    loop_filtered_blocks = [b for b in active_table_data if str(b.get("assigned_zone")) == str(zone_name)]
-                    z_element_count = 0
-                    if lookup_crew_aspect in ["pegging", "piling"]:
-                        for b in loop_filtered_blocks:
-                            ev = b.get("section_group") if b.get("section_group") is not None else 403
-                            z_element_count += int((ev // 100) * (ev % 100)) if ev > 100 else 12
-                    elif lookup_crew_aspect in ["mounting", "dc_cabling"]:
-                        z_element_count = len(loop_filtered_blocks)
-                    elif lookup_crew_aspect == "modules":
-                        z_element_count = sum([int((b["max_r"] - b["min_r"] + 1) * (b["max_c"] - b["min_c"] + 1)) for b in loop_filtered_blocks])
-                    elif lookup_crew_aspect in ["inverter_structure", "inverter", "ac_cabling"]:
-                        for inv in topo_meta_obj.get("inverters", []):
-                            if any(str(b.get("assigned_zone")) == str(zone_name) and (b["min_c"]*14) <= inv.get("x",0) <= ((b["max_c"]+1)*14) and (b["min_r"]*14) <= inv.get("y",0) <= ((b["max_r"]+1)*14) for b in active_table_data):
-                                z_element_count += 1
-                    elif lookup_crew_aspect == "transformer":
-                        z_element_count = len(topo_meta_obj.get("transformers", []))
-
-                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'>
-                        <thead>
-                            <tr style='background-color: #1f2937; color: #f9fafb;'>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Date Window</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Production Target</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th>
-                                <th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th>
-                            </tr>
-                        </thead><tbody>"""
+                    hist_table_html = """<table style='width:100%; border-collapse: collapse; font-family: sans-serif; text-align: left; margin-bottom: 24px;'><thead><tr style='background-color: #1f2937; color: #f9fafb;'><th style='padding: 12px; border: 1px solid #374151;'>Date Window</th><th style='padding: 12px; border: 1px solid #374151;'>Production Target</th><th style='padding: 12px; border: 1px solid #374151;'>Actual Installed</th><th style='padding: 12px; border: 1px solid #374151;'>Shift Performance Deviation</th><th style='padding: 12px; border: 1px solid #374151;'>Supervisor Operational Remarks</th></tr></thead><tbody>"""
 
                     z_total_target = 0.0; z_total_installed = 0.0; z_total_deviation = 0.0
                     loop_dt = s_bound
                     while loop_dt <= e_bound:
                         loop_dt_str = str(loop_dt)
                         matched_log = hist_logs_lookup.get((zone_name, loop_dt_str))
-                        
                         if loop_dt.weekday() < 5 or matched_log:
                             inst_val = sum(1 for b in active_table_data if b.get("assigned_zone") == zone_name and b.get(f"{lookup_crew_aspect}_status") == "completed" and b.get(f"{lookup_crew_aspect}_date") == loop_dt_str)
-                            t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units", 0) > 0) else t_runrate
+                            t_val = float(matched_log["target_units"]) if (matched_log and matched_log.get("target_units") is not None) else t_runrate
                             dev_val = float(inst_val - t_val)
                             rem_val = matched_log.get("remark") or "No field remarks submitted." if matched_log else "No logs recorded."
+                            row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'" if loop_dt_str == lookup_date_str_else = ""
                             
-                            if loop_dt_str == lookup_date_str:
-                                row_style = "style='background-color: rgba(59, 130, 246, 0.24) !important; font-weight: bold !important; border-left: 5px solid #3b82f6 !important;'"
-                            else:
-                                row_style = ""
-                                
-                            z_total_target += t_val
-                            z_total_installed += float(inst_val)
-                            z_total_deviation += dev_val
-                            
-                            hist_table_html += f"""<tr {row_style}>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td>
-                                <td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td>
-                            </tr>"""
+                            z_total_target += t_val; z_total_installed += float(inst_val); z_total_deviation += dev_val
+                            hist_table_html += f"""<tr {row_style}><td style='padding: 10px; border: 1px solid #374151;'>{loop_dt_str}</td><td style='padding: 10px; border: 1px solid #374151;'>{round(t_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{int(inst_val)} Units</td><td style='padding: 10px; border: 1px solid #374151;'>{"🟢 +" if dev_val >= 0 else "🔴 "}{round(dev_val)}</td><td style='padding: 10px; border: 1px solid #374151;'>{rem_val}</td></tr>"""
                         loop_dt += timedelta(days=1)
                         
-                    if abs(z_total_target - z_element_count) <= 5:
-                        z_total_target = z_element_count
-                        z_total_deviation = z_total_installed - z_total_target
-
-                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'>
-                        <td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td>
-                        <td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td>
-                    </tr></tbody></table>"""
+                    hist_table_html += f"""<tr style='background:#111827; font-weight:bold;'><td style='padding:12px; border: 1px solid #374151;'>📊 {zone_name.upper()} SUMMATION ROLLUP TOTALS</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_target)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{round(z_total_installed)} Units</td><td style='padding:12px; border: 1px solid #374151;'>{"🟢 +" if z_total_deviation >= 0 else "🔴 "}{round(z_total_deviation)}</td><td style='padding:12px; border: 1px solid #374151;'>🏁 Zone Specific Ledger Balance</td></tr></tbody></table>"""
                     st.markdown(hist_table_html, unsafe_allow_html=True)
-            else:
-                st.info("ℹ️ No active milestone configuration layers match this aspect layer context.")
+            else: st.info("ℹ️ No active layers match this context.")
